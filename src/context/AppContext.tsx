@@ -163,7 +163,7 @@ interface AppContextValue {
   verifyAdminTotp: (code: string) => Promise<{ ok: boolean; error?: string }>;
   completeFirstLoginPasswordChange: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
-  switchDemoIdentity: (role: UserRole, instructorId?: string) => void;
+  switchDemoIdentity: (role: UserRole, instructorId?: string, profileId?: string) => void;
 
   adminRoute: AdminRouteId;
   setAdminRoute: (r: AdminRouteId) => void;
@@ -927,12 +927,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const switchDemoIdentity = (role: UserRole, instructorId?: string) => {
-    // Strictly disabled in connected Supabase mode (real RBAC + RLS active)
-    if (isSupabaseMode) return;
+  const switchDemoIdentity = (role: UserRole, instructorId?: string, profileId?: string) => {
+    // Strictly disabled in production builds and connected Supabase mode (real RBAC + RLS active)
+    if (!import.meta.env.DEV || isSupabaseMode) return;
 
     if (role === UserRole.ADMIN) {
-      const adminProf = profiles.find((p) => p.role === UserRole.ADMIN) || INITIAL_PROFILES[0];
+      const adminProf =
+        (profileId
+          ? profiles.find((p) => p.id === profileId && p.role === UserRole.ADMIN && p.isActive)
+          : undefined) ||
+        profiles.find((p) => p.role === UserRole.ADMIN && p.isActive) ||
+        INITIAL_PROFILES[0];
+      setAdminRoute('dashboard');
       setAuth({
         isAuthenticated: true,
         pendingTotpProfileId: null,
@@ -944,10 +950,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         mfaEnrollment: null,
       });
     } else {
-      const targetInstId = instructorId || auth.activeInstructorId || 'inst-1';
-      const inst = instructors.find((i) => i.id === targetInstId) || instructors[0];
+      const inst =
+        (instructorId ? instructors.find((i) => i.id === instructorId) : undefined) ||
+        (profileId ? instructors.find((i) => i.profileId === profileId) : undefined) ||
+        instructors.find((i) => i.id === (auth.activeInstructorId || 'inst-1')) ||
+        instructors[0];
       const instProf =
-        profiles.find((p) => p.id === inst?.profileId) || INITIAL_PROFILES[2];
+        (profileId
+          ? profiles.find((p) => p.id === profileId && p.role === UserRole.INSTRUCTOR)
+          : undefined) ||
+        profiles.find((p) => p.id === inst?.profileId) ||
+        INITIAL_PROFILES[2];
+      setInstructorRoute('dashboard');
       setAuth({
         isAuthenticated: true,
         pendingTotpProfileId: null,

@@ -1466,11 +1466,38 @@ test('24. Migration 0005 & verification suites security and non-destructive inte
   assert.ok(stagingWf.includes('upload-artifact'));
 });
 
+test('25. Dev-only sandbox selector: strictly gated to DEV + !isSupabaseMode with 6 accounts and zero credentials', () => {
+  const authViewSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/pages/auth/AuthView.tsx'),
+    'utf8'
+  );
+  const appCtxSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/context/AppContext.tsx'),
+    'utf8'
+  );
+  const seedSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/services/seedData.ts'),
+    'utf8'
+  );
 
+  // Strict build-time + Supabase guards
+  assert.ok(authViewSrc.includes('import.meta.env.DEV && !isSupabaseMode'));
+  assert.ok(appCtxSrc.includes('if (!import.meta.env.DEV || isSupabaseMode) return;'));
 
+  // Zero credential or TOTP hints exposed in login UI
+  assert.equal(authViewSrc.includes('482910'), false);
+  assert.equal(/Quick-Fill/i.test(authViewSrc), false);
+  assert.equal(/password\s*[:=]\s*['"][^'"]+['"]/i.test(authViewSrc), false);
 
-
-
-
-
-
+  // All 6 sandbox identities present in active seed profiles
+  for (const fullName of [
+    'Eng. Tarek Mansour',
+    'Dr. Nadia El-Shamy',
+    'Dr. Ahmed Khalil',
+    'Eng. Mariam Farouk',
+    'Eng. Karim Adel',
+    'Dr. Hoda Soliman',
+  ]) {
+    assert.ok(seedSrc.includes(fullName), `Missing sandbox account ${fullName}`);
+  }
+});

@@ -11,6 +11,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { UserRole } from '../../types/database';
 
 export const AuthView: React.FC = () => {
   const {
@@ -22,6 +23,9 @@ export const AuthView: React.FC = () => {
     verifyAdminTotp,
     completeFirstLoginPasswordChange,
     signOut,
+    profiles,
+    instructors,
+    switchDemoIdentity,
     lang,
     setLang,
     theme,
@@ -358,6 +362,62 @@ export const AuthView: React.FC = () => {
                   'هل تحتاج لتفعيل حسابك أو إعادة تعيين كلمة المرور؟ تواصل مع مسؤول المعسكر.'
                 )}
               </p>
+
+              {import.meta.env.DEV && !isSupabaseMode && (
+                <section
+                  aria-label={t('Local sandbox account selector', 'اختيار حساب بيئة المعاينة المحلية')}
+                  className="pt-5 border-t border-slate-200/80 dark:border-slate-800 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {t('Local Sandbox Accounts', 'حسابات المعاينة المحلية')}
+                    </p>
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      {t('Dev Preview', 'معاينة')}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {profiles
+                      .filter((p) => p.role === UserRole.ADMIN && p.isActive)
+                      .map((admin) => (
+                        <button
+                          key={admin.id}
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => switchDemoIdentity(UserRole.ADMIN, undefined, admin.id)}
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
+                        >
+                          <span className="block text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                            {t('Admin', 'مسؤول')}
+                          </span>
+                          <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {t(admin.fullNameEn, admin.fullNameAr)}
+                          </span>
+                        </button>
+                      ))}
+                    {instructors
+                      .filter((i) => i.isActive)
+                      .map((inst) => (
+                        <button
+                          key={inst.id}
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() =>
+                            switchDemoIdentity(UserRole.INSTRUCTOR, inst.id, inst.profileId)
+                          }
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
+                        >
+                          <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                            {t('Instructor', 'محاضر')}
+                          </span>
+                          <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {t(inst.fullNameEn, inst.fullNameAr)}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
