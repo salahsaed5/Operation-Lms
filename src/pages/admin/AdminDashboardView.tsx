@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-  CalendarClock,
   CheckCircle2,
   AlertCircle,
   ArrowUpRight,
   Clock,
   FileCode2,
+  Tent,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
@@ -19,12 +19,14 @@ import {
 export const AdminDashboardView: React.FC = () => {
   const {
     activeCamp,
+    campInstructorIds,
     students,
     instructors,
     groups,
     rooms,
     lectures,
     checkins,
+    checkinExceptions,
     attendanceSheets,
     entitlements,
     requests,
@@ -33,7 +35,40 @@ export const AdminDashboardView: React.FC = () => {
     t,
   } = useApp();
 
+  if (!activeCamp) {
+    return (
+      <div className="p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
+          <Tent className="w-6 h-6" />
+        </div>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+          {t('No Active or Draft Camp Found', 'لا يوجد معسكر نشط أو مسودة حالياً')}
+        </h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+          {t(
+            'Create and activate your first CITS training camp to unlock schedules, instructor check-ins, attendance rosters, and financial entitlements.',
+            'قم بإنشاء وتفعيل أول معسكر تدريبي لبدء إدارة الجدول، حضور المحاضرين، كشوف الطلاب، والمستحقات المالية.'
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => setAdminRoute('camps')}
+          className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+        >
+          {t('Go to Camp Management', 'الانتقال لإدارة المعسكرات')}
+        </button>
+      </div>
+    );
+  }
+
   const campStudents = students.filter((s) => s.campId === activeCamp.id && s.isActive);
+  const campGroups = groups.filter((g) => g.campId === activeCamp.id);
+  const assignedIds = campInstructorIds[activeCamp.id];
+  const campInstructors =
+    assignedIds && assignedIds.length > 0
+      ? instructors.filter((i) => assignedIds.includes(i.id))
+      : instructors;
+
   const todayLectures = lectures
     .filter((l) => l.campId === activeCamp.id && l.campDay === activeCamp.currentCampDay)
     .sort((a, b) => a.periodNumber - b.periodNumber);
@@ -42,9 +77,12 @@ export const AdminDashboardView: React.FC = () => {
     (c) => c.campId === activeCamp.id && c.campDay === activeCamp.currentCampDay
   );
 
-  // Calculate attendance percentage across submitted sheets
+  // Calculate attendance percentage strictly from submitted/locked sheets (0% when empty)
   const submittedSheets = attendanceSheets.filter(
-    (s) => s.campId === activeCamp.id && s.status === AttendanceSheetStatus.SUBMITTED
+    (s) =>
+      s.campId === activeCamp.id &&
+      (s.status === AttendanceSheetStatus.SUBMITTED ||
+        s.status === AttendanceSheetStatus.LOCKED)
   );
   let totalMarked = 0;
   let totalPresent = 0;
@@ -57,7 +95,7 @@ export const AdminDashboardView: React.FC = () => {
     }
   }
   const attendancePercentage =
-    totalMarked > 0 ? Math.round((totalPresent / totalMarked) * 100) : 92;
+    totalMarked > 0 ? Math.round((totalPresent / totalMarked) * 100) : 0;
 
   // Financial entitlement summary (Eligible + Approved)
   const eligibleEntitlements = entitlements.filter(
@@ -73,7 +111,12 @@ export const AdminDashboardView: React.FC = () => {
     0
   );
 
-  const pendingRequests = requests.filter((r) => r.status === RequestStatus.PENDING);
+  const pendingRequests = requests.filter(
+    (r) => r.campId === activeCamp.id && r.status === RequestStatus.PENDING
+  );
+  const pendingExceptions = checkinExceptions.filter(
+    (ex) => ex.campId === activeCamp.id && ex.status === RequestStatus.PENDING
+  );
 
   return (
     <div className="space-y-8">
@@ -111,12 +154,12 @@ export const AdminDashboardView: React.FC = () => {
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <FileCode2 className="w-3.5 h-3.5" />
-            <span>{t('Review Phase 1 Plan & SQL', 'مراجعة خطة المرحلة الأولى')}</span>
+            <span>{t('Review Plan & SQL', 'مراجعة الخطة و SQL')}</span>
           </button>
         </div>
       </div>
 
-      {/* 4-Column KPI Strip (Single-Elevation, Tabular Numerals) */}
+      {/* 4-Column KPI Strip */}
       <section aria-label={t('Key operational indicators', 'مؤشرات الأداء الرئيسية')}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -128,7 +171,7 @@ export const AdminDashboardView: React.FC = () => {
                 {campStudents.length}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                {groups.length} {t('Groups', 'مجموعات')} · {instructors.length}{' '}
+                {campGroups.length} {t('Groups', 'مجموعات')} · {campInstructors.length}{' '}
                 {t('Instructors', 'محاضرين')}
               </span>
             </div>
@@ -140,7 +183,7 @@ export const AdminDashboardView: React.FC = () => {
             </p>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-                {attendancePercentage}%
+                {totalMarked > 0 ? `${attendancePercentage}%` : '—'}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                 {submittedSheets.length}/{todayLectures.length} {t('Sheets Synced', 'كشوف متزامنة')}
@@ -154,7 +197,7 @@ export const AdminDashboardView: React.FC = () => {
             </p>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-                {todayCheckins.length}/{instructors.length}
+                {todayCheckins.length}/{campInstructors.length}
               </span>
               <span className="text-xs text-amber-600 dark:text-amber-400 font-mono tabular-nums">
                 {todayCheckins.filter((c) => c.arrivedLateFirstLecture).length}{' '}
@@ -179,7 +222,7 @@ export const AdminDashboardView: React.FC = () => {
         </div>
       </section>
 
-      {/* Main 2-Column Split: Daily Schedule Timeline (Left 7 cols) + Live Arrivals & Alerts (Right 5 cols) */}
+      {/* Main 2-Column Split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Daily Schedule Timeline */}
         <section
@@ -215,60 +258,68 @@ export const AdminDashboardView: React.FC = () => {
           </div>
 
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {todayLectures.map((lec) => {
-              const grp = groups.find((g) => g.id === lec.groupId);
-              const inst = instructors.find((i) => i.id === lec.instructorId);
-              const room = rooms.find((r) => r.id === lec.roomId);
-              const sheet = attendanceSheets.find((s) => s.lectureId === lec.id);
+            {todayLectures.length === 0 ? (
+              <p className="px-6 py-8 text-xs text-slate-500 text-center">
+                {t('No lectures scheduled for this camp day yet.', 'لا توجد محاضرات مجدولة لهذا اليوم بعد.')}
+              </p>
+            ) : (
+              todayLectures.map((lec) => {
+                const grp = groups.find((g) => g.id === lec.groupId);
+                const inst = instructors.find(
+                  (i) => i.id === (lec.substituteInstructorId || lec.instructorId)
+                );
+                const room = rooms.find((r) => r.id === lec.roomId);
+                const sheet = attendanceSheets.find((s) => s.lectureId === lec.id);
 
-              return (
-                <div
-                  key={lec.id}
-                  className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
-                        {t(`Period ${lec.periodNumber}`, `الفترة ${lec.periodNumber}`)} ({lec.startTime}–{lec.endTime})
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span>{room?.code || lec.roomId}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{grp ? t(grp.nameEn, grp.nameAr) : lec.groupId}</span>
+                return (
+                  <div
+                    key={lec.id}
+                    className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
+                          {t(`Period ${lec.periodNumber}`, `الفترة ${lec.periodNumber}`)} ({lec.startTime}–{lec.endTime})
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{room?.code || lec.roomId}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{grp ? t(grp.nameEn, grp.nameAr) : lec.groupId}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {lec.topic}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {inst ? t(inst.fullNameEn, inst.fullNameAr) : lec.instructorId} ·{' '}
+                        <span className="font-mono tabular-nums">
+                          {t(`Frozen Rate: ${lec.frozenRateEgp} EGP`, `الفئة المثبتة: ${lec.frozenRateEgp} ج.م`)}
+                        </span>
+                      </p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {lec.topic}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {inst ? t(inst.fullNameEn, inst.fullNameAr) : lec.instructorId} ·{' '}
-                      <span className="font-mono tabular-nums">
-                        {t(`Frozen Rate: ${lec.frozenRateEgp} EGP`, `الفئة المثبتة: ${lec.frozenRateEgp} ج.م`)}
-                      </span>
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-3 shrink-0 text-xs">
-                    {sheet?.status === AttendanceSheetStatus.SUBMITTED ? (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{t('Attendance Synced', 'تمت مزامنة الحضور')}</span>
-                      </span>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{t('Sheet Pending', 'بانتظار الكشف')}</span>
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3 shrink-0 text-xs">
+                      {sheet?.status === AttendanceSheetStatus.SUBMITTED ||
+                      sheet?.status === AttendanceSheetStatus.LOCKED ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{t('Attendance Synced', 'تمت مزامنة الحضور')}</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{t('Sheet Pending', 'بانتظار الكشف')}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </section>
 
         {/* Right Column: Live Instructor Arrivals & Critical Alerts */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Instructor Arrivals & Missing Check-ins */}
           <section
             aria-labelledby="arrivals-heading"
             className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden"
@@ -287,50 +338,65 @@ export const AdminDashboardView: React.FC = () => {
             </div>
 
             <div className="divide-y divide-slate-200 dark:divide-slate-800">
-              {instructors.map((inst) => {
-                const chk = todayCheckins.find((c) => c.instructorId === inst.id);
-                return (
-                  <div
-                    key={inst.id}
-                    className="px-6 py-3.5 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-white">
-                        {t(inst.fullNameEn, inst.fullNameAr)}
-                      </p>
-                      <p className="text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
-                        {chk
-                          ? `${new Date(chk.serverTimestamp).toISOString().slice(11, 16)} UTC · ${chk.distanceFromVenueMeters}m · ${chk.selfieSizeKb}KB`
-                          : t('No GPS/Selfie check-in recorded yet today', 'لم يسجل حضور اليوم بعد')}
-                      </p>
-                    </div>
+              {campInstructors.length === 0 ? (
+                <p className="px-6 py-6 text-xs text-slate-500 text-center">
+                  {t('No instructors assigned to this camp yet.', 'لم يتم تعيين محاضرين لهذا المعسكر بعد.')}
+                </p>
+              ) : (
+                campInstructors.map((inst) => {
+                  const chk = todayCheckins.find((c) => c.instructorId === inst.id);
+                  return (
+                    <div
+                      key={inst.id}
+                      className="px-6 py-3.5 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-white">
+                          {t(inst.fullNameEn, inst.fullNameAr)}
+                        </p>
+                        <p className="text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
+                          {chk
+                            ? `${new Date(chk.serverTimestamp).toISOString().slice(11, 16)} UTC · ${chk.distanceFromVenueMeters}m · ${chk.selfieSizeKb}KB`
+                            : t('No GPS/Selfie check-in recorded yet today', 'لم يسجل حضور اليوم بعد')}
+                        </p>
+                      </div>
 
-                    <div className="shrink-0 text-right">
-                      {!chk && (
-                        <span className="text-slate-500 dark:text-slate-400 font-medium">
-                          {t('Not Checked In', 'لم يصل بعد')}
-                        </span>
-                      )}
-                      {chk && chk.status === CheckinStatus.VERIFIED && (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>{t('Verified', 'موثق')}</span>
-                        </span>
-                      )}
-                      {chk && chk.status === CheckinStatus.LATE_FIRST_LECTURE && (
-                        <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
-                          <AlertCircle className="w-3.5 h-3.5" />
-                          <span>{t(`Late (${chk.minutesAfterFirstLecture}m)`, `متأخر (${chk.minutesAfterFirstLecture}د)`)}</span>
-                        </span>
-                      )}
+                      <div className="shrink-0 text-right">
+                        {!chk && (
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">
+                            {t('Not Checked In', 'لم يصل بعد')}
+                          </span>
+                        )}
+                        {chk &&
+                          (chk.status === CheckinStatus.VERIFIED ||
+                            chk.status === CheckinStatus.EXCEPTION_APPROVED) && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>
+                                {chk.status === CheckinStatus.EXCEPTION_APPROVED
+                                  ? t('Exception Approved', 'استثناء معتمد')
+                                  : t('Verified', 'موثق')}
+                              </span>
+                            </span>
+                          )}
+                        {chk &&
+                          (chk.status === CheckinStatus.LATE_FIRST_LECTURE ||
+                            chk.status === CheckinStatus.EXCEPTION_PENDING ||
+                            chk.status === CheckinStatus.OUTSIDE_GEOFENCE ||
+                            chk.status === CheckinStatus.EXCEPTION_REJECTED) && (
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              <span>{chk.status}</span>
+                            </span>
+                          )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </section>
 
-          {/* Critical Alerts & Quick Actions */}
           <section
             aria-labelledby="alerts-heading"
             className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
@@ -340,12 +406,39 @@ export const AdminDashboardView: React.FC = () => {
                 {t('Action Required & Reviews', 'إجراءات ومراجعات مطلوبة')}
               </h2>
               <span className="text-xs font-mono tabular-nums text-amber-600 dark:text-amber-400 font-semibold">
-                {pendingRequests.length + pendingReviewEntitlements.length}{' '}
+                {pendingRequests.length +
+                  pendingReviewEntitlements.length +
+                  pendingExceptions.length}{' '}
                 {t('Items', 'عناصر')}
               </span>
             </div>
 
             <div className="space-y-3 text-xs">
+              {pendingExceptions.map((ex) => {
+                const inst = instructors.find((i) => i.id === ex.instructorId);
+                return (
+                  <div
+                    key={ex.id}
+                    className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 flex items-start justify-between gap-3"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {t('Check-in Exception', 'طلب استثناء حضور')} ·{' '}
+                        {inst ? t(inst.fullNameEn, inst.fullNameAr) : ex.instructorId}
+                      </p>
+                      <p className="text-slate-600 dark:text-slate-400 mt-0.5">{ex.reason}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAdminRoute('attendance')}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0 cursor-pointer"
+                    >
+                      {t('Review', 'مراجعة')}
+                    </button>
+                  </div>
+                );
+              })}
+
               {pendingReviewEntitlements.map((ent) => {
                 const inst = instructors.find((i) => i.id === ent.instructorId);
                 return (
@@ -391,6 +484,15 @@ export const AdminDashboardView: React.FC = () => {
                   </button>
                 </div>
               ))}
+
+              {pendingExceptions.length +
+                pendingReviewEntitlements.length +
+                pendingRequests.length ===
+                0 && (
+                <p className="text-slate-500 py-3 text-center">
+                  {t('All operational queues and reviews are up to date.', 'لا توجد مراجعات أو طلبات معلقة.')}
+                </p>
+              )}
             </div>
           </section>
         </div>

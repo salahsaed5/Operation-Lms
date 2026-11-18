@@ -35,7 +35,20 @@ import {
 } from './pages/instructor/InstructorPortalViews';
 
 const AppRouter: React.FC = () => {
-  const { auth, adminRoute, instructorRoute } = useApp();
+  const { auth, isInitializingSession, adminRoute, instructorRoute, t } = useApp();
+
+  if (isInitializingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6">
+        <div className="text-center space-y-2">
+          <p className="text-sm font-bold tracking-tight">CITS Camp Operations</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('Verifying secure Supabase session & RLS context...', 'جاري التحقق من الجلسة الآمنة وصلاحيات RLS...')}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (
     !auth.isAuthenticated ||

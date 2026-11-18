@@ -15,8 +15,66 @@ import {
   OfflineSyncState,
   Profile,
   Student,
+  StudentTransfer,
   UserRole,
 } from '../types/database';
+
+/**
+ * Compute ISO YYYY-MM-DD date for a 1-indexed camp day from camp.startDate
+ */
+export function calculateCampDayDate(startDateIso: string, campDay: number): string {
+  const safeDay = Math.max(1, Math.floor(campDay || 1));
+  const parsed = new Date(`${startDateIso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + (safeDay - 1));
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Resolve historical student origin group on a given camp_day using student_transfers timeline.
+ */
+export function resolveStudentOriginGroupForDay(params: {
+  student: Pick<Student, 'id' | 'campId' | 'groupId'>;
+  transfers: StudentTransfer[];
+  campDay: number;
+}): string {
+  const scoped = params.transfers.filter(
+    (t) => t.campId === params.student.campId && t.studentId === params.student.id
+  );
+  if (scoped.length === 0) {
+    return params.student.groupId;
+  }
+
+  const onOrBefore = scoped
+    .filter((t) => t.effectiveCampDay <= params.campDay)
+    .sort((a, b) => {
+      if (a.effectiveCampDay !== b.effectiveCampDay) {
+        return b.effectiveCampDay - a.effectiveCampDay;
+      }
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+
+  if (onOrBefore.length > 0) {
+    return onOrBefore[0].toGroupId;
+  }
+
+  const strictlyAfter = scoped
+    .filter((t) => t.effectiveCampDay > params.campDay)
+    .sort((a, b) => {
+      if (a.effectiveCampDay !== b.effectiveCampDay) {
+        return a.effectiveCampDay - b.effectiveCampDay;
+      }
+      return a.createdAt.localeCompare(b.createdAt);
+    });
+
+  if (strictlyAfter.length > 0) {
+    return strictlyAfter[0].fromGroupId;
+  }
+
+  return params.student.groupId;
+}
 
 /**
  * 1. Enforce Maximum Two Admin Accounts & Concurrent Creation Serialization
@@ -880,16 +938,19 @@ export function evaluateRlsPolicy(
         };
       }
       if (target.operation === 'INSERT' || target.operation === 'UPDATE') {
-        if (target.sheetStatus === AttendanceSheetStatus.LOCKED) {
+        if (
+          target.sheetStatus === AttendanceSheetStatus.SUBMITTED ||
+          target.sheetStatus === AttendanceSheetStatus.LOCKED
+        ) {
           return {
             allowed: false,
-            reason: 'Instructors cannot modify locked attendance sheets.',
+            reason: 'Instructors cannot modify submitted or locked attendance sheets.',
           };
         }
         const own = Boolean(instId && target.ownerInstructorId === instId);
         return {
           allowed: own,
-          reason: own ? 'Instructor updating own attendance sheet.' : 'Denied modifying other instructor attendance.',
+          reason: own ? 'Instructor updating own draft attendance sheet.' : 'Denied modifying other instructor attendance.',
         };
       }
       return { allowed: false, reason: 'Instructors cannot DELETE attendance sheets or records.' };

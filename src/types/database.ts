@@ -1056,6 +1056,9 @@ export interface Database {
         Relationships: [];
       };
     };
+    Views: {
+      [_ in never]: never;
+    };
     Functions: {
       is_cits_admin: {
         Args: Record<string, never>;
@@ -1098,6 +1101,79 @@ export interface Database {
           status: DbEntitlementStatus;
           entitlement_amount_egp: number;
         };
+      };
+      submit_daily_checkin_tx: {
+        Args: {
+          p_camp_id: string;
+          p_latitude: number;
+          p_longitude: number;
+          p_gps_accuracy_meters: number;
+          p_selfie_storage_path: string;
+          p_selfie_size_kb: number;
+          p_exception_reason?: string | null;
+        };
+        Returns: {
+          checkin_id: string;
+          camp_day: number;
+          distance_from_venue_meters: number;
+          within_geofence: boolean;
+          arrived_late_first_lecture: boolean;
+          minutes_after_first_lecture: number;
+          status: DbCheckinStatus;
+        };
+      };
+      acknowledge_lecture_tx: {
+        Args: { p_lecture_id: string };
+        Returns: { lecture_id: string; instructor_acknowledged_at: string };
+      };
+      transfer_student_tx: {
+        Args: {
+          p_camp_id: string;
+          p_student_id: string;
+          p_to_group_id: string;
+          p_effective_camp_day: number;
+          p_reason: string;
+        };
+        Returns: {
+          transfer_id: string;
+          student_id: string;
+          from_group_id: string;
+          to_group_id: string;
+          effective_camp_day: number;
+        };
+      };
+      batch_import_students_tx: {
+        Args: {
+          p_camp_id: string;
+          p_group_id: string;
+          p_mode: string;
+          p_rows: Json;
+        };
+        Returns: { inserted: number; updated: number };
+      };
+      review_checkin_exception_tx: {
+        Args: {
+          p_exception_id: string;
+          p_decision: DbRequestStatus;
+          p_review_note: string;
+        };
+        Returns: {
+          exception_id: string;
+          status: DbRequestStatus;
+          checkin_status: DbCheckinStatus;
+        };
+      };
+      archive_camp_tx: {
+        Args: { p_camp_id: string };
+        Returns: { camp_id: string; status: DbCampStatus; purged_paths: string[] };
+      };
+      complete_password_change_tx: {
+        Args: Record<string, never>;
+        Returns: { ok: boolean; profile_id: string; must_change_password: boolean };
+      };
+      record_admin_totp_verified_tx: {
+        Args: Record<string, never>;
+        Returns: { ok: boolean; profile_id: string; totp_verified_at: string };
       };
     };
     Enums: {
@@ -1425,6 +1501,43 @@ export interface SurveyLinkItem {
   url: string;
   responsesCount: number;
   averageScore: number;
+}
+
+export interface StudentTransfer {
+  id: string;
+  campId: string;
+  studentId: string;
+  fromGroupId: string;
+  toGroupId: string;
+  effectiveCampDay: number;
+  reason: string;
+  transferredBy: string | null;
+  createdAt: string;
+}
+
+export interface CheckinExceptionItem {
+  id: string;
+  checkinId: string | null;
+  campId: string;
+  instructorId: string;
+  campDay: number;
+  reason: string;
+  status: RequestStatus;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  recipientProfileId: string;
+  titleEn: string;
+  titleAr: string;
+  bodyEn: string;
+  bodyAr: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface AuditLogEntry {

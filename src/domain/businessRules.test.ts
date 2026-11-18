@@ -16,6 +16,8 @@ import {
   validateStudentBatchImport,
   evaluateRlsPolicy,
   createValidatedAuditLogEntry,
+  calculateCampDayDate,
+  resolveStudentOriginGroupForDay,
 } from './businessRules';
 import {
   AttendanceMark,
@@ -844,6 +846,250 @@ test('16. Migration SQL verification: 0001 and 0002 define all 29 tables, RLS po
   }
   assert.ok(verifySql.includes('FROM _cits_verification_report'));
 });
+
+test('17. Camp day date calculation & historical student transfer origin-group resolution', () => {
+  // Camp day date mapping
+  assert.equal(calculateCampDayDate('2026-11-13', 1), '2026-11-13');
+  assert.equal(calculateCampDayDate('2026-11-13', 4), '2026-11-16');
+  assert.equal(calculateCampDayDate('2026-11-13', 0), '2026-11-13');
+  assert.equal(calculateCampDayDate('2026-11-13', -3), '2026-11-13');
+
+  // Chained historical transfers across camp days:
+  // Student is currently in G3 after G1 -> G2 (Day 3) and G2 -> G3 (Day 6)
+  const student = { id: 'stu-1', campId: 'camp-1', groupId: 'G3' };
+  const transfers = [
+    {
+      id: 'tr-1',
+      campId: 'camp-1',
+      studentId: 'stu-1',
+      fromGroupId: 'G1',
+      toGroupId: 'G2',
+      effectiveCampDay: 3,
+      reason: 'Skill balance',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-15T08:00:00Z',
+    },
+    {
+      id: 'tr-2',
+      campId: 'camp-1',
+      studentId: 'stu-1',
+      fromGroupId: 'G2',
+      toGroupId: 'G3',
+      effectiveCampDay: 6,
+      reason: 'Advanced track',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-18T08:00:00Z',
+    },
+  ];
+
+  // Days 1-2: before first transfer -> G1
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 1 }), 'G1');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 2 }), 'G1');
+  // Days 3-5: between transfer 1 and transfer 2 -> G2
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 3 }), 'G2');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 5 }), 'G2');
+  // Days 6+: after transfer 2 -> G3
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 6 }), 'G3');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 10 }), 'G3');
+
+  // Student with no transfers defaults to current groupId
+  assert.equal(
+    resolveStudentOriginGroupForDay({ student, transfers: [], campDay: 2 }),
+    'G3'
+  );
+});
+
+test('18. Hardened RLS policy: submitted and locked attendance sheets/records are immutable to instructors but editable by Admin', () => {
+  const instActor = {
+    role: 'instructor' as const,
+    profileId: 'prof-inst-1',
+    instructorId: 'inst-1',
+  };
+  const adminActor = {
+    role: 'admin' as const,
+    profileId: 'prof-admin-1',
+  };
+
+  // Draft allowed for owning instructor
+  assert.equal(
+    evaluateRlsPolicy(instActor, {
+      table: 'attendance_sheets',
+      operation: 'UPDATE',
+      ownerInstructorId: 'inst-1',
+      sheetStatus: AttendanceSheetStatus.DRAFT,
+    }).allowed,
+    true
+  );
+  assert.equal(
+    evaluateRlsPolicy(instActor, {
+      table: 'attendance_records',
+      operation: 'INSERT',
+      ownerInstructorId: 'inst-1',
+      sheetStatus: AttendanceSheetStatus.DRAFT,
+    }).allowed,
+    true
+  );
+
+  // Submitted and Locked denied for instructor
+  for (const status of [AttendanceSheetStatus.SUBMITTED, AttendanceSheetStatus.LOCKED]) {
+    assert.equal(
+      evaluateRlsPolicy(instActor, {
+        table: 'attendance_sheets',
+        operation: 'UPDATE',
+        ownerInstructorId: 'inst-1',
+        sheetStatus: status,
+      }).allowed,
+      false
+    );
+    assert.equal(
+      evaluateRlsPolicy(instActor, {
+        table: 'attendance_records',
+        operation: 'INSERT',
+        ownerInstructorId: 'inst-1',
+        sheetStatus: status,
+      }).allowed,
+      false
+    );
+    assert.equal(
+      evaluateRlsPolicy(instActor, {
+        table: 'attendance_records',
+        operation: 'UPDATE',
+        ownerInstructorId: 'inst-1',
+        sheetStatus: status,
+      }).allowed,
+      false
+    );
+  }
+
+  // Admin can modify attendance records/sheets across statuses
+  assert.equal(
+    evaluateRlsPolicy(adminActor, {
+      table: 'attendance_records',
+      operation: 'UPDATE',
+      sheetStatus: AttendanceSheetStatus.SUBMITTED,
+    }).allowed,
+    true
+  );
+});
+
+test('19. Migration 0004 security hardening verification (non-destructive, search_path, triggers, RPCs, grants)', () => {
+  const mig4Path = path.resolve(
+    process.cwd(),
+    'supabase/migrations/0004_phase2_comprehensive_security_hardening.sql'
+  );
+  const mig4 = fs.readFileSync(mig4Path, 'utf8');
+
+  // Extract executable body before rollback comments
+  const executableSql = mig4.split('-- ROLLBACK CONSIDERATIONS')[0];
+
+  assert.ok(executableSql.includes('BEGIN;'));
+  assert.ok(executableSql.includes('COMMIT;'));
+  assert.equal(/ROLLBACK\s*;/i.test(executableSql), false);
+
+  // Zero destructive table operations or broad USING (true) or silent error swallowing
+  assert.equal(/DROP\s+TABLE/i.test(executableSql), false);
+  assert.equal(/TRUNCATE\s+/i.test(executableSql), false);
+  assert.equal(/DELETE\s+FROM/i.test(executableSql), false);
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(executableSql), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(executableSql), false);
+
+  // Required functions & SECURITY DEFINER hardening
+  const expectedFunctions = [
+    'haversine_distance_meters',
+    'resolve_student_group_for_day',
+    'enforce_lecture_update_security',
+    'enforce_attendance_sheet_security',
+    'validate_attendance_record_integrity',
+    'submit_attendance_sheet_tx',
+    'enforce_daily_checkin_security',
+    'submit_daily_checkin_tx',
+    'enforce_notification_update_security',
+    'enforce_audit_log_integrity',
+    'acknowledge_lecture_tx',
+    'transfer_student_tx',
+    'batch_import_students_tx',
+    'review_checkin_exception_tx',
+    'archive_camp_tx',
+    'complete_password_change_tx',
+    'record_admin_totp_verified_tx',
+  ];
+
+  for (const fn of expectedFunctions) {
+    assert.ok(executableSql.includes(fn), `Missing expected function ${fn} in 0004`);
+  }
+
+  // Every function header in 0004 must pin search_path = public, pg_temp
+  const funcCreateCount = (executableSql.match(/CREATE\s+OR\s+REPLACE\s+FUNCTION/gi) || []).length;
+  const searchPathCount = (executableSql.match(/SET\s+search_path\s*=\s*public,\s*pg_temp/gi) || []).length;
+  assert.equal(
+    searchPathCount,
+    funcCreateCount,
+    `Expected search_path on all ${funcCreateCount} functions in 0004, found ${searchPathCount}`
+  );
+
+  // Archived camp read-only triggers attached to all 13 extended child tables
+  const extendedChildTables = [
+    'camp_settings',
+    'camp_instructors',
+    'instructor_rates',
+    'group_instructors',
+    'student_transfers',
+    'daily_checkins',
+    'checkin_exceptions',
+    'instructor_requests',
+    'issues',
+    'daily_checklists',
+    'survey_links',
+    'survey_results',
+    'instructor_evaluations',
+  ];
+
+  for (const tbl of extendedChildTables) {
+    assert.ok(
+      executableSql.includes(`trg_readonly_archived_${tbl}`),
+      `Missing archived camp trigger on child table ${tbl}`
+    );
+  }
+});
+
+test('20. Verification suite 0004 & 0003 allowlist compatibility checks', () => {
+  const verify4Path = path.resolve(
+    process.cwd(),
+    'supabase/verification/0004_phase2_hardening_verification.sql'
+  );
+  const verify4 = fs.readFileSync(verify4Path, 'utf8');
+
+  assert.ok(verify4.includes('BEGIN;'));
+  assert.ok(verify4.includes('ROLLBACK;'));
+  assert.equal(/\bCOMMIT\s*;/i.test(verify4), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(verify4), false);
+
+  for (const h of ['H1', 'H2', 'H3', 'H4', 'H5', 'H6']) {
+    assert.ok(verify4.includes(h), `Missing ${h} verification test in 0004 suite`);
+  }
+
+  // Ensure 0003 remote verification allowlist includes 0004 trigger & helper signatures
+  const verify3Path = path.resolve(
+    process.cwd(),
+    'supabase/verification/0003_remote_verification_and_rls_test_suite.sql'
+  );
+  const verify3 = fs.readFileSync(verify3Path, 'utf8');
+
+  for (const sig of [
+    'enforce_lecture_update_security',
+    'enforce_attendance_sheet_security',
+    'enforce_daily_checkin_security',
+    'enforce_notification_update_security',
+    'haversine_distance_meters',
+    'resolve_student_group_for_day',
+    'submit_daily_checkin_tx',
+    'transfer_student_tx',
+    'archive_camp_tx',
+  ]) {
+    assert.ok(verify3.includes(sig), `Missing 0004 symbol '${sig}' in 0003 Pre-Flight allowlist`);
+  }
+});
+
 
 
 

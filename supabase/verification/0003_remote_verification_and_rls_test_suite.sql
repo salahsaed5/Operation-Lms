@@ -152,7 +152,11 @@ DECLARE
     'prevent_mutation_on_archived_camp',
     'validate_lecture_schedule_rules',
     'validate_attendance_record_integrity',
-    'validate_lecture_entitlement_integrity'
+    'validate_lecture_entitlement_integrity',
+    'enforce_lecture_update_security',
+    'enforce_attendance_sheet_security',
+    'enforce_daily_checkin_security',
+    'enforce_notification_update_security'
   ];
 
   v_expected_trigger_regprocs CONSTANT TEXT[] := ARRAY[
@@ -163,7 +167,11 @@ DECLARE
     'public.prevent_mutation_on_archived_camp()',
     'public.validate_lecture_schedule_rules()',
     'public.validate_attendance_record_integrity()',
-    'public.validate_lecture_entitlement_integrity()'
+    'public.validate_lecture_entitlement_integrity()',
+    'public.enforce_lecture_update_security()',
+    'public.enforce_attendance_sheet_security()',
+    'public.enforce_daily_checkin_security()',
+    'public.enforce_notification_update_security()'
   ];
 
   -- Expected helper/RPC function names and exact schema-qualified signatures in public schema.
@@ -177,7 +185,17 @@ DECLARE
     'is_instructor_assigned_to_group',
     'submit_attendance_sheet_tx',
     'admin_override_entitlement_tx',
-    'bootstrap_cits_admin_account'
+    'bootstrap_cits_admin_account',
+    'haversine_distance_meters',
+    'resolve_student_group_for_day',
+    'submit_daily_checkin_tx',
+    'acknowledge_lecture_tx',
+    'transfer_student_tx',
+    'batch_import_students_tx',
+    'review_checkin_exception_tx',
+    'archive_camp_tx',
+    'complete_password_change_tx',
+    'record_admin_totp_verified_tx'
   ];
 
   v_expected_helper_regprocs CONSTANT TEXT[] := ARRAY[
@@ -190,7 +208,17 @@ DECLARE
     'public.is_instructor_assigned_to_group(uuid)',
     'public.submit_attendance_sheet_tx(uuid)',
     'public.admin_override_entitlement_tx(uuid,public.entitlement_status,text)',
-    'public.bootstrap_cits_admin_account(uuid,text,text,text,smallint)'
+    'public.bootstrap_cits_admin_account(uuid,text,text,text,smallint)',
+    'public.haversine_distance_meters(double precision,double precision,double precision,double precision)',
+    'public.resolve_student_group_for_day(uuid,uuid,integer)',
+    'public.submit_daily_checkin_tx(uuid,double precision,double precision,double precision,text,integer,text)',
+    'public.acknowledge_lecture_tx(uuid)',
+    'public.transfer_student_tx(uuid,uuid,uuid,integer,text)',
+    'public.batch_import_students_tx(uuid,uuid,text,jsonb)',
+    'public.review_checkin_exception_tx(uuid,public.request_status,text)',
+    'public.archive_camp_tx(uuid)',
+    'public.complete_password_change_tx()',
+    'public.record_admin_totp_verified_tx()'
   ];
 
   -- Safe built-in / SQL syntactic tokens that may appear followed by '(' inside PL/pgSQL bodies
@@ -205,7 +233,10 @@ DECLARE
     'char_length', 'character_length', 'length', 'regexp_replace', 'regexp_matches',
     'replace', 'split_part', 'left', 'right', 'concat', 'concat_ws', 'format',
     'count', 'min', 'max', 'sum', 'avg', 'array_agg', 'string_agg', 'bool_and', 'bool_or',
+    'array_append', 'array_length', 'extract', 'epoch', 'floor', 'round',
+    'radians', 'sin', 'cos', 'sqrt', 'atan2', 'power',
     'jsonb_build_object', 'jsonb_build_array', 'to_jsonb', 'jsonb_typeof',
+    'jsonb_array_elements', 'jsonb_array_length',
     'now', 'clock_timestamp', 'transaction_timestamp', 'statement_timestamp', 'timeofday',
     'gen_random_uuid', 'uuid_generate_v4', 'hashtext', 'pg_advisory_xact_lock',
     'row_security_active', 'to_regprocedure', 'has_function_privilege',

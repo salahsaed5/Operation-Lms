@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   Tent,
@@ -16,6 +16,8 @@ import {
   LogOut,
   Smartphone,
   FileCode2,
+  Bell,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { AdminRouteId, UserRole } from '../types/database';
@@ -46,6 +48,12 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     setAdminRoute,
     activeCamp,
     auth,
+    isSupabaseMode,
+    isLoadingData,
+    dataError,
+    refreshOperationalData,
+    notifications,
+    markNotificationRead,
     switchDemoIdentity,
     signOut,
     lang,
@@ -55,6 +63,13 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     setArchitectureDrawerOpen,
     t,
   } = useApp();
+
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+  const myNotifications = notifications.filter(
+    (n) => n.recipientProfileId === auth.currentProfile.id
+  );
+  const unreadCount = myNotifications.filter((n) => !n.isRead).length;
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
@@ -132,7 +147,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
             className="px-3 sm:px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer"
           >
             <FileCode2 className="w-3.5 h-3.5" />
-            <span>{t('Phase 1 Architecture & SQL', 'مخطط المرحلة الأولى و SQL')}</span>
+            <span>{t('Architecture & SQL', 'مخطط النظام و SQL')}</span>
           </button>
         </div>
       </header>
@@ -146,15 +161,26 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         >
           <div className="space-y-1">
             <div className="px-3 py-2 mb-2">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t('Active Camp', 'المعسكر النشط')} ·{' '}
-                <span className="font-mono tabular-nums">
-                  {t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`, `اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`)}
-                </span>
-              </p>
-              <p className="text-xs font-semibold text-slate-900 dark:text-white truncate mt-0.5">
-                {t(activeCamp.nameEn, activeCamp.nameAr)}
-              </p>
+              {activeCamp ? (
+                <>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t('Active Camp', 'المعسكر النشط')} ·{' '}
+                    <span className="font-mono tabular-nums">
+                      {t(
+                        `Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,
+                        `اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`
+                      )}
+                    </span>
+                  </p>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-white truncate mt-0.5">
+                    {t(activeCamp.nameEn, activeCamp.nameAr)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                  {t('No Active Camp Configured', 'لا يوجد معسكر نشط حالياً')}
+                </p>
+              )}
             </div>
 
             {ADMIN_NAV_ITEMS.map((item) => {
@@ -178,7 +204,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
             })}
           </div>
 
-          {/* Account & Portal Switcher in Sidebar Footer */}
+          {/* Account & Controls in Sidebar Footer */}
           <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
             <div className="px-2">
               <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
@@ -189,14 +215,16 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => switchDemoIdentity(UserRole.INSTRUCTOR, 'inst-1')}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/70 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-              <span>{t('Switch to Instructor Portal', 'الانتقال لبوابة المحاضر')}</span>
-            </button>
+            {!isSupabaseMode && (
+              <button
+                type="button"
+                onClick={() => switchDemoIdentity(UserRole.INSTRUCTOR, 'inst-1')}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/70 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-blue-500" />
+                <span>{t('Switch to Instructor Portal', 'الانتقال لبوابة المحاضر')}</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-1.5">
               <button
@@ -217,7 +245,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
               </button>
               <button
                 type="button"
-                onClick={signOut}
+                onClick={() => signOut()}
                 aria-label={t('Sign out from sidebar', 'تسجيل الخروج')}
                 className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 transition-colors cursor-pointer"
               >
@@ -230,21 +258,36 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         {/* Main Content Viewport */}
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Workspace Sub-Toolbar */}
-          <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-800/80 bg-white/40 dark:bg-slate-900/30 flex flex-wrap items-center justify-between gap-3">
+          <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-800/80 bg-white/40 dark:bg-slate-900/30 flex flex-wrap items-center justify-between gap-3 relative">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
-              <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                {t(activeCamp.nameEn, activeCamp.nameAr)}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="font-mono tabular-nums shrink-0">
-                {t(`Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`, `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`)}
-              </span>
-              <span aria-hidden="true" className="hidden sm:inline">·</span>
-              <span className="hidden sm:inline shrink-0">{t('Geofence 100m', 'النطاق الجغرافي 100م')}</span>
+              {activeCamp ? (
+                <>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                    {t(activeCamp.nameEn, activeCamp.nameAr)}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono tabular-nums shrink-0">
+                    {t(
+                      `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
+                      `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
+                    )}
+                  </span>
+                  <span aria-hidden="true" className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline shrink-0">
+                    {t(
+                      `Geofence ${activeCamp.settings.geofenceRadiusMeters}m`,
+                      `النطاق الجغرافي ${activeCamp.settings.geofenceRadiusMeters}م`
+                    )}
+                  </span>
+                </>
+              ) : (
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  {t('Create or activate a camp in Camps module', 'أنشئ أو فعّل معسكراً من قسم المعسكرات')}
+                </span>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Mobile/Tablet Module Selector */}
               <select
                 aria-label={t('Select Admin Module', 'اختر وحدة الإدارة')}
                 value={adminRoute}
@@ -258,14 +301,37 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                 ))}
               </select>
 
+              {isSupabaseMode && (
+                <button
+                  type="button"
+                  disabled={isLoadingData}
+                  onClick={() => refreshOperationalData()}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{t('Refresh', 'تحديث')}</span>
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => switchDemoIdentity(UserRole.INSTRUCTOR, 'inst-1')}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                onClick={() => setShowNotifPanel((prev) => !prev)}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
               >
-                <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-                <span>{t('Open Instructor View', 'فتح واجهة المحاضر')}</span>
+                <Bell className="w-3.5 h-3.5 text-blue-500" />
+                <span className="font-mono tabular-nums">{unreadCount}</span>
               </button>
+
+              {!isSupabaseMode && (
+                <button
+                  type="button"
+                  onClick={() => switchDemoIdentity(UserRole.INSTRUCTOR, 'inst-1')}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{t('Open Instructor View', 'فتح واجهة المحاضر')}</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -287,13 +353,69 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
               <button
                 type="button"
-                onClick={signOut}
+                onClick={() => signOut()}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-red-600 whitespace-nowrap shrink-0 cursor-pointer"
               >
                 {t('Sign Out', 'خروج')}
               </button>
             </div>
+
+            {/* Notifications Dropdown */}
+            {showNotifPanel && (
+              <div className="absolute right-4 sm:right-6 top-full mt-2 w-80 max-w-[90vw] z-40 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span>{t('Notifications', 'الإشعارات')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowNotifPanel(false)}
+                    className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    {t('Close', 'إغلاق')}
+                  </button>
+                </div>
+                {myNotifications.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">
+                    {t('No notifications recorded.', 'لا توجد إشعارات حالياً.')}
+                  </p>
+                ) : (
+                  <div className="divide-y divide-slate-200 dark:divide-slate-800 max-h-64 overflow-y-auto text-xs">
+                    {myNotifications.map((n) => (
+                      <div key={n.id} className="py-2.5 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">
+                            {t(n.titleEn, n.titleAr)}
+                          </p>
+                          <p className="text-slate-500 mt-0.5">{t(n.bodyEn, n.bodyAr)}</p>
+                        </div>
+                        {!n.isRead && (
+                          <button
+                            type="button"
+                            onClick={() => markNotificationRead(n.id)}
+                            className="text-blue-600 dark:text-blue-400 font-semibold shrink-0 cursor-pointer"
+                          >
+                            {t('Read', 'قرئت')}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
+          {dataError && (
+            <div className="mx-4 sm:mx-6 mt-4 p-3.5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-xs text-red-700 dark:text-red-300 flex items-center justify-between gap-3">
+              <span>{dataError}</span>
+              <button
+                type="button"
+                onClick={() => refreshOperationalData()}
+                className="px-3 py-1 rounded-lg bg-red-600 text-white font-semibold cursor-pointer"
+              >
+                {t('Retry', 'إعادة المحاولة')}
+              </button>
+            </div>
+          )}
 
           <main className="p-4 sm:p-6 flex-1 min-w-0">{children}</main>
         </div>
