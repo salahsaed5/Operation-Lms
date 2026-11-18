@@ -157,7 +157,9 @@ DECLARE
     'enforce_attendance_sheet_security',
     'enforce_daily_checkin_security',
     'enforce_checkin_exception_security',
-    'enforce_notification_update_security'
+    'enforce_notification_update_security',
+    'enforce_instructor_request_security',
+    'enforce_issue_security'
   ];
 
   v_expected_trigger_regprocs CONSTANT TEXT[] := ARRAY[
@@ -173,12 +175,15 @@ DECLARE
     'public.enforce_attendance_sheet_security()',
     'public.enforce_daily_checkin_security()',
     'public.enforce_checkin_exception_security()',
-    'public.enforce_notification_update_security()'
+    'public.enforce_notification_update_security()',
+    'public.enforce_instructor_request_security()',
+    'public.enforce_issue_security()'
   ];
 
   -- Expected helper/RPC function names and exact schema-qualified signatures in public schema.
   v_allowed_cits_helper_funcs CONSTANT TEXT[] := ARRAY[
     'is_cits_admin',
+    'is_active_cits_user',
     'current_instructor_id',
     'resolve_login_identifier',
     'append_audit_log_internal',
@@ -187,6 +192,7 @@ DECLARE
     'is_instructor_assigned_to_group',
     'is_lecture_active_instructor',
     'submit_attendance_sheet_tx',
+    'admin_correct_attendance_tx',
     'admin_override_entitlement_tx',
     'bootstrap_cits_admin_account',
     'haversine_distance_meters',
@@ -203,6 +209,7 @@ DECLARE
 
   v_expected_helper_regprocs CONSTANT TEXT[] := ARRAY[
     'public.is_cits_admin()',
+    'public.is_active_cits_user()',
     'public.current_instructor_id()',
     'public.resolve_login_identifier(text)',
     'public.append_audit_log_internal(uuid,text,text,text,jsonb,jsonb,text)',
@@ -211,6 +218,7 @@ DECLARE
     'public.is_instructor_assigned_to_group(uuid)',
     'public.is_lecture_active_instructor(uuid)',
     'public.submit_attendance_sheet_tx(uuid)',
+    'public.admin_correct_attendance_tx(uuid,uuid,public.attendance_mark,text)',
     'public.admin_override_entitlement_tx(uuid,public.entitlement_status,text)',
     'public.bootstrap_cits_admin_account(uuid,text,text,text,smallint)',
     'public.haversine_distance_meters(double precision,double precision,double precision,double precision)',
@@ -1419,6 +1427,7 @@ BEGIN
         SELECT to_regprocedure(sig)::oid
         FROM unnest(ARRAY[
           'public.submit_attendance_sheet_tx(uuid)',
+          'public.admin_correct_attendance_tx(uuid,uuid,public.attendance_mark,text)',
           'public.admin_override_entitlement_tx(uuid,public.entitlement_status,text)',
           'public.bootstrap_cits_admin_account(uuid,text,text,text,smallint)',
           'public.is_instructor_assigned_to_camp(uuid)',

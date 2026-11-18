@@ -65,6 +65,7 @@ import {
   resolveStudentOriginGroupForDay,
   validateCampActivation,
   validateCampNotArchived,
+  validateGpsCoordinates,
   validateLectureScheduleSlot,
   validateStudentBatchImport,
 } from '../domain/businessRules';
@@ -85,6 +86,7 @@ import {
   createIssueInDb,
   createLectureInDb,
   createStudentInDb,
+  deleteCheckinSelfiePath,
   enrollAdminTotpFactor,
   fetchOperationalSnapshot,
   loadAuthenticatedUserContext,
@@ -605,8 +607,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT' || !session?.user) {
         setSupabaseCtx(null);
         setAuth({
           isAuthenticated: false,
@@ -618,6 +621,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           mfaNeedsEnrollment: false,
           mfaEnrollment: null,
         });
+        return;
+      }
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        loadAuthenticatedUserContext(session.user.id)
+          .then((ctx) => {
+            if (mounted) return applySupabaseAuthContext(ctx);
+          })
+          .catch((err) => {
+            if (mounted) {
+              setDataError(
+                err instanceof Error ? err.message : 'Session synchronization failed.'
+              );
+            }
+          });
       }
     });
 
@@ -1174,6 +1191,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...input,
           campId: activeCamp.id,
           actorProfileId: auth.currentProfile.id,
+          effectiveDay: activeCamp.currentCampDay,
         });
         await refreshOperationalData();
         return { ok: true };
@@ -1468,7 +1486,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const groupStudents = students.filter(
-      (s) => s.campId === activeCamp.id && s.groupId === input.groupId && s.isActive
+      (s) =>
+        s.campId === activeCamp.id &&
+        s.isActive &&
+        resolveStudentOriginGroupForDay({
+          student: s,
+          transfers: studentTransfers,
+          campDay: input.campDay,
+        }) === input.groupId
     );
     const newSheet: AttendanceSheet = {
       id: `sheet-${newLecture.id}`,
@@ -1652,11 +1677,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const gpsCheck = validateGpsCoordinates(
+      input.latitude,
+      input.longitude,
+      input.gpsAccuracyMeters
+    );
+    if (!gpsCheck.valid) {
+      return {
+        ok: false,
+        message: gpsCheck.error || 'Invalid GPS coordinates.',
+        status: CheckinStatus.EXCEPTION_PENDING,
+      };
+    }
+
     if (isSupabaseMode) {
+      let uploadedPath: string | null = null;
       try {
-        let storagePath = `${auth.currentProfile.id}/${activeCamp.id}/day-${activeCamp.currentCampDay}-${Date.now()}.webp`;
         if (input.selfieBlob && input.selfieExt && input.selfieMimeType) {
-          storagePath = await uploadCheckinSelfie({
+          uploadedPath = await uploadCheckinSelfie({
             userId: auth.currentProfile.id,
             campId: activeCamp.id,
             campDay: activeCamp.currentCampDay,
@@ -1680,7 +1718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           latitude: input.latitude,
           longitude: input.longitude,
           gpsAccuracyMeters: input.gpsAccuracyMeters,
-          selfieStoragePath: storagePath,
+          selfieStoragePath: uploadedPath,
           selfieSizeKb: input.selfieSizeKb,
           exceptionReason: input.exceptionReason,
         });
@@ -1694,6 +1732,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: res.status,
         };
       } catch (err) {
+        if (uploadedPath) {
+          await deleteCheckinSelfiePath(uploadedPath);
+        }
         return {
           ok: false,
           message: err instanceof Error ? err.message : 'Check-in failed.',
@@ -1892,7 +1933,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const syncState = OfflineSyncState.OFFLINE;
+    let syncState = OfflineSyncState.OFFLINE;
+    let dbSyncError: string | null = null;
     const idempotencyKey = existingSheet?.idempotencyKey || `idem-${activeCamp.id}-${lectureId}`;
 
     await saveOfflineAttendanceDraft({
@@ -1914,8 +1956,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           records,
           updatedBy: auth.currentProfile.id,
         });
-      } catch {
-        // Keep local IndexedDB draft cleanly when network/DB save is offline
+      } catch (err) {
+        syncState = OfflineSyncState.FAILED;
+        dbSyncError =
+          err instanceof Error
+            ? err.message
+            : 'Saved offline locally, but server draft sync failed.';
+        await saveOfflineAttendanceDraft({
+          lectureId,
+          campId: activeCamp.id,
+          instructorId: lec.substituteInstructorId || lec.instructorId,
+          idempotencyKey,
+          syncState,
+          records,
+          updatedAt: new Date().toISOString(),
+        });
       }
     }
 
@@ -1945,6 +2000,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       ];
     });
+    if (dbSyncError) {
+      return {
+        ok: false,
+        error: `Draft saved locally (Offline), server sync failed: ${dbSyncError}`,
+      };
+    }
     return { ok: true };
   };
 
@@ -2125,6 +2186,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const archiveCheck = validateCampNotArchived(activeCamp);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
+
+    const cleanNote = (input.note || '').trim();
+    if (!cleanNote) {
+      return {
+        ok: false,
+        error: 'A non-empty audit reason is required to correct submitted attendance.',
+      };
+    }
 
     const sheet = attendanceSheets.find((s) => s.id === input.sheetId);
     const lec = lectures.find((l) => l.id === input.lectureId);
@@ -2393,6 +2462,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rows,
       existingStudents: students,
       targetCampId: activeCamp.id,
+      targetGroupId: groupId,
       mode,
     });
 
@@ -2451,7 +2521,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...s,
         fullName: match.studentName,
         university: match.university || s.university,
-        groupId: groupId || s.groupId,
       };
     });
 

@@ -29,8 +29,8 @@ export const ArchitecturePlanDrawer: React.FC = () => {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {t(
-                '29 PostgreSQL entities, 0001 + 0002 migrations, full RLS policy matrix, and 15 automated security tests',
-                '29 جدولاً، ملفات الترحيل 0001 و 0002، مصفوفة صلاحيات RLS، و15 اختبار أمان آلي'
+                '29 PostgreSQL entities, 0001–0005 migrations, full RLS policy matrix, and automated domain/lexical checks',
+                '29 جدولاً، ملفات الترحيل 0001–0005، مصفوفة صلاحيات RLS، واختبارات الأمان الآلية'
               )}
             </p>
           </div>
@@ -93,42 +93,35 @@ export const ArchitecturePlanDrawer: React.FC = () => {
                   <span>{t('Phase 1 + Phase 2 Deliverable Structure', 'هيكل ملفات المرحلتين الأولى والثانية')}</span>
                 </div>
                 <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 overflow-x-auto leading-relaxed">
-{`├── supabase/migrations/
-│   ├── 0001_cits_initial_schema.sql                  # Phase 1: 29 core tables & base triggers
-│   └── 0002_phase2_security_rls_and_validation.sql   # Phase 2: Advisory locks, full 29-table RLS, RPCs
+{`├── supabase/
+│   ├── migrations/0001..0005                         # 29 tables, RLS, MFA AAL2, RPCs, hardening
+│   └── verification/0003..0005_*.sql                 # Ephemeral ROLLBACK behavioral suites + inventory
 ├── docs/
-│   └── SETUP_AND_ARCHITECTURE.md                     # Audit report, RLS matrix, status badges
+│   └── SETUP_AND_ARCHITECTURE.md                     # Audit report, staging runbook, rollback SQL
 ├── src/
 │   ├── types/database.ts                             # Database['public'] PG schema + UI domain types
 │   ├── domain/
-│   │   ├── businessRules.ts                          # Pure validation, RLS simulator & financial math
-│   │   └── businessRules.test.ts                     # 16 Automated Security & DB Integrity Tests
-│   ├── lib/supabase.ts                               # Env secret guard & connection mode detector`}
+│   │   ├── businessRules.ts                          # Validation, GPS bounds, transfers, RLS simulator
+│   │   └── businessRules.test.ts                     # Unit + SQL static/Guard 1C scanner tests
+│   └── lib/supabase.ts                               # Env secret guard & connection mode detector`}
                 </pre>
               </div>
 
               <div className="space-y-3">
                 <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                   <Shield className="w-4 h-4 text-blue-500" />
-                  <span>{t('15 Automated Security & Integrity Tests (Tested Locally)', '15 اختبار أمان وتكامل آلي (تم التحقق محلياً)')}</span>
+                  <span>{t('Verified Security & Integrity Controls (Local TS Suite)', 'ضوابط الأمان والتكامل المفحوصة محلياً')}</span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-300">
                   {[
-                    '1. Max 2 Admin accounts + concurrent lock',
-                    '2. Single active camp + archived read-only',
-                    '3. Student code unique per camp only',
-                    '4. Schedule conflict & time overlap guard',
-                    '5. Max 4 groups per instructor per day',
-                    '6. 100m geofence & 300KB selfie check-in',
-                    '7. 60-min first-lecture late rule',
-                    '8. Attendance blank -> absent + cross-group guard',
-                    '9. Offline draft idempotency & sync exclusion',
-                    '10. Frozen lecture rate financial calculation',
-                    '11. Entitlement override requires audit reason',
-                    '12. Student batch import strict & smart modes',
-                    '13. RLS isolation (Instructor A vs B + Anon deny)',
-                    '14. Immutable audit log & credential leak block',
-                    '15. VITE_ secret key exposure protection',
+                    'Max 2 Admin accounts + advisory lock + AAL2 MFA',
+                    'Single active camp + archived child table locks',
+                    'Historical 3+ & same-day student transfer resolution',
+                    'Smart Update cross-group history protection',
+                    'Schedule overlap, max groups/day & ack reset',
+                    'GPS NaN/Infinity/500m & selfie anti-traversal bounds',
+                    'Admin post-submission attendance correction RPC',
+                    'Inactive user denial + Guard 1C lexical verification',
                   ].map((item) => (
                     <div
                       key={item}
@@ -148,20 +141,20 @@ export const ArchitecturePlanDrawer: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                   <Database className="w-4 h-4 text-blue-500" />
-                  <span>0001 + 0002 Sequential PostgreSQL Migrations (29 Tables)</span>
+                  <span>0001–0005 Sequential PostgreSQL Migrations (29 Tables)</span>
                 </span>
                 <span className="text-xs text-slate-500 font-mono tabular-nums">Zero USING(true)</span>
               </div>
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2 text-xs">
                 <p className="font-semibold text-slate-900 dark:text-white">
-                  Phase 2 Hardening in 0002_phase2_security_rls_and_validation.sql:
+                  Phase 2 Hardening Across 0002, 0004 &amp; 0005:
                 </p>
                 <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
-                  <li>· <code>pg_advisory_xact_lock</code> in <code>enforce_max_two_admins()</code> prevents concurrent 3rd Admin race conditions.</li>
-                  <li>· <code>prevent_mutation_on_archived_camp()</code> blocks INSERT/UPDATE/DELETE on archived camps and child records.</li>
-                  <li>· <code>enforce_lecture_schedule_constraints()</code> enforces time-range overlap and max groups/day in PostgreSQL.</li>
-                  <li>· <code>enforce_audit_log_immutability_and_safety()</code> blocks UPDATE/DELETE and credential strings in <code>audit_logs</code>.</li>
-                  <li>· Explicit RLS policies across all 29 tables: Admin full access, Instructor strictly scoped to own/assigned rows, Anonymous denied.</li>
+                  <li>· <code>is_cits_admin()</code> &amp; <code>is_active_cits_user()</code> enforce AAL2 MFA + active status across all policies &amp; RPCs.</li>
+                  <li>· <code>prevent_mutation_on_archived_camp()</code> covers operational tables including <code>attachments</code> while preserving <code>backup_records</code>.</li>
+                  <li>· <code>resolve_student_group_for_day()</code> &amp; <code>batch_import_students_tx()</code> preserve full student transfer history.</li>
+                  <li>· <code>enforce_daily_checkin_security()</code> validates finite WGS84 bounds, GPS accuracy &lt;= 500m, and anti-traversal selfie paths.</li>
+                  <li>· <code>admin_correct_attendance_tx()</code> enables audited Admin fixes on draft, submitted, and locked attendance sheets.</li>
                 </ul>
               </div>
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
@@ -169,11 +162,13 @@ export const ArchitecturePlanDrawer: React.FC = () => {
                   Hardened SECURITY DEFINER RPCs
                 </p>
                 <pre className="text-xs font-mono text-slate-600 dark:text-slate-300 overflow-x-auto leading-relaxed">
-{`public.is_cits_admin()                        -- SET search_path = public, pg_temp
-public.current_instructor_id()                -- Maps auth.uid() -> instructors.id
-public.resolve_login_identifier(p_identifier) -- Safe username -> email lookup
-public.submit_attendance_sheet_tx(...)        -- Atomic attendance + entitlement RPC
-public.admin_override_entitlement_tx(...)     -- Atomic override + mandatory audit log`}
+{`public.is_cits_admin()                        -- AAL2 MFA + active admin profile
+public.is_active_cits_user()                  -- Active account gate
+public.submit_daily_checkin_tx(...)           -- Server Haversine + GPS/selfie checks
+public.submit_attendance_sheet_tx(...)        -- Atomic submission + entitlement calc
+public.admin_correct_attendance_tx(...)       -- Audited post-submission correction
+public.transfer_student_tx(...)               -- Historical day transfer timeline
+public.archive_camp_tx(...)                   -- Atomic archive + selfie path purge`}
                 </pre>
               </div>
             </div>
@@ -205,10 +200,10 @@ public.admin_override_entitlement_tx(...)     -- Atomic override + mandatory aud
                   <span>Verification Status Matrix</span>
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 font-mono">
-                  <p>· SQL Migrations (0001 + 0002):   [Implemented &amp; Validated via AST/Regex Tests]</p>
-                  <p>· TypeScript DB Schema Types:     [Implemented &amp; Verified via tsc --noEmit]</p>
-                  <p>· 15 Security &amp; Domain Tests:     [Tested Locally — 16/16 Passing]</p>
-                  <p>· Remote Supabase Live Execution: [Not yet connected — awaiting .env credentials]</p>
+                  <p>· SQL Migrations (0001–0005):   [Authored &amp; Guard 1C Scanner Validated Locally]</p>
+                  <p>· TypeScript DB Schema Types:   [Verified via tsc --noEmit &amp; vite build]</p>
+                  <p>· Verification Suites:          [0003, 0004 &amp; 0005 Behavioral SQL Suites Ready]</p>
+                  <p>· Remote Supabase Live Execution: [Requires Staging DB / SQL Editor Execution]</p>
                 </div>
               </div>
             </div>
@@ -218,7 +213,7 @@ public.admin_override_entitlement_tx(...)     -- Atomic override + mandatory aud
         {/* Footer */}
         <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {t('Phase 2 Database & Security Verified Locally', 'المرحلة الثانية (قاعدة البيانات والأمان) موثقة محلياً')}
+            {t('Phase 2 Architecture & Verification Overview', 'نظرة عامة على معمارية والتحقق من المرحلة الثانية')}
           </span>
           <button
             type="button"

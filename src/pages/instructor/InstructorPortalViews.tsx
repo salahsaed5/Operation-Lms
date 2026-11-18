@@ -689,7 +689,7 @@ export const InstructorCheckinView: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           <div>
             <label htmlFor="chk-lat" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
               {t('GPS Latitude', 'خط العرض')}
@@ -698,6 +698,8 @@ export const InstructorCheckinView: React.FC = () => {
               id="chk-lat"
               type="number"
               step="0.000001"
+              min={-90}
+              max={90}
               value={lat}
               onChange={(e) => setLat(Number(e.target.value))}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
@@ -711,8 +713,24 @@ export const InstructorCheckinView: React.FC = () => {
               id="chk-lng"
               type="number"
               step="0.000001"
+              min={-180}
+              max={180}
               value={lng}
               onChange={(e) => setLng(Number(e.target.value))}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
+            />
+          </div>
+          <div>
+            <label htmlFor="chk-acc" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+              {t('GPS Accuracy (m, max 500)', 'دقة GPS (متر، حد أقصى 500)')}
+            </label>
+            <input
+              id="chk-acc"
+              type="number"
+              min={0}
+              max={500}
+              value={gpsAccuracy}
+              onChange={(e) => setGpsAccuracy(Number(e.target.value))}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
             />
           </div>
@@ -859,12 +877,19 @@ export const InstructorAttendanceView: React.FC = () => {
   const selectedLecture = myLectures.find((l) => l.id === selectedLectureId);
   const existingSheet = attendanceSheets.find((s) => s.lectureId === selectedLectureId);
 
-  // Build hydrated roster if DB sheet exists with empty records
+  // Build hydrated roster using historical origin group resolution for selectedLecture.campDay
   const baseRecords: AttendanceRecordItem[] = (() => {
     if (!selectedLecture) return [];
     const sheetRecords = existingSheet?.records || [];
     const groupRoster = students.filter(
-      (s) => s.campId === activeCamp.id && s.groupId === selectedLecture.groupId && s.isActive
+      (s) =>
+        s.campId === activeCamp.id &&
+        s.isActive &&
+        resolveStudentOriginGroupForDay({
+          student: s,
+          transfers: studentTransfers,
+          campDay: selectedLecture.campDay,
+        }) === selectedLecture.groupId
     );
     const existingIds = new Set(sheetRecords.map((r) => r.studentId));
     const missingFromRoster: AttendanceRecordItem[] = groupRoster
@@ -899,7 +924,11 @@ export const InstructorAttendanceView: React.FC = () => {
           s.campId === activeCamp.id &&
           s.isActive &&
           !rosterStudentIds.has(s.id) &&
-          s.groupId !== selectedLecture.groupId
+          resolveStudentOriginGroupForDay({
+            student: s,
+            transfers: studentTransfers,
+            campDay: selectedLecture.campDay,
+          }) !== selectedLecture.groupId
       )
     : [];
 

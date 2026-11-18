@@ -18,6 +18,7 @@ import {
   createValidatedAuditLogEntry,
   calculateCampDayDate,
   resolveStudentOriginGroupForDay,
+  validateGpsCoordinates,
 } from './businessRules';
 import {
   AttendanceMark,
@@ -1102,6 +1103,356 @@ test('20. Verification suite 0004 & 0003 allowlist compatibility checks', () => 
     assert.ok(verify3.includes(sig), `Missing 0004 symbol '${sig}' in 0003 Pre-Flight allowlist or claims`);
   }
 });
+
+test('21. Chained & same-day historical transfer resolution and smart_update group-lock preservation', () => {
+  const student = { id: 'stu-chain', campId: 'camp-1', groupId: 'G-B' };
+  const transfers = [
+    {
+      id: 't1',
+      campId: 'camp-1',
+      studentId: 'stu-chain',
+      fromGroupId: 'G-A',
+      toGroupId: 'G-B',
+      effectiveCampDay: 2,
+      reason: 'Hop 1',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-11T08:00:00Z',
+    },
+    {
+      id: 't2',
+      campId: 'camp-1',
+      studentId: 'stu-chain',
+      fromGroupId: 'G-B',
+      toGroupId: 'G-A',
+      effectiveCampDay: 4,
+      reason: 'Same-day hop 2a',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-13T09:00:00Z',
+    },
+    {
+      id: 't3',
+      campId: 'camp-1',
+      studentId: 'stu-chain',
+      fromGroupId: 'G-A',
+      toGroupId: 'G-C',
+      effectiveCampDay: 4,
+      reason: 'Same-day hop 2b',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-13T10:30:00Z',
+    },
+    {
+      id: 't4',
+      campId: 'camp-1',
+      studentId: 'stu-chain',
+      fromGroupId: 'G-C',
+      toGroupId: 'G-B',
+      effectiveCampDay: 6,
+      reason: 'Future hop 3',
+      transferredBy: 'adm-1',
+      createdAt: '2026-11-15T08:00:00Z',
+    },
+  ];
+
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 1 }), 'G-A');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 2 }), 'G-B');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 3 }), 'G-B');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 4 }), 'G-C');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 5 }), 'G-C');
+  assert.equal(resolveStudentOriginGroupForDay({ student, transfers, campDay: 6 }), 'G-B');
+
+  // smart_update refuses silent cross-group overwrite when student exists in another group
+  const existingStudents = [
+    { id: 'stu-1', campId: 'camp-1', groupId: 'G-A', studentCode: 'ST-101', fullName: 'Ali', university: 'CU', isActive: true },
+  ];
+  const blockedCrossGroup = validateStudentBatchImport({
+    rows: [{ rowNumber: 2, studentCode: 'st-101', studentName: 'Ali Updated', university: 'CU' }],
+    existingStudents,
+    targetCampId: 'camp-1',
+    targetGroupId: 'G-B',
+    mode: 'smart_update',
+  });
+  assert.equal(blockedCrossGroup.valid, false);
+  assert.ok(blockedCrossGroup.errors.some((e) => e.message.includes('Transfer')));
+
+  // Same target group update is permitted cleanly
+  const sameGroupAllowed = validateStudentBatchImport({
+    rows: [{ rowNumber: 2, studentCode: 'st-101', studentName: 'Ali Updated', university: 'CU' }],
+    existingStudents,
+    targetCampId: 'camp-1',
+    targetGroupId: 'G-A',
+    mode: 'smart_update',
+  });
+  assert.equal(sameGroupAllowed.valid, true);
+  assert.equal(sameGroupAllowed.toUpdate.length, 1);
+});
+
+test('22. GPS coordinate & accuracy boundary validation (NaN, Infinity, WGS84 bounds, 500m cap)', () => {
+  assert.equal(validateGpsCoordinates(30.0712, 31.0167, 18).valid, true);
+  assert.equal(validateGpsCoordinates(-90, -180, 0).valid, true);
+  assert.equal(validateGpsCoordinates(90, 180, 500).valid, true);
+
+  assert.equal(validateGpsCoordinates(Number.NaN, 31.0167, 15).valid, false);
+  assert.equal(validateGpsCoordinates(30.0712, Number.POSITIVE_INFINITY, 15).valid, false);
+  assert.equal(validateGpsCoordinates(90.0001, 31.0167, 15).valid, false);
+  assert.equal(validateGpsCoordinates(30.0712, -180.0001, 15).valid, false);
+  assert.equal(validateGpsCoordinates(30.0712, 31.0167, -1).valid, false);
+  assert.equal(validateGpsCoordinates(30.0712, 31.0167, 500.1).valid, false);
+  assert.equal(validateGpsCoordinates(30.0712, 31.0167, Number.NaN).valid, false);
+});
+
+function run0003LexicalScanner(src: string): {
+  cleanSrc: string;
+  lexIssues: string | null;
+} {
+  let pos = 0;
+  const len = src.length;
+  let inLineComment = false;
+  let blockCommentDepth = 0;
+  let inSingleQuote = false;
+  let cleanBuf = '';
+  let hasDollarToken = false;
+  let hasDoubleQuote = false;
+  let hasNonStdQuotePrefix = false;
+  let hasBackslashInQuote = false;
+  let hasStrayBlockClose = false;
+
+  while (pos < len) {
+    const ch = src[pos];
+    const next = pos + 1 < len ? src[pos + 1] : '';
+
+    if (inLineComment) {
+      if (ch === '\n' || ch === '\r') {
+        inLineComment = false;
+        cleanBuf += ch;
+      }
+      pos += 1;
+    } else if (blockCommentDepth > 0) {
+      if (ch === '/' && next === '*') {
+        blockCommentDepth += 1;
+        pos += 2;
+      } else if (ch === '*' && next === '/') {
+        blockCommentDepth -= 1;
+        if (blockCommentDepth === 0) {
+          cleanBuf += ' ';
+        }
+        pos += 2;
+      } else {
+        pos += 1;
+      }
+    } else if (inSingleQuote) {
+      if (ch === '\\') {
+        hasBackslashInQuote = true;
+        pos += 1;
+      } else if (ch === "'") {
+        if (next === "'") {
+          pos += 2;
+        } else {
+          inSingleQuote = false;
+          cleanBuf += "''";
+          pos += 1;
+        }
+      } else {
+        pos += 1;
+      }
+    } else {
+      if (ch === '-' && next === '-') {
+        inLineComment = true;
+        cleanBuf += ' ';
+        pos += 2;
+      } else if (ch === '/' && next === '*') {
+        blockCommentDepth = 1;
+        pos += 2;
+      } else if (ch === '*' && next === '/') {
+        hasStrayBlockClose = true;
+        pos += 2;
+      } else if (ch === "'") {
+        if (pos > 0 && /^[eEbBxXnN&]$/.test(src[pos - 1])) {
+          hasNonStdQuotePrefix = true;
+        }
+        inSingleQuote = true;
+        pos += 1;
+      } else if (ch === '$') {
+        hasDollarToken = true;
+        cleanBuf += ch;
+        pos += 1;
+      } else if (ch === '"') {
+        hasDoubleQuote = true;
+        cleanBuf += ch;
+        pos += 1;
+      } else {
+        cleanBuf += ch;
+        pos += 1;
+      }
+    }
+  }
+
+  const issues: string[] = [];
+  if (inSingleQuote) issues.push('UNCLOSED_SINGLE_QUOTE');
+  if (blockCommentDepth > 0) issues.push('UNCLOSED_NESTED_BLOCK_COMMENT');
+  if (hasStrayBlockClose) issues.push('STRAY_BLOCK_COMMENT_CLOSE');
+  if (hasNonStdQuotePrefix) issues.push('NON_STANDARD_STRING_PREFIX');
+  if (hasBackslashInQuote) issues.push('BACKSLASH_IN_SINGLE_QUOTE_LITERAL');
+  if (hasDollarToken) issues.push('DOLLAR_QUOTE_OR_PARAM_IN_BODY');
+  if (hasDoubleQuote) issues.push('DOUBLE_QUOTED_IDENTIFIER_IN_BODY');
+
+  return {
+    cleanSrc: cleanBuf,
+    lexIssues: issues.length > 0 ? issues.join('+') : null,
+  };
+}
+
+function extractSqlArrayLiterals(sql: string, varName: string): string[] {
+  const re = new RegExp(`${varName}\\s+CONSTANT\\s+TEXT\\[\\]\\s*:=\\s*ARRAY\\[([\\s\\S]*?)\\];`);
+  const match = sql.match(re);
+  if (!match) return [];
+  const items: string[] = [];
+  const strRe = /'([^']*)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = strRe.exec(match[1])) !== null) {
+    items.push(m[1]);
+  }
+  return items;
+}
+
+test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0005', () => {
+  const migFiles = [
+    'supabase/migrations/0001_cits_initial_schema.sql',
+    'supabase/migrations/0002_phase2_security_rls_and_validation.sql',
+    'supabase/migrations/0003_fix_archived_camp_child_trigger.sql',
+    'supabase/migrations/0004_phase2_comprehensive_security_hardening.sql',
+    'supabase/migrations/0005_phase2_finalization_hardening.sql',
+  ];
+
+  // Negative synthetic tests verifying scanner catches banned lexical edge cases
+  assert.equal(run0003LexicalScanner("RETURN 'it''s /* safe */ $safe';").lexIssues, null);
+  assert.ok(run0003LexicalScanner('SELECT $1;').lexIssues?.includes('DOLLAR_QUOTE_OR_PARAM_IN_BODY'));
+  assert.ok(run0003LexicalScanner('SELECT "bad";').lexIssues?.includes('DOUBLE_QUOTED_IDENTIFIER_IN_BODY'));
+  assert.ok(run0003LexicalScanner("SELECT 'unclosed;").lexIssues?.includes('UNCLOSED_SINGLE_QUOTE'));
+  assert.ok(run0003LexicalScanner('/* outer /* inner */ still open').lexIssues?.includes('UNCLOSED_NESTED_BLOCK_COMMENT'));
+  assert.ok(run0003LexicalScanner("SELECT E'esc';").lexIssues?.includes('NON_STANDARD_STRING_PREFIX'));
+  assert.ok(run0003LexicalScanner("SELECT 'a\\b';").lexIssues?.includes('BACKSLASH_IN_SINGLE_QUOTE_LITERAL'));
+
+  const latestFunctions = new Map<string, { header: string; body: string; file: string }>();
+  const fnRe =
+    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*?)AS\s+\$\$([\s\S]*?)\$\$;/g;
+
+  for (const rel of migFiles) {
+    const raw = fs.readFileSync(path.resolve(process.cwd(), rel), 'utf8');
+    const execPart = raw.split('-- ROLLBACK CONSIDERATIONS')[0];
+    let m: RegExpExecArray | null;
+    while ((m = fnRe.exec(execPart)) !== null) {
+      latestFunctions.set(m[1].toLowerCase(), { header: m[2], body: m[3], file: rel });
+    }
+  }
+
+  const verify3 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0003_remote_verification_and_rls_test_suite.sql'),
+    'utf8'
+  );
+  const triggerFuncs = extractSqlArrayLiterals(verify3, 'v_allowed_cits_trigger_funcs');
+  const helperFuncs = extractSqlArrayLiterals(verify3, 'v_allowed_cits_helper_funcs');
+  const safeTokens = new Set(extractSqlArrayLiterals(verify3, 'v_safe_builtin_call_tokens'));
+  const requiredTables = new Set(extractSqlArrayLiterals(verify3, 'v_required_tables'));
+  const allApprovedNames = new Set([...triggerFuncs, ...helperFuncs]);
+
+  assert.ok(allApprovedNames.size >= 38, `Expected >= 38 approved functions in 0003, found ${allApprovedNames.size}`);
+
+  for (const fnName of allApprovedNames) {
+    const def = latestFunctions.get(fnName);
+    assert.ok(def, `Approved function ${fnName} in 0003 not found in migrations 0001..0005`);
+    assert.ok(
+      /SET\s+search_path\s*=\s*public,\s*pg_temp/i.test(def.header),
+      `Function ${fnName} (${def.file}) lacks pinned search_path = public, pg_temp`
+    );
+
+    const scan = run0003LexicalScanner(def.body);
+    assert.equal(
+      scan.lexIssues,
+      null,
+      `Guard 1C scanner flagged ${fnName} (${def.file}): ${scan.lexIssues}`
+    );
+
+    const callRe = /((?:"[^"]+"|[a-zA-Z_][a-zA-Z0-9_]*)\.)?("[^"]+"|[a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = callRe.exec(scan.cleanSrc)) !== null) {
+      const qual = (cm[1] ?? '').replace(/\.$/, '').toLowerCase();
+      const ident = cm[2].toLowerCase();
+      if (qual.includes('"') || ident.includes('"')) {
+        assert.fail(`Quoted call token ${qual}.${ident} inside ${fnName} (${def.file})`);
+      }
+      if (safeTokens.has(ident)) continue;
+      if (requiredTables.has(ident)) continue;
+      if (qual === 'auth' && ['uid', 'jwt', 'role'].includes(ident)) continue;
+      assert.ok(
+        (qual === '' || qual === 'public') && allApprovedNames.has(ident),
+        `Unapproved/unlisted call token '${qual ? `${qual}.` : ''}${ident}()' inside ${fnName} (${def.file})`
+      );
+    }
+  }
+});
+
+test('24. Migration 0005 & verification suites security and non-destructive integrity checks', () => {
+  const mig5 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/migrations/0005_phase2_finalization_hardening.sql'),
+    'utf8'
+  );
+  const mig5Exec = mig5.split('-- ROLLBACK CONSIDERATIONS')[0];
+  assert.ok(mig5Exec.includes('BEGIN;'));
+  assert.ok(mig5Exec.includes('COMMIT;'));
+  assert.equal(/ROLLBACK\s*;/i.test(mig5Exec), false);
+  assert.equal(/DROP\s+TABLE/i.test(mig5Exec), false);
+  assert.equal(/TRUNCATE\s+/i.test(mig5Exec), false);
+  assert.equal(/DELETE\s+FROM/i.test(mig5Exec), false);
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(mig5Exec), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(mig5Exec), false);
+
+  for (const sym of [
+    'is_active_cits_user',
+    'admin_correct_attendance_tx',
+    'enforce_instructor_request_security',
+    'enforce_issue_security',
+    'idx_unique_pending_checkin_exception',
+    'trg_readonly_archived_attachments',
+  ]) {
+    assert.ok(mig5Exec.includes(sym), `Missing symbol '${sym}' in migration 0005`);
+  }
+
+  const inv5 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0005_security_inventory_and_preflight.sql'),
+    'utf8'
+  );
+  assert.ok(inv5.includes('pg_proc'));
+  assert.ok(inv5.includes('pg_policies'));
+  assert.equal(/\bINSERT\s+INTO\b|\bUPDATE\s+public\.|\bDELETE\s+FROM\b/i.test(inv5), false);
+
+  const test5 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0005_finalization_behavioral_test_suite.sql'),
+    'utf8'
+  );
+  const test5NoComments = test5.replace(/--.*$/gm, '');
+  assert.ok(test5.includes('BEGIN;'));
+  assert.ok(test5.includes('ROLLBACK;'));
+  assert.equal(/\bCOMMIT\s*;/i.test(test5NoComments), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(test5NoComments), false);
+  for (let i = 1; i <= 30; i++) {
+    assert.ok(test5.includes(`VALUES (${i},`), `Missing test #${i} in 0005 verification suite`);
+  }
+
+  // Confirm 0005 symbols registered cleanly in 0003 allowlist & entrypoint roots
+  const verify3 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0003_remote_verification_and_rls_test_suite.sql'),
+    'utf8'
+  );
+  for (const sym of [
+    'public.is_active_cits_user()',
+    'public.admin_correct_attendance_tx(uuid,uuid,public.attendance_mark,text)',
+    'public.enforce_instructor_request_security()',
+    'public.enforce_issue_security()',
+  ]) {
+    assert.ok(verify3.includes(sym), `Missing 0005 symbol '${sym}' in 0003 verification allowlist`);
+  }
+});
+
 
 
 

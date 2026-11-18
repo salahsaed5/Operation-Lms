@@ -507,6 +507,7 @@ export const AdminAttendanceView: React.FC = () => {
 
   const [expandedSheetId, setExpandedSheetId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [correctionNotes, setCorrectionNotes] = useState<Record<string, string>>({});
   const [selfiePreviews, setSelfiePreviews] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -550,6 +551,18 @@ export const AdminAttendanceView: React.FC = () => {
     studentId: string,
     mark: AttendanceMark
   ) => {
+    const noteText =
+      (correctionNotes[sheetId] ?? 'Verified by Admin during roster review').trim();
+    if (!noteText) {
+      setSyncMessage({
+        ok: false,
+        text: t(
+          'Please provide an audit reason before correcting attendance marks.',
+          'يرجى إدخال سبب التعديل في سجل التدقيق قبل تغيير حالة الحضور.'
+        ),
+      });
+      return;
+    }
     setIsBusy(true);
     try {
       const res = await adminCorrectAttendanceRecord({
@@ -557,7 +570,7 @@ export const AdminAttendanceView: React.FC = () => {
         lectureId,
         studentId,
         mark,
-        note: 'Corrected by Admin during roster review',
+        note: noteText,
       });
       if (!res.ok) {
         setSyncMessage({ ok: false, text: res.error || 'Correction failed.' });
@@ -838,6 +851,33 @@ export const AdminAttendanceView: React.FC = () => {
 
               {isExpanded && (
                 <div className="pt-3 border-t border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  <div className="pb-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                    <label
+                      htmlFor={`corr-note-${sheet.id}`}
+                      className="font-semibold text-slate-700 dark:text-slate-300 shrink-0"
+                    >
+                      {t('Audit Reason for Corrections:', 'سبب التعديل للتدقيق:')}
+                    </label>
+                    <input
+                      id={`corr-note-${sheet.id}`}
+                      type="text"
+                      value={
+                        correctionNotes[sheet.id] ??
+                        'Verified by Admin during roster review'
+                      }
+                      onChange={(e) =>
+                        setCorrectionNotes((prev) => ({
+                          ...prev,
+                          [sheet.id]: e.target.value,
+                        }))
+                      }
+                      placeholder={t(
+                        'Explain attendance correction reason...',
+                        'أدخل سبب تعديل الحضور...'
+                      )}
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                    />
+                  </div>
                   {sheet.records.length === 0 ? (
                     <p className="py-3 text-slate-500">
                       {t('No student attendance rows saved on this sheet yet.', 'لا توجد سجلات طلاب محفوظة في هذا الكشف بعد.')}

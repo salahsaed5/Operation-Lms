@@ -1,0 +1,32 @@
+name: CITS Web CI
+
+on:
+  push:
+    branches: [main, phase-2-finalization]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-app-and-sql-static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck & lint
+        run: npm run lint
+
+      - name: Run domain, security policy, and Guard 1C lexical tests
+        run: npx tsx --test src/domain/businessRules.test.ts
+
+      - name: Build production bundle
+        run: npm run build

@@ -1,0 +1,58 @@
+name: Supabase Staging Security & Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_0005:
+        description: 'Apply 0005_phase2_finalization_hardening.sql before running verification suites'
+        required: true
+        default: 'true'
+        type: boolean
+
+jobs:
+  staging-verify:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Validate Staging DB Secret Configured
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_STAGING_DB_URL" ]; then
+            echo "ERROR: secrets.SUPABASE_STAGING_DB_URL is not configured."
+            exit 1
+          fi
+
+      - name: Run Read-Only Preflight Inventory (0005)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_security_inventory_and_preflight.sql
+
+      - name: Apply Migration 0005 (Staging)
+        if: ${{ inputs.apply_0005 == true }}
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_phase2_finalization_hardening.sql
+
+      - name: Run Transactional RLS & Guard 1C Suite (0003)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0003_remote_verification_and_rls_test_suite.sql
+
+      - name: Run Phase 2 Hardening Verification Suite (0004)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0004_phase2_hardening_verification.sql
+
+      - name: Run 30-Case Phase 2 Finalization Suite (0005)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_finalization_behavioral_test_suite.sql

@@ -1281,8 +1281,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {t(
-                'Format per line: Student Name, Student Code, University. If any row has an error, zero records are imported.',
-                'الصيغة لكل سطر: اسم الطالب، كود الطالب، الجامعة. في حال وجود خطأ واحد يتم إيقاف الاستيراد بالكامل.'
+                'Format per line: Student Name, Student Code, University. Any error aborts the entire batch; Smart Update preserves student transfer history (cross-group moves require Student Transfer).',
+                'الصيغة لكل سطر: اسم الطالب، كود الطالب، الجامعة. أي خطأ يوقف الدفعة بالكامل؛ التحديث الذكي يحافظ على سجل النقل التاريخي (تغيير المجموعة يتطلب أداة نقل الطالب).'
               )}
             </p>
           </div>

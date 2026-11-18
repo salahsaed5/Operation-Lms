@@ -222,6 +222,36 @@ export function calculateHaversineDistanceMeters(
   return Math.round(R * c);
 }
 
+export function validateGpsCoordinates(
+  latitude: number,
+  longitude: number,
+  gpsAccuracyMeters: number
+): { valid: boolean; error?: string } {
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    return {
+      valid: false,
+      error: 'GPS latitude must be a finite number between -90 and 90.',
+    };
+  }
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return {
+      valid: false,
+      error: 'GPS longitude must be a finite number between -180 and 180.',
+    };
+  }
+  if (
+    !Number.isFinite(gpsAccuracyMeters) ||
+    gpsAccuracyMeters < 0 ||
+    gpsAccuracyMeters > 500
+  ) {
+    return {
+      valid: false,
+      error: 'GPS accuracy must be between 0 and 500 meters.',
+    };
+  }
+  return { valid: true };
+}
+
 /**
  * 4. Daily Check-in Verification (Geofence + Selfie <= 300KB + 60-Min First Lecture Rule)
  */
@@ -646,6 +676,7 @@ export function validateStudentBatchImport(params: {
   rows: RawStudentImportRow[];
   existingStudents: Student[];
   targetCampId?: string;
+  targetGroupId?: string;
   mode: 'strict_insert' | 'smart_update';
 }): {
   valid: boolean;
@@ -654,7 +685,7 @@ export function validateStudentBatchImport(params: {
   toUpdate: RawStudentImportRow[];
   unchangedCount: number;
 } {
-  const { rows, existingStudents, targetCampId, mode } = params;
+  const { rows, existingStudents, targetCampId, targetGroupId, mode } = params;
   const errors: { rowNumber: number; message: string }[] = [];
   const seenCodesInFile = new Map<string, number>();
 
@@ -705,7 +736,14 @@ export function validateStudentBatchImport(params: {
     const existing = existingByCode.get(cleanCode);
     if (existing) {
       if (mode === 'smart_update') {
-        toUpdate.push({ ...row, studentName: cleanName, studentCode: cleanCode });
+        if (targetGroupId && existing.groupId !== targetGroupId) {
+          errors.push({
+            rowNumber: row.rowNumber,
+            message: `Row ${row.rowNumber}: Student Code "${cleanCode}" is currently assigned to another group. Use Student Transfer to change groups while preserving historical attendance.`,
+          });
+        } else {
+          toUpdate.push({ ...row, studentName: cleanName, studentCode: cleanCode });
+        }
       } else {
         errors.push({
           rowNumber: row.rowNumber,

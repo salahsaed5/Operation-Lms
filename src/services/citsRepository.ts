@@ -896,6 +896,15 @@ export async function getSignedSelfieUrl(path: string): Promise<string | null> {
   return data.signedUrl;
 }
 
+export async function deleteCheckinSelfiePath(path: string): Promise<void> {
+  if (!supabase || !path) return;
+  try {
+    await supabase.storage.from('checkin-selfies').remove([path]);
+  } catch {
+    // Best-effort orphan storage cleanup after failed DB RPC
+  }
+}
+
 // =============================================================================
 // REPOSITORY MUTATIONS
 // =============================================================================
@@ -1023,6 +1032,7 @@ export async function upsertGroupInDb(input: {
   primaryInstructorId: string;
   capacity: number;
   actorProfileId: string;
+  effectiveDay?: number;
 }): Promise<void> {
   const client = getClient();
   let groupId = input.id;
@@ -1059,6 +1069,7 @@ export async function upsertGroupInDb(input: {
   }
 
   if (input.primaryInstructorId) {
+    const effectiveDay = Math.max(1, Math.floor(input.effectiveDay ?? 1));
     const { error: ciErr } = await client
       .from('camp_instructors')
       .upsert(
@@ -1084,11 +1095,20 @@ export async function upsertGroupInDb(input: {
     );
 
     if (!alreadyAssigned) {
+      const supersededIds = (existingGi || []).map((row) => row.id);
+      if (supersededIds.length > 0) {
+        const { error: closeErr } = await client
+          .from('group_instructors')
+          .update({ effective_to_day: effectiveDay })
+          .in('id', supersededIds);
+        if (closeErr) throw new Error(closeErr.message);
+      }
+
       const { error: giErr } = await client.from('group_instructors').insert({
         camp_id: input.campId,
         group_id: groupId,
         instructor_id: input.primaryInstructorId,
-        effective_from_day: 1,
+        effective_from_day: effectiveDay,
         assigned_by: input.actorProfileId,
       });
       if (giErr) throw new Error(giErr.message);
@@ -1415,38 +1435,18 @@ export async function adminCorrectAttendanceRecordInDb(input: {
   adminProfileId: string;
 }): Promise<void> {
   const client = getClient();
-  const originGroupId = resolveStudentOriginGroupForDay({
-    student: input.student,
-    transfers: input.transfers || [],
-    campDay: input.lecture.campDay,
-  });
-
-  const { error: upErr } = await client.from('attendance_records').upsert(
-    {
-      camp_id: input.campId,
-      attendance_sheet_id: input.sheet.id,
-      lecture_id: input.lecture.id,
-      camp_day: input.lecture.campDay,
-      period_number: input.lecture.periodNumber,
-      student_id: input.student.id,
-      origin_group_id: originGroupId,
-      attended_group_id: input.lecture.groupId,
-      is_cross_group: originGroupId !== input.lecture.groupId,
-      mark: input.mark as DbAttendanceMark,
-      note: input.note || null,
-      updated_by: input.adminProfileId,
-    },
-    { onConflict: 'attendance_sheet_id,student_id' }
-  );
-  if (upErr) throw new Error(upErr.message);
-
-  // If sheet was already submitted, recalculate summary counts via submit_attendance_sheet_tx
-  if (input.sheet.status === AttendanceSheetStatus.SUBMITTED) {
-    const { error: rpcErr } = await client.rpc('submit_attendance_sheet_tx', {
-      p_sheet_id: input.sheet.id,
-    });
-    if (rpcErr) throw new Error(rpcErr.message);
+  const cleanNote = (input.note || '').trim();
+  if (!cleanNote) {
+    throw new Error('A non-empty audit reason is required to correct student attendance.');
   }
+
+  const { error } = await client.rpc('admin_correct_attendance_tx', {
+    p_sheet_id: input.sheet.id,
+    p_student_id: input.student.id,
+    p_mark: input.mark as DbAttendanceMark,
+    p_note: cleanNote,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function overrideEntitlementInDb(input: {

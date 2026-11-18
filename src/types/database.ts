@@ -1064,6 +1064,10 @@ export interface Database {
         Args: Record<string, never>;
         Returns: boolean;
       };
+      is_active_cits_user: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       current_instructor_id: {
         Args: Record<string, never>;
         Returns: string | null;
@@ -1086,8 +1090,25 @@ export interface Database {
           sheet_id: string;
           present_count: number;
           absent_count: number;
+          cross_group_count?: number;
           entitlement_status: DbEntitlementStatus;
           entitlement_amount_egp: number;
+        };
+      };
+      admin_correct_attendance_tx: {
+        Args: {
+          p_sheet_id: string;
+          p_student_id: string;
+          p_mark: DbAttendanceMark;
+          p_note: string;
+        };
+        Returns: {
+          sheet_id: string;
+          student_id: string;
+          mark: DbAttendanceMark;
+          present_count: number;
+          absent_count: number;
+          cross_group_count: number;
         };
       };
       admin_override_entitlement_tx: {
