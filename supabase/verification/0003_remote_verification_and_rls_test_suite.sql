@@ -335,6 +335,10 @@ DECLARE
   v_override_result JSONB;
   v_rejected BOOLEAN;
   v_err_msg TEXT;
+  v_substage TEXT;
+  v_subtest_failures TEXT;
+  v_subtest_summary TEXT;
+  v_6b_archived_ok BOOLEAN;
   v_test_step INTEGER;
 BEGIN
   -- ===========================================================================
@@ -1978,87 +1982,153 @@ BEGIN
 
   -- ===========================================================================
   -- TEST 6/10: Single Active Camp & Archived Camp Read-Only Protection
+  --            Sub-tests 6A..6D report individual stage outcomes & SQLERRM.
   -- ===========================================================================
   BEGIN
+    v_subtest_failures := NULL;
+    v_subtest_summary := NULL;
+    v_6b_archived_ok := FALSE;
+
     -- 6A: Activating v_camp2_id while an active camp exists must fail
-    v_rejected := FALSE;
+    v_substage := '6A (activate second camp)';
     BEGIN
-      UPDATE public.camps SET status = 'active'::public.camp_status WHERE id = v_camp2_id;
+      v_rejected := FALSE;
+      v_err_msg := NULL;
+      BEGIN
+        UPDATE public.camps SET status = 'active'::public.camp_status WHERE id = v_camp2_id;
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF SQLERRM ILIKE '%Only one camp may be active%' OR SQLERRM ILIKE '%idx_single_active_camp%' THEN
+            v_rejected := TRUE;
+            v_err_msg := SQLERRM;
+          ELSE
+            RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+          END IF;
+      END;
+
+      IF NOT v_rejected THEN
+        RAISE EXCEPTION 'Second active camp (v_camp2_id) was NOT rejected at %', v_substage;
+      END IF;
+
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6A PASS (%s)', v_err_msg));
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM ILIKE '%Only one camp may be active%' OR SQLERRM ILIKE '%idx_single_active_camp%' THEN
-          v_rejected := TRUE;
-          v_err_msg := SQLERRM;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s] %s', v_substage, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6A FAIL (%s)', SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Second active camp (v_camp2_id) was NOT rejected!';
-    END IF;
 
-    -- 6B: Ensure v_camp_arch_id starts in 'draft' state before archiving,
-    --     transition it cleanly to 'archived', verify archived state,
-    --     and assert all subsequent mutations on camp & child tables are blocked.
-    SELECT status INTO v_arch_initial_status
-    FROM public.camps
-    WHERE id = v_camp_arch_id;
-
-    IF v_arch_initial_status IS DISTINCT FROM 'draft'::public.camp_status THEN
-      RAISE EXCEPTION 'Expected initial status draft for v_camp_arch_id, found %', v_arch_initial_status;
-    END IF;
-
-    UPDATE public.camps
-    SET status = 'archived'::public.camp_status
-    WHERE id = v_camp_arch_id;
-
-    SELECT status, archived_at
-    INTO v_arch_after_status, v_arch_after_at
-    FROM public.camps
-    WHERE id = v_camp_arch_id;
-
-    IF v_arch_after_status IS DISTINCT FROM 'archived'::public.camp_status OR v_arch_after_at IS NULL THEN
-      RAISE EXCEPTION 'Failed to transition v_camp_arch_id to archived (status=%, archived_at=%)',
-        v_arch_after_status, v_arch_after_at;
-    END IF;
-
-    v_rejected := FALSE;
+    -- 6B: Ensure v_camp_arch_id starts in 'draft', then transition to 'archived'
+    v_substage := '6B.1 (verify initial draft status)';
     BEGIN
-      UPDATE public.camps SET name_en = 'Illegal Edit After Archive' WHERE id = v_camp_arch_id;
+      SELECT status INTO v_arch_initial_status
+      FROM public.camps
+      WHERE id = v_camp_arch_id;
+
+      IF v_arch_initial_status IS DISTINCT FROM 'draft'::public.camp_status THEN
+        RAISE EXCEPTION 'Expected initial status draft for v_camp_arch_id, found %', v_arch_initial_status;
+      END IF;
+
+      v_substage := '6B.2 (transition draft to archived)';
+      UPDATE public.camps
+      SET status = 'archived'::public.camp_status
+      WHERE id = v_camp_arch_id;
+
+      v_substage := '6B.3 (verify archived status and archived_at)';
+      SELECT status, archived_at
+      INTO v_arch_after_status, v_arch_after_at
+      FROM public.camps
+      WHERE id = v_camp_arch_id;
+
+      IF v_arch_after_status IS DISTINCT FROM 'archived'::public.camp_status OR v_arch_after_at IS NULL THEN
+        RAISE EXCEPTION 'Failed to transition v_camp_arch_id to archived (status=%, archived_at=%)',
+          v_arch_after_status, v_arch_after_at;
+      END IF;
+
+      v_6b_archived_ok := TRUE;
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, '6B PASS (draft->archived)');
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM ILIKE '%archived%' AND SQLERRM ILIKE '%read-only%' THEN
-          v_rejected := TRUE;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s [%s]] %s', v_substage, SQLSTATE, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6B FAIL @ %s (%s)', v_substage, SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'UPDATE on archived camp (v_camp_arch_id) was NOT blocked!';
+
+    -- 6C: Updating an archived camp must be blocked by enforce_camp_lifecycle_rules
+    v_substage := '6C (reject UPDATE on archived camp)';
+    IF NOT v_6b_archived_ok THEN
+      v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s] Skipped because 6B draft->archived failed', v_substage));
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, '6C BLOCKED (6B failed)');
+    ELSE
+      BEGIN
+        v_rejected := FALSE;
+        v_err_msg := NULL;
+        BEGIN
+          UPDATE public.camps SET name_en = 'Illegal Edit After Archive' WHERE id = v_camp_arch_id;
+        EXCEPTION
+          WHEN OTHERS THEN
+            IF SQLERRM ILIKE '%archived%' AND SQLERRM ILIKE '%read-only%' THEN
+              v_rejected := TRUE;
+              v_err_msg := SQLERRM;
+            ELSE
+              RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+            END IF;
+        END;
+
+        IF NOT v_rejected THEN
+          RAISE EXCEPTION 'UPDATE on archived camp (v_camp_arch_id) was NOT blocked at %', v_substage;
+        END IF;
+
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6C PASS (%s)', v_err_msg));
+      EXCEPTION
+        WHEN OTHERS THEN
+          v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s] %s', v_substage, SQLERRM));
+          v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6C FAIL (%s)', SQLERRM));
+      END;
     END IF;
 
-    v_rejected := FALSE;
-    BEGIN
-      INSERT INTO public.groups (id, camp_id, code, name_en, name_ar, track)
-      VALUES (v_grp_arch_test_id, v_camp_arch_id, 'ARCH-GRP', 'Archived Group', 'مجموعة مؤرشفة', 'Graphs');
-    EXCEPTION
-      WHEN OTHERS THEN
-        IF SQLERRM ILIKE '%archived (read-only)%' THEN
-          v_rejected := TRUE;
-        ELSE
-          RAISE;
+    -- 6D: Inserting a child group into an archived camp must be blocked by prevent_mutation_on_archived_camp
+    v_substage := '6D (reject child groups INSERT on archived camp)';
+    IF NOT v_6b_archived_ok THEN
+      v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s] Skipped because 6B draft->archived failed', v_substage));
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, '6D BLOCKED (6B failed)');
+    ELSE
+      BEGIN
+        v_rejected := FALSE;
+        v_err_msg := NULL;
+        BEGIN
+          INSERT INTO public.groups (id, camp_id, code, name_en, name_ar, track)
+          VALUES (v_grp_arch_test_id, v_camp_arch_id, 'ARCH-GRP', 'Archived Group', 'مجموعة مؤرشفة', 'Graphs');
+        EXCEPTION
+          WHEN OTHERS THEN
+            IF SQLERRM ILIKE '%archived (read-only)%' THEN
+              v_rejected := TRUE;
+              v_err_msg := SQLERRM;
+            ELSE
+              RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+            END IF;
+        END;
+
+        IF NOT v_rejected THEN
+          RAISE EXCEPTION 'Child table INSERT on archived camp (v_camp_arch_id) was NOT blocked at %', v_substage;
         END IF;
-    END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Child table INSERT on archived camp (v_camp_arch_id) was NOT blocked!';
+
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6D PASS (%s)', v_err_msg));
+      EXCEPTION
+        WHEN OTHERS THEN
+          v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s] %s', v_substage, SQLERRM));
+          v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('6D FAIL (%s)', SQLERRM));
+      END;
+    END IF;
+
+    IF v_subtest_failures IS NOT NULL THEN
+      RAISE EXCEPTION 'Test 6 failures: % | All stages: %', v_subtest_failures, v_subtest_summary;
     END IF;
 
     UPDATE _cits_verification_report
     SET test_code = '[PASS 6/10]',
         status = 'PASS',
-        evidence = format('2nd active camp blocked (%s); draft->archived transition verified; archived camp & child table mutations blocked', v_err_msg)
+        evidence = v_subtest_summary
     WHERE step_order = 6;
-    RAISE NOTICE '[PASS 6/10] Single active camp & archived camp read-only verified';
+    RAISE NOTICE '[PASS 6/10] %', v_subtest_summary;
   EXCEPTION
     WHEN OTHERS THEN
       UPDATE _cits_verification_report
@@ -2071,99 +2141,157 @@ BEGIN
 
   -- ===========================================================================
   -- TEST 7/10: Schedule Conflicts (Instructor, Group, Room) & Max Daily Groups
-  --            Each sub-test runs on its own isolated camp_day (days 2..5) with
-  --            dedicated baseline rows so Day 1 fixture lectures never interfere.
+  --            Each sub-test 7A..7D runs in its own isolated subtransaction on
+  --            dedicated camp_day (days 2..5) and reports exact stage & SQLERRM.
   -- ===========================================================================
   BEGIN
-    -- 7A (Isolated on camp_day = 2): Overlapping time window for Instructor A
-    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-    VALUES (v_lec_7a_base_id, v_camp1_id, 2, '2026-11-11', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 2 Base Instructor Slot', 750);
+    v_subtest_failures := NULL;
+    v_subtest_summary := NULL;
 
-    v_rejected := FALSE;
+    -- 7A (Isolated on camp_day = 2): Overlapping time window for Instructor A
     BEGIN
+      v_substage := '7A.1 (insert day 2 baseline lecture)';
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_inst_id, v_camp1_id, 2, '2026-11-11', 2::smallint, '10:30'::time, '13:30'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Overlap Instructor', 750);
+      VALUES (v_lec_7a_base_id, v_camp1_id, 2, '2026-11-11', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 2 Base Instructor Slot', 750);
+
+      v_substage := '7A.2 (reject overlapping instructor lecture)';
+      v_rejected := FALSE;
+      v_err_msg := NULL;
+      BEGIN
+        INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+        VALUES (v_lec_conflict_inst_id, v_camp1_id, 2, '2026-11-11', 2::smallint, '10:30'::time, '13:30'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Overlap Instructor', 750);
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF SQLERRM LIKE '%CITS Schedule Conflict: Instructor%' THEN
+            v_rejected := TRUE;
+            v_err_msg := SQLERRM;
+          ELSE
+            RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+          END IF;
+      END;
+
+      IF NOT v_rejected THEN
+        RAISE EXCEPTION 'Overlapping Instructor schedule was NOT blocked at %', v_substage;
+      END IF;
+
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7A PASS (%s)', v_err_msg));
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%CITS Schedule Conflict: Instructor%' THEN
-          v_rejected := TRUE;
-          v_err_msg := SQLERRM;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s [%s]] %s', v_substage, SQLSTATE, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7A FAIL @ %s (%s)', v_substage, SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Overlapping Instructor schedule was NOT blocked!';
-    END IF;
 
     -- 7B (Isolated on camp_day = 3): Overlapping Group A using conflict-free Instructor B & Room 3
-    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-    VALUES (v_lec_7b_base_id, v_camp1_id, 3, '2026-11-12', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 3 Base Group Slot', 750);
-
-    v_rejected := FALSE;
     BEGIN
+      v_substage := '7B.1 (insert day 3 baseline lecture)';
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_grp_id, v_camp1_id, 3, '2026-11-12', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_a_id, v_inst_b_id, v_room3_id, 'Overlap Group', 700);
+      VALUES (v_lec_7b_base_id, v_camp1_id, 3, '2026-11-12', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 3 Base Group Slot', 750);
+
+      v_substage := '7B.2 (reject overlapping group lecture)';
+      v_rejected := FALSE;
+      v_err_msg := NULL;
+      BEGIN
+        INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+        VALUES (v_lec_conflict_grp_id, v_camp1_id, 3, '2026-11-12', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_a_id, v_inst_b_id, v_room3_id, 'Overlap Group', 700);
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF SQLERRM LIKE '%CITS Schedule Conflict: Group%' THEN
+            v_rejected := TRUE;
+            v_err_msg := SQLERRM;
+          ELSE
+            RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+          END IF;
+      END;
+
+      IF NOT v_rejected THEN
+        RAISE EXCEPTION 'Overlapping Group schedule was NOT blocked at %', v_substage;
+      END IF;
+
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7B PASS (%s)', v_err_msg));
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%CITS Schedule Conflict: Group%' THEN
-          v_rejected := TRUE;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s [%s]] %s', v_substage, SQLSTATE, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7B FAIL @ %s (%s)', v_substage, SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Overlapping Group schedule was NOT blocked!';
-    END IF;
 
     -- 7C (Isolated on camp_day = 4): Overlapping Room 1 using conflict-free Instructor B & Group C
-    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-    VALUES (v_lec_7c_base_id, v_camp1_id, 4, '2026-11-13', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 4 Base Room Slot', 750);
-
-    v_rejected := FALSE;
     BEGIN
+      v_substage := '7C.1 (insert day 4 baseline lecture)';
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_room_id, v_camp1_id, 4, '2026-11-13', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_c_id, v_inst_b_id, v_room1_id, 'Overlap Room', 700);
+      VALUES (v_lec_7c_base_id, v_camp1_id, 4, '2026-11-13', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 4 Base Room Slot', 750);
+
+      v_substage := '7C.2 (reject overlapping room lecture)';
+      v_rejected := FALSE;
+      v_err_msg := NULL;
+      BEGIN
+        INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+        VALUES (v_lec_conflict_room_id, v_camp1_id, 4, '2026-11-13', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_c_id, v_inst_b_id, v_room1_id, 'Overlap Room', 700);
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF SQLERRM LIKE '%CITS Schedule Conflict: Room%' THEN
+            v_rejected := TRUE;
+            v_err_msg := SQLERRM;
+          ELSE
+            RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+          END IF;
+      END;
+
+      IF NOT v_rejected THEN
+        RAISE EXCEPTION 'Overlapping Room schedule was NOT blocked at %', v_substage;
+      END IF;
+
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7C PASS (%s)', v_err_msg));
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%CITS Schedule Conflict: Room%' THEN
-          v_rejected := TRUE;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s [%s]] %s', v_substage, SQLSTATE, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7C FAIL @ %s (%s)', v_substage, SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Overlapping Room schedule was NOT blocked!';
-    END IF;
 
     -- 7D (Isolated on camp_day = 5): Daily group limit enforcement (camp_settings.max_instructor_groups_per_day = 2)
-    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-    VALUES
-      (v_lec_7d_p1_id, v_camp1_id, 5, '2026-11-14', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'First Group Valid Slot', 750),
-      (v_lec_7d_p2_id, v_camp1_id, 5, '2026-11-14', 2::smallint, '12:00'::time, '15:00'::time, 3, v_grp_b_id, v_inst_a_id, v_room2_id, 'Second Group Valid Slot', 750);
-
-    v_rejected := FALSE;
     BEGIN
+      v_substage := '7D.1 (insert day 5 two valid distinct group slots)';
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_limit_id, v_camp1_id, 5, '2026-11-14', 3::smallint, '15:00'::time, '18:00'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Third Group Exceeds Limit 2', 750);
+      VALUES
+        (v_lec_7d_p1_id, v_camp1_id, 5, '2026-11-14', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'First Group Valid Slot', 750),
+        (v_lec_7d_p2_id, v_camp1_id, 5, '2026-11-14', 2::smallint, '12:00'::time, '15:00'::time, 3, v_grp_b_id, v_inst_a_id, v_room2_id, 'Second Group Valid Slot', 750);
+
+      v_substage := '7D.2 (reject 3rd group exceeding max_instructor_groups_per_day=2)';
+      v_rejected := FALSE;
+      v_err_msg := NULL;
+      BEGIN
+        INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+        VALUES (v_lec_conflict_limit_id, v_camp1_id, 5, '2026-11-14', 3::smallint, '15:00'::time, '18:00'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Third Group Exceeds Limit 2', 750);
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF SQLERRM LIKE '%CITS Schedule Limit Exceeded%' THEN
+            v_rejected := TRUE;
+            v_err_msg := SQLERRM;
+          ELSE
+            RAISE EXCEPTION 'Unexpected error at % [%]: %', v_substage, SQLSTATE, SQLERRM;
+          END IF;
+      END;
+
+      IF NOT v_rejected THEN
+        RAISE EXCEPTION 'Max daily instructor groups limit was NOT enforced at %', v_substage;
+      END IF;
+
+      v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7D PASS (%s)', v_err_msg));
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%CITS Schedule Limit Exceeded%' THEN
-          v_rejected := TRUE;
-        ELSE
-          RAISE;
-        END IF;
+        v_subtest_failures := concat_ws('; ', v_subtest_failures, format('[%s [%s]] %s', v_substage, SQLSTATE, SQLERRM));
+        v_subtest_summary := concat_ws(' | ', v_subtest_summary, format('7D FAIL @ %s (%s)', v_substage, SQLERRM));
     END;
-    IF NOT v_rejected THEN
-      RAISE EXCEPTION 'Max daily instructor groups limit was NOT enforced by trigger!';
+
+    IF v_subtest_failures IS NOT NULL THEN
+      RAISE EXCEPTION 'Test 7 failures: % | All stages: %', v_subtest_failures, v_subtest_summary;
     END IF;
 
     UPDATE _cits_verification_report
     SET test_code = '[PASS 7/10]',
         status = 'PASS',
-        evidence = format('Isolated days 2..5 verified Instructor, Group, Room overlaps and max_instructor_groups_per_day=2 limit (%s)', v_err_msg)
+        evidence = v_subtest_summary
     WHERE step_order = 7;
-    RAISE NOTICE '[PASS 7/10] Schedule conflict & daily group limit trigger verified';
+    RAISE NOTICE '[PASS 7/10] %', v_subtest_summary;
   EXCEPTION
     WHEN OTHERS THEN
       UPDATE _cits_verification_report
