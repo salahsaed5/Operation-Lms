@@ -824,7 +824,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return {
         ok: false,
         error: t(
-          'Enter a valid 6-digit authenticator code (e.g., 482910).',
+          'Enter a valid 6-digit authenticator verification code.',
           'أدخل رمز مصادقة ثنائي مكون من 6 أرقام.'
         ),
       };

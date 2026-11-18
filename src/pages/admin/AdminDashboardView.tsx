@@ -18,6 +18,14 @@ import {
   EntitlementStatus,
   RequestStatus,
 } from '../../types/database';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  EmptyState,
+  PageHeader,
+  SURFACE_CARD,
+  StatusBadge,
+} from '../../components/ui/UiPrimitives';
 
 type SheetFilter = 'all' | 'synced' | 'pending';
 
@@ -189,40 +197,32 @@ export const AdminDashboardView: React.FC = () => {
   const totalActionItems =
     pendingExceptions.length + pendingReviewEntitlements.length + pendingRequests.length;
 
-  // Clean Empty State when no active camp exists (mirrors Home empty reference)
+  // Clean Empty State when no active camp exists
   if (!activeCamp) {
     return (
       <div className="max-w-3xl mx-auto py-8 space-y-5">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Calendar className="w-4 h-4" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              {t("Today's Camp Operations", 'عمليات المعسكر اليوم')}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {t('No active or draft camp configured', 'لا يوجد معسكر نشط أو مسودة حالياً')}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-14 px-6 text-center space-y-3">
-          <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
-            <Tent className="w-5 h-5" />
-          </div>
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            {t('No sessions scheduled without an active camp', 'لا توجد جلسات مجدولة بدون معسكر نشط')}
-          </p>
-          <button
-            type="button"
-            onClick={() => setAdminRoute('camps')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t('Configure Camp', 'إعداد المعسكر')}</span>
-          </button>
-        </div>
+        <PageHeader
+          title={t("Today's Camp Operations", 'عمليات المعسكر اليوم')}
+          subtitle={t('No active or draft camp configured', 'لا يوجد معسكر نشط أو مسودة حالياً')}
+        />
+        <EmptyState
+          icon={Tent}
+          title={t('No sessions scheduled without an active camp', 'لا توجد جلسات مجدولة بدون معسكر نشط')}
+          description={t(
+            'Create or activate a training camp to manage instructors, groups, and daily lectures.',
+            'أنشئ معسكراً أو فعّل معسكراً قائماً لإدارة المحاضرين والمجموعات والجدول اليومي.'
+          )}
+          action={
+            <button
+              type="button"
+              onClick={() => setAdminRoute('camps')}
+              className={BTN_PRIMARY}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t('Configure Camp', 'إعداد المعسكر')}</span>
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -230,12 +230,10 @@ export const AdminDashboardView: React.FC = () => {
   return (
     <div className="space-y-5">
       {/* Header Row: Title + Subtitle on Left, Search + Filter + Schedule Action on Right */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            {t('Daily Operations', 'العمليات اليومية')}
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+      <PageHeader
+        title={t('Daily Operations', 'العمليات اليومية')}
+        subtitle={
+          <>
             {t(activeCamp.nameEn, activeCamp.nameAr)} ·{' '}
             <span className="font-mono tabular-nums">{activeCamp.code}</span> ·{' '}
             <span className="font-mono tabular-nums">
@@ -244,45 +242,46 @@ export const AdminDashboardView: React.FC = () => {
                 `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
               )}
             </span>
-          </p>
-        </div>
+          </>
+        }
+        actions={
+          <>
+            <div className="relative flex-1 sm:flex-initial min-w-[200px] sm:w-60">
+              <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('Search topic or group...', 'ابحث بالعنوان أو المجموعة...')}
+                aria-label={t('Search today sessions', 'بحث في جلسات اليوم')}
+                className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
+              />
+            </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative flex-1 sm:flex-initial min-w-[200px] sm:w-60">
-            <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('Search topic or group...', 'ابحث بالعنوان أو المجموعة...')}
-              aria-label={t('Search today sessions', 'بحث في جلسات اليوم')}
-              className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
-            />
-          </div>
+            <button
+              type="button"
+              onClick={() => setShowFilters((prev) => !prev)}
+              aria-expanded={showFilters}
+              className={`px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                showFilters || sheetFilter !== 'all'
+                  ? 'border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-400'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{t('Filter', 'تصفية')}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setShowFilters((prev) => !prev)}
-            aria-expanded={showFilters}
-            className={`px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-              showFilters || sheetFilter !== 'all'
-                ? 'border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-400'
-                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>{t('Filter', 'تصفية')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setAdminRoute('schedule')}
-            className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
-          >
-            {t('Manage Schedule', 'إدارة الجدول')}
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => setAdminRoute('schedule')}
+              className={BTN_PRIMARY}
+            >
+              {t('Manage Schedule', 'إدارة الجدول')}
+            </button>
+          </>
+        }
+      />
 
       {/* Expandable Lightweight Filter Bar */}
       {showFilters && (
@@ -424,9 +423,53 @@ export const AdminDashboardView: React.FC = () => {
         </div>
       </section>
 
-      {/* Primary Operational Table (Focal Viewport Anchor — Reference Sessions Table Style) */}
+      {/* Compact Attention Banner when actionable queues need admin review */}
+      {totalActionItems > 0 && (
+        <div className="px-4 py-2.5 rounded-xl border border-amber-200/90 dark:border-amber-900/70 bg-amber-50/70 dark:bg-amber-950/30 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-medium">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>
+              {t(
+                `${totalActionItems} operational review item(s) awaiting decision`,
+                `${totalActionItems} عناصر مراجعة بانتظار قرار الإدارة`
+              )}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingExceptions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAdminRoute('attendance')}
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+              >
+                {t(`Exceptions (${pendingExceptions.length})`, `الاستثناءات (${pendingExceptions.length})`)}
+              </button>
+            )}
+            {pendingReviewEntitlements.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAdminRoute('finance')}
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+              >
+                {t(`Finance (${pendingReviewEntitlements.length})`, `المستحقات (${pendingReviewEntitlements.length})`)}
+              </button>
+            )}
+            {pendingRequests.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAdminRoute('operations')}
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+              >
+                {t(`Requests (${pendingRequests.length})`, `الطلبات (${pendingRequests.length})`)}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Primary Operational Table (Desktop Table + Responsive Mobile Cards) */}
       <section aria-labelledby="daily-sessions-table-heading">
-        <div className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <div className={`${SURFACE_CARD} overflow-hidden`}>
           <div className="px-5 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
             <div>
               <h2
@@ -471,15 +514,64 @@ export const AdminDashboardView: React.FC = () => {
                     setSearchQuery('');
                     setSheetFilter('all');
                   }}
-                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+                  className={BTN_SECONDARY}
                 >
                   {t('Reset Filters', 'إعادة ضبط الفلاتر')}
                 </button>
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-start border-collapse">
+            <>
+              {/* Mobile Session Cards */}
+              <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredRows.map(({ lec, grp, inst, room, isSynced, groupStudentsCount, presentCount, absentCount }) => {
+                  const instName = inst ? t(inst.fullNameEn, inst.fullNameAr) : lec.instructorId;
+                  const groupLabel = grp ? t(grp.nameEn, grp.nameAr) : lec.groupId;
+                  return (
+                    <div key={lec.id} className="p-4 space-y-2.5 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono tabular-nums text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                            {t(`P${lec.periodNumber}`, `ف${lec.periodNumber}`)} · {lec.startTime}–{lec.endTime} · {room?.code || lec.roomId}
+                          </p>
+                          <p className="font-semibold text-sm text-slate-900 dark:text-white mt-0.5">
+                            {lec.topic}
+                          </p>
+                          <p className="text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                            {instName} · {groupLabel}
+                          </p>
+                        </div>
+                        <StatusBadge tone={isSynced ? 'success' : 'warning'}>
+                          {isSynced ? t('Synced', 'معتمد') : t('Pending', 'معلق')}
+                        </StatusBadge>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 text-[11px] font-mono tabular-nums text-slate-500">
+                        <span>
+                          {t('Roster', 'الطلاب')}: {groupStudentsCount} ·{' '}
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            {isSynced ? `${presentCount}P` : '—'}
+                          </span>{' '}
+                          /{' '}
+                          <span className="text-red-600 dark:text-red-400">
+                            {isSynced ? `${absentCount}A` : '—'}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAdminRoute('attendance')}
+                          className="font-sans text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          {t('Inspect', 'فحص')}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop Operational Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-start border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
                     <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
@@ -607,8 +699,9 @@ export const AdminDashboardView: React.FC = () => {
                     );
                   })}
                 </tbody>
-              </table>
-            </div>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </section>

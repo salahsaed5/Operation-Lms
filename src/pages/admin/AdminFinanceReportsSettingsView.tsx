@@ -1,20 +1,57 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   XCircle,
   Download,
   HardDrive,
-  FileCode2,
   AlertTriangle,
+  Search,
+  Wallet,
+  BarChart3,
+  ShieldCheck,
+  Tent,
+  Database,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getSupabaseStatusSummary } from '../../lib/supabase';
 import {
   EntitlementStatus,
   IssueSeverity,
   IssueStatus,
   RequestStatus,
 } from '../../types/database';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  ConfirmDialog,
+  EmptyState,
+  INPUT_CLASS,
+  InlineBanner,
+  LABEL_CLASS,
+  PageHeader,
+  PaginationBar,
+  SELECT_CLASS,
+  SURFACE_CARD,
+  SURFACE_SUBTLE,
+  StatusBadge,
+} from '../../components/ui/UiPrimitives';
+
+function entitlementStatusDisplay(
+  status: EntitlementStatus,
+  t: (en: string, ar: string) => string
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
+  switch (status) {
+    case EntitlementStatus.APPROVED:
+      return { label: t('Approved', 'معتمد'), tone: 'success' };
+    case EntitlementStatus.ELIGIBLE:
+      return { label: t('Eligible', 'مستحق'), tone: 'success' };
+    case EntitlementStatus.PENDING_REVIEW:
+      return { label: t('Pending Review', 'قيد المراجعة'), tone: 'warning' };
+    case EntitlementStatus.EXCLUDED:
+      return { label: t('Excluded', 'مستبعد'), tone: 'danger' };
+    default:
+      return { label: t('Draft', 'مسودة'), tone: 'neutral' };
+  }
+}
 
 export const AdminFinanceView: React.FC = () => {
   const {
@@ -27,24 +64,64 @@ export const AdminFinanceView: React.FC = () => {
   } = useApp();
 
   const [overrideReasons, setOverrideReasons] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'eligible' | 'pending' | 'excluded'>('all');
+  const [excludeConfirmId, setExcludeConfirmId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (!activeCamp) {
     return (
-      <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t('No active camp configured.', 'لا يوجد معسكر نشط حالياً.')}
-      </div>
+      <EmptyState
+        icon={Wallet}
+        title={t('No active camp configured', 'لا يوجد معسكر نشط حالياً')}
+        description={t(
+          'Activate a camp first to review instructor lecture entitlements.',
+          'فعّل معسكراً أولاً لمراجعة مستحقات المحاضرات.'
+        )}
+      />
     );
   }
 
   const campEntitlements = entitlements.filter((e) => e.campId === activeCamp.id);
-  const totalEligibleEgp = campEntitlements
-    .filter(
-      (e) =>
-        e.status === EntitlementStatus.ELIGIBLE || e.status === EntitlementStatus.APPROVED
-    )
-    .reduce((sum, e) => sum + e.entitlementAmountEgp, 0);
+  const verifiedItems = campEntitlements.filter(
+    (e) => e.status === EntitlementStatus.ELIGIBLE || e.status === EntitlementStatus.APPROVED
+  );
+  const pendingItems = campEntitlements.filter(
+    (e) => e.status === EntitlementStatus.PENDING_REVIEW
+  );
+  const excludedItems = campEntitlements.filter(
+    (e) => e.status === EntitlementStatus.EXCLUDED
+  );
+  const totalEligibleEgp = verifiedItems.reduce((sum, e) => sum + e.entitlementAmountEgp, 0);
+
+  const filteredEntitlements = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return campEntitlements.filter((ent) => {
+      if (
+        statusFilter === 'eligible' &&
+        ent.status !== EntitlementStatus.ELIGIBLE &&
+        ent.status !== EntitlementStatus.APPROVED
+      ) {
+        return false;
+      }
+      if (statusFilter === 'pending' && ent.status !== EntitlementStatus.PENDING_REVIEW) {
+        return false;
+      }
+      if (statusFilter === 'excluded' && ent.status !== EntitlementStatus.EXCLUDED) {
+        return false;
+      }
+      if (!q) return true;
+      const inst = instructors.find((i) => i.id === ent.instructorId);
+      const lec = lectures.find((l) => l.id === ent.lectureId);
+      return (
+        (inst?.fullNameEn.toLowerCase().includes(q) ?? false) ||
+        (inst?.fullNameAr.toLowerCase().includes(q) ?? false) ||
+        (lec?.topic.toLowerCase().includes(q) ?? false) ||
+        ent.eligibilityReason.toLowerCase().includes(q)
+      );
+    });
+  }, [campEntitlements, instructors, lectures, searchQuery, statusFilter]);
 
   const handleDecision = async (entId: string, decision: 'approved' | 'excluded') => {
     setIsBusy(true);
@@ -53,225 +130,442 @@ export const AdminFinanceView: React.FC = () => {
       const reason = overrideReasons[entId] || '';
       const res = await reviewLectureEntitlement(entId, decision, reason);
       if (!res.ok) {
-        setFeedback({ ok: false, text: res.error || 'Reason required' });
+        setFeedback({
+          ok: false,
+          text: res.error || t('Audit reason is required.', 'يرجى إدخال سبب المراجعة.'),
+        });
       } else {
         setFeedback({
           ok: true,
           text: t(
-            `Entitlement ${decision} and recorded in immutable audit log.`,
-            `تم تحديث حالة المستحق المالي وتسجيل السبب في سجل المراجعة.`
+            `Entitlement ${decision} and recorded in the audit log.`,
+            'تم تحديث حالة المستحق المالي وتوثيق القرار في سجل المراجعة.'
           ),
         });
       }
     } finally {
       setIsBusy(false);
+      setExcludeConfirmId(null);
     }
   };
 
+  const requestExclude = (entId: string) => {
+    const reason = (overrideReasons[entId] || '').trim();
+    if (!reason) {
+      handleDecision(entId, 'excluded');
+      return;
+    }
+    setExcludeConfirmId(entId);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {t('Financial Entitlements (Frozen Lecture Rates)', 'المستحقات المالية (فئات المحاضرات المثبتة)')}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {t(
-              'Formula: Eligible Lectures × Frozen Lecture Rate (whole-number EGP). Rate changes never alter existing lectures. No payout tracking.',
-              'المعادلة: المحاضرات المستحقة × الفئة المثبتة بالجنيه المصري الصحيح. لا يتضمن النظام تتبع المدفوعات البنكية.'
-            )}
+    <div className="space-y-5">
+      <PageHeader
+        title={t('Financial Entitlements', 'المستحقات المالية')}
+        subtitle={t(
+          'Calculated from verified attendance and frozen lecture rates (whole-number EGP). Rate edits never alter historical lectures.',
+          'تُحتسب من كشوف الحضور المعتمدة والفئات المثبتة بالجنيه المصري الصحيح دون المساس بالمحاضرات السابقة.'
+        )}
+      />
+
+      {/* 4 Summary Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <div className={`${SURFACE_CARD} px-4 py-3.5`}>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {t('Verified Entitlements', 'إجمالي المستحقات المعتمدة')}
+          </p>
+          <p className="text-xl font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400 mt-1">
+            {totalEligibleEgp.toLocaleString()} EGP
           </p>
         </div>
-
-        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-right">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('Total Verified Entitlements', 'إجمالي المستحقات المعتمدة')}
+        <div className={`${SURFACE_CARD} px-4 py-3.5`}>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {t('Eligible / Approved Lectures', 'المحاضرات المستحقة')}
           </p>
-          <p className="text-2xl font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400">
-            {totalEligibleEgp.toLocaleString()} EGP
+          <p className="text-xl font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
+            {verifiedItems.length}
+          </p>
+        </div>
+        <div className={`${SURFACE_CARD} px-4 py-3.5`}>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {t('Pending Admin Review', 'بانتظار المراجعة')}
+          </p>
+          <p className="text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-1">
+            {pendingItems.length}
+          </p>
+        </div>
+        <div className={`${SURFACE_CARD} px-4 py-3.5`}>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {t('Excluded Records', 'سجلات مستبعدة')}
+          </p>
+          <p className="text-xl font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300 mt-1">
+            {excludedItems.length}
           </p>
         </div>
       </div>
 
       {feedback && (
-        <div
-          role="status"
-          className={`p-3.5 rounded-xl border text-xs font-medium ${
-            feedback.ok
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-300'
-          }`}
-        >
-          {feedback.text}
-        </div>
+        <InlineBanner
+          type={feedback.ok ? 'success' : 'error'}
+          message={feedback.text}
+          onDismiss={() => setFeedback(null)}
+        />
       )}
 
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-        <table className="w-full text-start border-collapse text-xs">
-          <thead>
-            <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-              <th className="py-3.5 px-5 font-semibold">{t('Instructor & Lecture', 'المحاضر والمحاضرة')}</th>
-              <th className="py-3.5 px-4 font-semibold">{t('Eligibility & Audit Reason', 'حالة الاستحقاق والسبب')}</th>
-              <th className="py-3.5 px-4 text-right font-semibold">{t('Frozen Rate', 'الفئة المثبتة')}</th>
-              <th className="py-3.5 px-4 text-right font-semibold">{t('Entitlement (EGP)', 'المستحق (ج.م)')}</th>
-              <th className="py-3.5 px-5 text-right font-semibold">{t('Admin Review', 'مراجعة المسؤول')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {campEntitlements.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-8 text-center text-slate-500">
-                  {t('No entitlement records evaluated for this camp yet.', 'لا توجد سجلات مستحقات مالية بعد.')}
-                </td>
-              </tr>
-            ) : (
-              campEntitlements.map((ent) => {
-                const inst = instructors.find((i) => i.id === ent.instructorId);
-                const lec = lectures.find((l) => l.id === ent.lectureId);
-                return (
-                  <tr key={ent.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                    <td className="py-4 px-5">
-                      <p className="font-semibold text-slate-900 dark:text-white">
+      {/* Search & Status Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative sm:w-72">
+          <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('Search instructor or topic...', 'ابحث بالمحاضر أو الموضوع...')}
+            aria-label={t('Search entitlements', 'بحث المستحقات')}
+            className={`${INPUT_CLASS} ps-9`}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {(
+            [
+              { id: 'all', en: 'All', ar: 'الكل' },
+              { id: 'pending', en: 'Pending Review', ar: 'قيد المراجعة' },
+              { id: 'eligible', en: 'Eligible / Approved', ar: 'المستحقة' },
+              { id: 'excluded', en: 'Excluded', ar: 'المستبعدة' },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setStatusFilter(tab.id)}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                statusFilter === tab.id
+                  ? 'bg-blue-600 text-white'
+                  : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {t(tab.en, tab.ar)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredEntitlements.length === 0 ? (
+        <EmptyState
+          icon={Wallet}
+          title={t('No entitlement records match your filter', 'لا توجد مستحقات مطابقة للبحث')}
+        />
+      ) : (
+        <div className={`${SURFACE_CARD} overflow-hidden`}>
+          {/* Mobile Entitlement Cards */}
+          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+            {filteredEntitlements.map((ent) => {
+              const inst = instructors.find((i) => i.id === ent.instructorId);
+              const lec = lectures.find((l) => l.id === ent.lectureId);
+              const st = entitlementStatusDisplay(ent.status, t);
+              return (
+                <div key={ent.id} className="p-4 space-y-3 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sm text-slate-900 dark:text-white">
                         {inst ? t(inst.fullNameEn, inst.fullNameAr) : ent.instructorId}
                       </p>
                       <p className="text-slate-500 mt-0.5">
-                        Day {ent.campDay} · P{ent.periodNumber} · {lec?.topic} ({ent.status})
+                        {t(`Day ${ent.campDay} · P${ent.periodNumber}`, `اليوم ${ent.campDay} · ف${ent.periodNumber}`)}{' '}
+                        · {lec?.topic}
                       </p>
-                    </td>
-                    <td className="py-4 px-4 max-w-md">
-                      <p className="text-slate-800 dark:text-slate-200">{ent.eligibilityReason}</p>
-                      {ent.adminOverrideReason && (
-                        <p className="text-blue-600 dark:text-blue-400 mt-0.5">
-                          Audit Note: {ent.adminOverrideReason}
+                    </div>
+                    <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                  </div>
+
+                  <p className="text-slate-700 dark:text-slate-300">{ent.eligibilityReason}</p>
+
+                  <div className="flex items-center justify-between font-mono tabular-nums">
+                    <span className="text-slate-500">
+                      {t('Rate:', 'الفئة:')} {ent.frozenRateEgp} EGP
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {ent.entitlementAmountEgp.toLocaleString()} EGP
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <input
+                      type="text"
+                      aria-label={t('Audit reason for decision', 'سبب القرار المالي')}
+                      placeholder={t('Audit reason required...', 'أدخل سبب المراجعة...')}
+                      value={overrideReasons[ent.id] || ''}
+                      onChange={(e) =>
+                        setOverrideReasons((prev) => ({ ...prev, [ent.id]: e.target.value }))
+                      }
+                      className={INPUT_CLASS}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleDecision(ent.id, 'approved')}
+                        className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-semibold inline-flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{t('Approve', 'اعتماد')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => requestExclude(ent.id)}
+                        className="flex-1 py-2 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 font-semibold inline-flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>{t('Exclude', 'استبعاد')}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Finance Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-start border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                  <th className="py-3 px-5 font-semibold text-start">{t('Instructor & Lecture', 'المحاضر والمحاضرة')}</th>
+                  <th className="py-3 px-4 font-semibold text-start">{t('Status', 'الحالة')}</th>
+                  <th className="py-3 px-4 font-semibold text-start">{t('Eligibility & Notes', 'تفاصيل الاستحقاق')}</th>
+                  <th className="py-3 px-4 font-semibold text-end">{t('Frozen Rate', 'الفئة المثبتة')}</th>
+                  <th className="py-3 px-4 font-semibold text-end">{t('Amount (EGP)', 'المستحق (ج.م)')}</th>
+                  <th className="py-3 px-5 font-semibold text-end">{t('Admin Decision', 'قرار المراجعة')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {filteredEntitlements.map((ent) => {
+                  const inst = instructors.find((i) => i.id === ent.instructorId);
+                  const lec = lectures.find((l) => l.id === ent.lectureId);
+                  const st = entitlementStatusDisplay(ent.status, t);
+                  return (
+                    <tr
+                      key={ent.id}
+                      className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
+                    >
+                      <td className="py-3.5 px-5">
+                        <p className="font-semibold text-slate-900 dark:text-white">
+                          {inst ? t(inst.fullNameEn, inst.fullNameAr) : ent.instructorId}
                         </p>
-                      )}
-                    </td>
-                    <td className="py-4 px-4 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400">
-                      {ent.frozenRateEgp} EGP
-                    </td>
-                    <td className="py-4 px-4 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-white">
-                      {ent.entitlementAmountEgp} EGP
-                    </td>
-                    <td className="py-4 px-5 text-right">
-                      <div className="flex flex-col items-end gap-2">
-                        <input
-                          type="text"
-                          aria-label={t('Audit reason for entitlement decision', 'سبب المراجعة للمستحق المالي')}
-                          placeholder={t('Audit reason required...', 'أدخل سبب المراجعة...')}
-                          value={overrideReasons[ent.id] || ''}
-                          onChange={(e) =>
-                            setOverrideReasons((prev) => ({ ...prev, [ent.id]: e.target.value }))
-                          }
-                          className="w-56 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
-                        />
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleDecision(ent.id, 'approved')}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>{t('Approve', 'اعتماد')}</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleDecision(ent.id, 'excluded')}
-                            className="px-2.5 py-1 rounded-lg border border-red-300 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60 font-semibold inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <XCircle className="w-3 h-3" />
-                            <span>{t('Exclude', 'استبعاد')}</span>
-                          </button>
+                        <p className="text-slate-500 mt-0.5">
+                          <span className="font-mono">Day {ent.campDay} · P{ent.periodNumber}</span> · {lec?.topic}
+                        </p>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                      </td>
+                      <td className="py-3.5 px-4 max-w-sm">
+                        <p className="text-slate-800 dark:text-slate-200">{ent.eligibilityReason}</p>
+                        {ent.adminOverrideReason && (
+                          <p className="text-blue-600 dark:text-blue-400 mt-0.5">
+                            {t('Note:', 'ملاحظة:')} {ent.adminOverrideReason}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-end font-mono tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {ent.frozenRateEgp} EGP
+                      </td>
+                      <td className="py-3.5 px-4 text-end font-mono tabular-nums font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                        {ent.entitlementAmountEgp.toLocaleString()} EGP
+                      </td>
+                      <td className="py-3.5 px-5 text-end">
+                        <div className="flex flex-col items-end gap-2">
+                          <input
+                            type="text"
+                            aria-label={t('Audit reason for entitlement decision', 'سبب المراجعة للمستحق المالي')}
+                            placeholder={t('Audit reason required...', 'أدخل سبب المراجعة...')}
+                            value={overrideReasons[ent.id] || ''}
+                            onChange={(e) =>
+                              setOverrideReasons((prev) => ({ ...prev, [ent.id]: e.target.value }))
+                            }
+                            className="w-56 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:border-blue-500"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleDecision(ent.id, 'approved')}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>{t('Approve', 'اعتماد')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => requestExclude(ent.id)}
+                              className="px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60 font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              <span>{t('Exclude', 'استبعاد')}</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(excludeConfirmId)}
+        title={t('Exclude Lecture Entitlement?', 'استبعاد المستحق المالي للمحاضرة؟')}
+        description={t(
+          'Excluding this entitlement sets its payable amount to 0 EGP and records your audit note permanently. Continue?',
+          'سيتم استبعاد هذه المحاضرة من المستحقات المالية وتوثيق سبب الاستبعاد في سجل المراجعة. هل تريد المتابعة؟'
+        )}
+        confirmLabel={t('Confirm Exclude', 'تأكيد الاستبعاد')}
+        cancelLabel={t('Cancel', 'إلغاء')}
+        tone="danger"
+        isBusy={isBusy}
+        onConfirm={() => {
+          if (excludeConfirmId) handleDecision(excludeConfirmId, 'excluded');
+        }}
+        onCancel={() => setExcludeConfirmId(null)}
+      />
     </div>
   );
 };
 
 export const AdminReportsView: React.FC = () => {
   const { activeCamp, groups, students, surveys, instructors, t } = useApp();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const campGroups = activeCamp ? groups.filter((g) => g.campId === activeCamp.id) : groups;
   const campSurveys = activeCamp ? surveys.filter((s) => s.campId === activeCamp.id) : surveys;
 
-  return (
-    <div className="space-y-6">
-      <div className="pb-4 border-b border-slate-200 dark:border-slate-800">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          {t('Analytics, Surveys & Camp Reports', 'التقارير والتحليلات وتقييمات المعسكر')}
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          {t(
-            'Group capacity utilization, student survey feedback, and historical camp comparison.',
-            'نسب إشغال المجموعات، نتائج استبيانات الطلاب، ومؤشرات الأداء التدريبي.'
-          )}
-        </p>
-      </div>
+  const q = searchQuery.trim().toLowerCase();
+  const filteredGroups = campGroups.filter(
+    (g) =>
+      !q ||
+      g.nameEn.toLowerCase().includes(q) ||
+      g.nameAr.toLowerCase().includes(q) ||
+      g.track.toLowerCase().includes(q)
+  );
+  const filteredSurveys = campSurveys.filter((srv) => {
+    const inst = instructors.find((i) => i.id === srv.instructorId);
+    return (
+      !q ||
+      srv.title.toLowerCase().includes(q) ||
+      (inst?.fullNameEn.toLowerCase().includes(q) ?? false) ||
+      (inst?.fullNameAr.toLowerCase().includes(q) ?? false)
+    );
+  });
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('Group Enrollment & Capacity', 'إحصائيات المجموعات والسعة')}
-          </h2>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
-            {campGroups.length === 0 ? (
-              <p className="py-4 text-slate-500">{t('No groups found.', 'لا توجد مجموعات.')}</p>
-            ) : (
-              campGroups.map((grp) => {
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title={t('Reports & Evaluations', 'التقارير وتقييمات المحاضرين')}
+        subtitle={t(
+          'Group capacity utilization and post-lecture student evaluation scores.',
+          'نسب إشغال المجموعات ونتائج استبيانات تقييم الطلاب للمحاضرين.'
+        )}
+        actions={
+          <div className="relative sm:w-64">
+            <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('Filter groups or surveys...', 'تصفية المجموعات أو الاستبيانات...')}
+              aria-label={t('Filter reports', 'تصفية التقارير')}
+              className={`${INPUT_CLASS} ps-9`}
+            />
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <span>{t('Group Enrollment & Capacity', 'إشغال وسعة المجموعات')}</span>
+            </h2>
+            <span className="text-xs font-mono text-slate-500">{filteredGroups.length}</span>
+          </div>
+
+          {filteredGroups.length === 0 ? (
+            <p className="py-6 text-xs text-slate-500 text-center">
+              {t('No groups found.', 'لا توجد مجموعات مطابقة.')}
+            </p>
+          ) : (
+            <div className="space-y-4 text-xs">
+              {filteredGroups.map((grp) => {
                 const count = students.filter((s) => s.groupId === grp.id && s.isActive).length;
+                const pct = grp.capacity > 0 ? Math.min(100, Math.round((count / grp.capacity) * 100)) : 0;
                 return (
-                  <div key={grp.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-white">
-                        {t(grp.nameEn, grp.nameAr)}
-                      </p>
-                      <p className="text-slate-500">{grp.track}</p>
+                  <div key={grp.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 dark:text-white truncate">
+                          {t(grp.nameEn, grp.nameAr)}
+                        </p>
+                        <p className="text-slate-500 truncate">{grp.track}</p>
+                      </div>
+                      <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-200 shrink-0">
+                        {count} / {grp.capacity} ({pct}%)
+                      </span>
                     </div>
-                    <span className="font-mono tabular-nums font-semibold">
-                      {count} / {grp.capacity} {t('students', 'طالب')}
-                    </span>
+                    <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </div>
 
-        <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('Student Evaluation Surveys', 'نتائج استبيانات تقييم المحاضرين')}
-          </h2>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
-            {campSurveys.length === 0 ? (
-              <p className="py-4 text-slate-500">{t('No survey records found.', 'لا توجد استبيانات بعد.')}</p>
-            ) : (
-              campSurveys.map((srv) => {
+        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t('Student Evaluation Surveys', 'نتائج تقييم المحاضرين')}
+            </h2>
+            <span className="text-xs font-mono text-slate-500">{filteredSurveys.length}</span>
+          </div>
+
+          {filteredSurveys.length === 0 ? (
+            <p className="py-6 text-xs text-slate-500 text-center">
+              {t('No survey records found.', 'لا توجد استبيانات مطابقة.')}
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+              {filteredSurveys.map((srv) => {
                 const inst = instructors.find((i) => i.id === srv.instructorId);
                 return (
-                  <div key={srv.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-white">{srv.title}</p>
-                      <p className="text-slate-500">
-                        {inst ? t(inst.fullNameEn, inst.fullNameAr) : ''} · {srv.responsesCount} responses
+                  <div key={srv.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-white truncate">
+                        {srv.title}
+                      </p>
+                      <p className="text-slate-500 truncate mt-0.5">
+                        {inst ? t(inst.fullNameEn, inst.fullNameAr) : ''} · {srv.responsesCount}{' '}
+                        {t('responses', 'ردود')}
                       </p>
                     </div>
-                    <span className="font-mono tabular-nums text-base font-bold text-blue-600 dark:text-blue-400">
-                      {srv.averageScore.toFixed(2)} / 5.00
-                    </span>
+                    <StatusBadge tone="info">
+                      <span className="font-mono tabular-nums">{srv.averageScore.toFixed(2)} / 5.00</span>
+                    </StatusBadge>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -311,6 +605,8 @@ export const AdminOperationsView: React.FC = () => {
     ? issues.filter((iss) => iss.campId === activeCamp.id)
     : issues;
 
+  const completedChecklistCount = campChecklists.filter((c) => c.isCompleted).length;
+
   const handleToggleChecklist = async (id: string) => {
     const res = await toggleChecklistItem(id);
     if (!res.ok && res.error) setOpFeedback({ ok: false, text: res.error });
@@ -326,9 +622,15 @@ export const AdminOperationsView: React.FC = () => {
     try {
       const res = await reviewInstructorRequest(reqId, decision, note);
       if (!res.ok) {
-        setOpFeedback({ ok: false, text: res.error || 'Failed reviewing request.' });
+        setOpFeedback({
+          ok: false,
+          text: res.error || t('Failed reviewing request.', 'تعذر مراجعة الطلب.'),
+        });
       } else {
-        setOpFeedback({ ok: true, text: t('Request updated.', 'تم تحديث الطلب وإرسال إشعار للمحاضر.') });
+        setOpFeedback({
+          ok: true,
+          text: t('Request updated and instructor notified.', 'تم تحديث الطلب وإرسال إشعار للمحاضر.'),
+        });
       }
     } finally {
       setIsBusy(false);
@@ -344,12 +646,12 @@ export const AdminOperationsView: React.FC = () => {
       const res = await createOperationalIssue({
         roomId: newIssueRoom,
         category: 'Lab Infrastructure',
-        title: newIssueTitle,
+        title: newIssueTitle.trim(),
         description: 'Logged from Daily Operations console',
         severity: IssueSeverity.MEDIUM,
       });
       if (!res.ok) {
-        setOpFeedback({ ok: false, text: res.error || 'Failed logging issue.' });
+        setOpFeedback({ ok: false, text: res.error || t('Failed logging issue.', 'تعذر تسجيل البلاغ.') });
       } else {
         setNewIssueTitle('');
         setOpFeedback({ ok: true, text: t('Issue logged.', 'تم تسجيل البلاغ.') });
@@ -370,53 +672,50 @@ export const AdminOperationsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="pb-4 border-b border-slate-200 dark:border-slate-800">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          {t('Daily Operations, Checklists & Issues', 'التشغيل اليومي وقوائم التفقد والأعطال')}
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          {t(
-            'Track daily readiness tasks, instructor exception requests, and lab room incidents.',
-            'متابعة مهام الجاهزية اليومية، طلبات استثناء المحاضرين، وبلاغات القاعات.'
-          )}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('Operations, Checklists & Incidents', 'التشغيل وقوائم التفقد والأعطال')}
+        subtitle={t(
+          'Track daily venue readiness tasks, instructor requests, and room infrastructure reports.',
+          'متابعة مهام الجاهزية اليومية وطلبات المحاضرين وبلاغات القاعات التدريبية.'
+        )}
+      />
 
       {opFeedback && (
-        <div
-          role="status"
-          className={`p-3.5 rounded-xl border text-xs font-medium ${
-            opFeedback.ok
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-300'
-          }`}
-        >
-          {opFeedback.text}
-        </div>
+        <InlineBanner
+          type={opFeedback.ok ? 'success' : 'error'}
+          message={opFeedback.text}
+          onDismiss={() => setOpFeedback(null)}
+        />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {/* Daily Checklist */}
-        <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {activeCamp
-              ? t(
-                  `Day ${activeCamp.currentCampDay} Operational Checklist`,
-                  `قائمة تفقد التشغيل — اليوم ${activeCamp.currentCampDay}`
-                )
-              : t('Operational Checklist', 'قائمة تفقد التشغيل')}
-          </h2>
-          <div className="space-y-2.5">
+        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {activeCamp
+                ? t(
+                    `Day ${activeCamp.currentCampDay} Readiness Checklist`,
+                    `قائمة تفقد التشغيل — اليوم ${activeCamp.currentCampDay}`
+                  )
+                : t('Operational Checklist', 'قائمة تفقد التشغيل')}
+            </h2>
+            <span className="text-xs font-mono tabular-nums text-slate-500">
+              {completedChecklistCount}/{campChecklists.length}
+            </span>
+          </div>
+
+          <div className="space-y-2">
             {campChecklists.length === 0 ? (
-              <p className="text-xs text-slate-500 py-3">
+              <p className="text-xs text-slate-500 py-4 text-center">
                 {t('No checklist tasks configured.', 'لا توجد بنود في قائمة التفقد.')}
               </p>
             ) : (
               campChecklists.map((item) => (
                 <label
                   key={item.id}
-                  className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer text-xs"
+                  className="flex items-start gap-3 p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer text-xs"
                 >
                   <input
                     type="checkbox"
@@ -440,29 +739,38 @@ export const AdminOperationsView: React.FC = () => {
         </div>
 
         {/* Instructor Requests & Lab Issues */}
-        <div className="space-y-6">
-          <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              {t('Instructor Exception & Support Requests', 'طلبات المحاضرين والاستثناءات')}
+        <div className="space-y-5">
+          <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t('Instructor Requests', 'طلبات المحاضرين')}
             </h2>
             <div className="space-y-3 text-xs">
               {campRequests.length === 0 ? (
-                <p className="text-slate-500 py-2">
+                <p className="text-slate-500 py-3 text-center">
                   {t('No instructor requests submitted yet.', 'لا توجد طلبات من المحاضرين بعد.')}
                 </p>
               ) : (
                 campRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
+                  <div key={req.id} className={`${SURFACE_SUBTLE} p-3.5 space-y-2`}>
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-slate-900 dark:text-white">
                         {req.subject}
                       </span>
-                      <span className="font-mono uppercase text-[11px] text-slate-500">
-                        {req.status}
-                      </span>
+                      <StatusBadge
+                        tone={
+                          req.status === RequestStatus.APPROVED
+                            ? 'success'
+                            : req.status === RequestStatus.REJECTED
+                            ? 'danger'
+                            : 'warning'
+                        }
+                      >
+                        {req.status === RequestStatus.APPROVED
+                          ? t('Approved', 'مقبول')
+                          : req.status === RequestStatus.REJECTED
+                          ? t('Rejected', 'مرفوض')
+                          : t('Pending', 'معلق')}
+                      </StatusBadge>
                     </div>
                     <p className="text-slate-600 dark:text-slate-400">{req.details}</p>
                     {req.status === RequestStatus.PENDING && (
@@ -477,9 +785,9 @@ export const AdminOperationsView: React.FC = () => {
                               'Approved by Admin Operations'
                             )
                           }
-                          className="px-3 py-1 rounded-lg bg-emerald-600 text-white font-semibold cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
                         >
-                          {t('Approve Request', 'موافقة')}
+                          {t('Approve', 'موافقة')}
                         </button>
                         <button
                           type="button"
@@ -491,7 +799,7 @@ export const AdminOperationsView: React.FC = () => {
                               'Rejected by Admin Operations'
                             )
                           }
-                          className="px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold cursor-pointer"
                         >
                           {t('Reject', 'رفض')}
                         </button>
@@ -503,18 +811,18 @@ export const AdminOperationsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <span>{t('Room & Infrastructure Issues', 'بلاغات القاعات والدعم الفني')}</span>
             </h2>
 
-            <form onSubmit={handleAddIssue} className="flex gap-2 text-xs">
+            <form onSubmit={handleAddIssue} className="flex flex-wrap sm:flex-nowrap gap-2 text-xs">
               <select
                 aria-label={t('Room for issue', 'القاعة')}
                 value={newIssueRoom}
                 onChange={(e) => setNewIssueRoom(e.target.value)}
-                className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
+                className={`${SELECT_CLASS} w-28 shrink-0`}
               >
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -524,48 +832,59 @@ export const AdminOperationsView: React.FC = () => {
               </select>
               <input
                 type="text"
-                placeholder={t('Log room issue...', 'تسجيل عطل أو ملاحظة بالقاعة...')}
+                placeholder={t('Describe room issue...', 'وصف العطل أو الملاحظة...')}
                 value={newIssueTitle}
                 onChange={(e) => setNewIssueTitle(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
+                className={INPUT_CLASS}
               />
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold cursor-pointer"
-              >
-                {t('Log', 'إضافة')}
+              <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>
+                {t('Log Issue', 'تسجيل')}
               </button>
             </form>
 
-            <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
-              {campIssues.map((iss) => (
-                <div key={iss.id} className="py-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">{iss.title}</p>
-                    <p className="text-slate-500">
-                      {iss.category} · {iss.reportedBy} · {iss.status}
-                    </p>
+            {campIssues.length === 0 ? (
+              <p className="text-xs text-slate-500 py-3 text-center">
+                {t('No room issues logged.', 'لا توجد بلاغات مسجلة.')}
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                {campIssues.map((iss) => (
+                  <div key={iss.id} className="py-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-white">{iss.title}</p>
+                      <p className="text-slate-500 mt-0.5">
+                        {iss.category} · {iss.reportedBy}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge tone={iss.status === IssueStatus.RESOLVED ? 'success' : 'warning'}>
+                        {iss.status === IssueStatus.RESOLVED
+                          ? t('Resolved', 'تم الحل')
+                          : t('Open', 'مفتوح')}
+                      </StatusBadge>
+                      {iss.status !== IssueStatus.RESOLVED && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleResolveIssue(iss.id)}
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium cursor-pointer"
+                        >
+                          {t('Resolve', 'إنهاء')}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {iss.status !== IssueStatus.RESOLVED && (
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleResolveIssue(iss.id)}
-                      className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold cursor-pointer"
-                    >
-                      {t('Resolve', 'تم الحل')}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 };
+
+const AUDIT_PAGE_SIZE = 12;
 
 export const AdminSettingsAndAuditView: React.FC = () => {
   const {
@@ -576,13 +895,13 @@ export const AdminSettingsAndAuditView: React.FC = () => {
     checkins,
     attendanceSheets,
     exportBackupSnapshot,
-    setArchitectureDrawerOpen,
     t,
   } = useApp();
 
   const [isExporting, setIsExporting] = useState(false);
   const [backupNotice, setBackupNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const sbStatus = getSupabaseStatusSummary();
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
 
   const activeCheckinsWithSelfies = checkins.filter(
     (c) => !c.selfieDeletedAfterArchive && c.selfieSizeKb > 0
@@ -594,19 +913,41 @@ export const AdminSettingsAndAuditView: React.FC = () => {
   const totalOperationalRecords =
     students.length + lectures.length + attendanceSheets.length + auditLogs.length;
 
+  useEffect(() => {
+    setAuditPage(1);
+  }, [auditSearch]);
+
+  const filteredAuditLogs = useMemo(() => {
+    const q = auditSearch.trim().toLowerCase();
+    if (!q) return auditLogs;
+    return auditLogs.filter(
+      (log) =>
+        log.actorName.toLowerCase().includes(q) ||
+        log.action.toLowerCase().includes(q) ||
+        log.entityType.toLowerCase().includes(q) ||
+        log.reason.toLowerCase().includes(q)
+    );
+  }, [auditLogs, auditSearch]);
+
+  const totalAuditPages = Math.max(1, Math.ceil(filteredAuditLogs.length / AUDIT_PAGE_SIZE));
+  const pagedAuditLogs = filteredAuditLogs.slice(
+    (auditPage - 1) * AUDIT_PAGE_SIZE,
+    auditPage * AUDIT_PAGE_SIZE
+  );
+
   const handleExportBackup = async () => {
     setIsExporting(true);
     setBackupNotice(null);
     try {
       const res = await exportBackupSnapshot();
       if (!res.ok) {
-        setBackupNotice({ ok: false, text: res.error || 'Backup export failed.' });
+        setBackupNotice({ ok: false, text: res.error || t('Backup export failed.', 'تعذر تصدير النسخة الاحتياطية.') });
       } else {
         setBackupNotice({
           ok: true,
           text: t(
-            `JSON operational snapshot downloaded (${res.filename}) · Checksum: ${res.checksum?.slice(0, 16)}...`,
-            `تم تنزيل نسخة الاحتياط (${res.filename}) وتوثيق البصمة الأمنية.`
+            `Operational JSON backup exported (${res.filename}).`,
+            `تم تنزيل النسخة الاحتياطية (${res.filename}).`
           ),
         });
       }
@@ -616,162 +957,183 @@ export const AdminSettingsAndAuditView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {t('Settings, Free-Tier Quota Guard & Audit Logs', 'الإعدادات، حماية الخطة المجانية وسجل المراجعة')}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {t(
-              'Strict free-tier protection policy: compressed selfies <=300KB purged after archive, selective pagination, and immutable audit trail.',
-              'حماية صارمة للخطة المجانية: ضغط الصور أقل من 300 كيلوبايت وحذفها بعد الأرشفة، مع سجل مراجعة غير قابل للحذف.'
-            )}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setArchitectureDrawerOpen(true)}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-          >
-            <FileCode2 className="w-4 h-4 text-blue-500" />
-            <span>{t('Inspect SQL Schema & Plan', 'فحص مخطط SQL والخطة')}</span>
-          </button>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('Settings & Audit Trail', 'الإعدادات وسجل المراجعة')}
+        subtitle={t(
+          'Export verified camp snapshots and review the immutable administrative and financial audit log.',
+          'تصدير نسخ احتياطية لبيانات المعسكر ومراجعة سجل التدقيق الإداري والمالي.'
+        )}
+        actions={
           <button
             type="button"
             disabled={isExporting}
             onClick={handleExportBackup}
-            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+            className={BTN_PRIMARY}
           >
             <Download className="w-4 h-4" />
-            <span>{isExporting ? t('Exporting...', 'جاري التصدير...') : t('Export JSON Backup', 'تصدير نسخة احتياطية')}</span>
+            <span>
+              {isExporting ? t('Exporting...', 'جاري التصدير...') : t('Export JSON Backup', 'تصدير نسخة احتياطية')}
+            </span>
           </button>
-        </div>
-      </div>
-
-      {/* Explicit Connection Status Banner */}
-      <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-900 dark:text-white">
-              {t('Database Connection Mode:', 'وضع الاتصال بقاعدة البيانات:')}
-            </span>
-            <span
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold border ${
-                sbStatus.configured
-                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                  : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-              }`}
-            >
-              {sbStatus.configured
-                ? t('Connected Supabase Mode', 'متصل بقاعدة بيانات Supabase')
-                : t('Local Operational Sandbox Mode (Not connected to remote Supabase)', 'وضع المحاكاة المحلي (غير متصل بقاعدة بيانات Supabase سحابية)')}
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{sbStatus.message}</p>
-        </div>
-        <span className="text-xs font-mono text-slate-500 shrink-0">{sbStatus.urlHost}</span>
-      </div>
+        }
+      />
 
       {backupNotice && (
-        <div
-          role="status"
-          className={`p-3.5 rounded-xl border text-xs font-medium ${
-            backupNotice.ok
-              ? 'border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300'
-              : 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300'
-          }`}
-        >
-          {backupNotice.text}
-        </div>
+        <InlineBanner
+          type={backupNotice.ok ? 'success' : 'error'}
+          message={backupNotice.text}
+          onDismiss={() => setBackupNotice(null)}
+        />
       )}
 
-      {/* Live Computed Free-Tier Storage & Records Summary */}
+      {/* 3 Clean Operational Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div className={`${SURFACE_CARD} p-5`}>
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{t('Loaded Operational Rows (Free Tier 500MB)', 'السجلات التشغيلية المحملة')}</span>
-            <HardDrive className="w-4 h-4 text-blue-500" />
+            <span>{t('Active Camp Scope', 'نطاق المعسكر النشط')}</span>
+            <Tent className="w-4 h-4 text-blue-600" />
           </div>
-          <p className="text-xl font-bold font-mono tabular-nums mt-2">
-            {totalOperationalRecords.toLocaleString()} {t('Rows Loaded', 'سجل')}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {t('Selective pagination & zero paid add-ons active', 'استعلامات انتقائية ضمن الخطة المجانية')}
-          </p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{t('Active Selfie Footprint (1GB Bucket Cap)', 'حجم صور التحقق النشطة')}</span>
-            <HardDrive className="w-4 h-4 text-emerald-500" />
-          </div>
-          <p className="text-xl font-bold font-mono tabular-nums mt-2">
-            {totalSelfieKb.toLocaleString()} KB ({activeCheckinsWithSelfies.length}{' '}
-            {t('files', 'ملفات')})
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {t('Client compression <= 300KB · Purged on camp archive', 'ضغط الصور <= 300KB · تُحذف تلقائياً عند الأرشفة')}
-          </p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{t('Architecture & Offline Guardrails', 'حماية البنية والعمل دون إنترنت')}</span>
-            <HardDrive className="w-4 h-4 text-blue-500" />
-          </div>
-          <p className="text-xl font-bold font-mono tabular-nums mt-2">
+          <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-2">
             {activeCamp ? activeCamp.code : t('No Active Camp', 'لا يوجد معسكر نشط')}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            {t('IndexedDB handles offline attendance drafts locally', 'المسودات غير المتصلة تُحفظ محلياً عبر IndexedDB')}
+            {activeCamp
+              ? t(
+                  `Day ${activeCamp.currentCampDay}/${activeCamp.durationDays} · ${activeCamp.settings.geofenceRadiusMeters}m geofence`,
+                  `اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays} · نطاق ${activeCamp.settings.geofenceRadiusMeters}م`
+                )
+              : t('Configure an active camp under Camps.', 'فعّل معسكراً من قسم المعسكرات.')}
+          </p>
+        </div>
+
+        <div className={`${SURFACE_CARD} p-5`}>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>{t('Verification Media Storage', 'حجم صور التحقق النشطة')}</span>
+            <HardDrive className="w-4 h-4 text-emerald-600" />
+          </div>
+          <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-2">
+            {totalSelfieKb.toLocaleString()} KB
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            {activeCheckinsWithSelfies.length} {t('files · Purged on camp archive', 'ملفات · تُحذف عند أرشفة المعسكر')}
+          </p>
+        </div>
+
+        <div className={`${SURFACE_CARD} p-5`}>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>{t('Operational Records Tracked', 'السجلات التشغيلية الموثقة')}</span>
+            <Database className="w-4 h-4 text-blue-600" />
+          </div>
+          <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-2">
+            {totalOperationalRecords.toLocaleString()}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            {auditLogs.length} {t('immutable audit entries', 'سجلات تدقيق محمية')}
           </p>
         </div>
       </div>
 
-      {/* Immutable Audit Log Table */}
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('Immutable Operational & Financial Audit Trail', 'سجل المراجعة والتدقيق غير القابل للتعديل')}
-          </h2>
+      {/* Audit Log Search & Table */}
+      <div className={`${SURFACE_CARD} overflow-hidden`}>
+        <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t('Operational & Financial Audit Log', 'سجل التدقيق الإداري والمالي')}
+            </h2>
+          </div>
+
+          <div className="relative sm:w-64">
+            <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              value={auditSearch}
+              onChange={(e) => setAuditSearch(e.target.value)}
+              placeholder={t('Filter actor, action, reason...', 'بحث بالمنفذ أو الإجراء...')}
+              aria-label={t('Search audit log', 'بحث سجل التدقيق')}
+              className={`${INPUT_CLASS} ps-9`}
+            />
+          </div>
         </div>
-        <table className="w-full text-start border-collapse text-xs">
-          <thead>
-            <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-              <th className="py-3 px-5 font-semibold">{t('Timestamp (UTC)', 'التوقيت')}</th>
-              <th className="py-3 px-4 font-semibold">{t('Actor & Role', 'المنفذ والدور')}</th>
-              <th className="py-3 px-4 font-semibold">{t('Action & Entity', 'الإجراء والجدول')}</th>
-              <th className="py-3 px-4 font-semibold">{t('State Delta & Reason', 'التغيير والسبب')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {auditLogs.map((log) => (
-              <tr key={log.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                <td className="py-3 px-5 font-mono tabular-nums text-slate-500">
-                  {new Date(log.createdAt).toISOString().replace('T', ' ').slice(0, 19)}
-                </td>
-                <td className="py-3 px-4">
-                  <span className="font-semibold text-slate-900 dark:text-white">
-                    {log.actorName}
-                  </span>
-                  <span className="text-slate-500"> · {log.actorRole}</span>
-                </td>
-                <td className="py-3 px-4 font-mono text-blue-600 dark:text-blue-400">
-                  {log.action} ({log.entityType})
-                </td>
-                <td className="py-3 px-4">
-                  <p className="text-slate-800 dark:text-slate-200">{log.reason}</p>
-                  <p className="font-mono text-[11px] text-slate-500 truncate max-w-md">
-                    {log.previousValue} → {log.newValue}
+
+        {pagedAuditLogs.length === 0 ? (
+          <p className="py-10 text-xs text-slate-500 text-center">
+            {t('No audit log entries match your filter.', 'لا توجد سجلات تدقيق مطابقة.')}
+          </p>
+        ) : (
+          <>
+            {/* Mobile Audit Cards */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+              {pagedAuditLogs.map((log) => (
+                <div key={log.id} className="p-4 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {log.actorName}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-400">
+                      {new Date(log.createdAt).toISOString().replace('T', ' ').slice(0, 16)}
+                    </span>
+                  </div>
+                  <p className="font-mono text-blue-600 dark:text-blue-400">
+                    {log.action} ({log.entityType})
                   </p>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <p className="text-slate-600 dark:text-slate-300">{log.reason}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Audit Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-start border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                    <th className="py-3 px-5 font-semibold text-start">{t('Timestamp (UTC)', 'التوقيت')}</th>
+                    <th className="py-3 px-4 font-semibold text-start">{t('Actor', 'المنفذ')}</th>
+                    <th className="py-3 px-4 font-semibold text-start">{t('Action & Entity', 'الإجراء والكيان')}</th>
+                    <th className="py-3 px-4 font-semibold text-start">{t('Reason & Change', 'السبب والتغيير')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {pagedAuditLogs.map((log) => (
+                    <tr
+                      key={log.id}
+                      className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60"
+                    >
+                      <td className="py-3 px-5 font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        {new Date(log.createdAt).toISOString().replace('T', ' ').slice(0, 19)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {log.actorName}
+                        </span>
+                        <span className="text-slate-500"> · {log.actorRole}</span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        {log.action} ({log.entityType})
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="text-slate-800 dark:text-slate-200">{log.reason}</p>
+                        <p className="font-mono text-[11px] text-slate-500 truncate max-w-md">
+                          {log.previousValue} → {log.newValue}
+                        </p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <PaginationBar
+          page={auditPage}
+          totalPages={totalAuditPages}
+          totalItems={filteredAuditLogs.length}
+          pageSize={AUDIT_PAGE_SIZE}
+          onPageChange={setAuditPage}
+          labelShowing={t('Showing', 'عرض')}
+        />
       </div>
     </div>
   );

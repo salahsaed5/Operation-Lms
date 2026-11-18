@@ -14,8 +14,6 @@ import {
   Sun,
   Moon,
   LogOut,
-  Smartphone,
-  FileCode2,
   Bell,
   RefreshCw,
   PanelLeft,
@@ -24,7 +22,7 @@ import {
   Menu,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AdminRouteId, UserRole } from '../types/database';
+import { AdminRouteId } from '../types/database';
 
 interface NavItem {
   id: AdminRouteId;
@@ -58,13 +56,11 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshOperationalData,
     notifications,
     markNotificationRead,
-    switchDemoIdentity,
     signOut,
     lang,
     setLang,
     theme,
     toggleTheme,
-    setArchitectureDrawerOpen,
     t,
   } = useApp();
 
@@ -169,24 +165,8 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           </nav>
         </div>
 
-        {/* Clean Sidebar Footer: Role Switch + Sign Out */}
-        <div className="p-2.5 border-t border-slate-100 dark:border-slate-800/80 space-y-1">
-          {!isSupabaseMode && (
-            <button
-              type="button"
-              onClick={() => switchDemoIdentity(UserRole.INSTRUCTOR, 'inst-1')}
-              title={t('Switch to Instructor Portal', 'الانتقال لبوابة المحاضر')}
-              className={`w-full flex items-center gap-2.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap cursor-pointer ${
-                sidebarCollapsed ? 'lg:justify-center lg:px-2 px-3 py-2' : 'px-3 py-2'
-              }`}
-            >
-              <Smartphone className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-              {!sidebarCollapsed && (
-                <span className="truncate">{t('Instructor Portal', 'بوابة المحاضر')}</span>
-              )}
-            </button>
-          )}
-
+        {/* Clean Sidebar Footer: Sign Out only */}
+        <div className="p-2.5 border-t border-slate-100 dark:border-slate-800/80">
           <button
             type="button"
             onClick={() => signOut()}
@@ -275,16 +255,6 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                 <span className="hidden xl:inline">{t('Refresh', 'تحديث')}</span>
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={() => setArchitectureDrawerOpen(true)}
-              aria-label={t('Architecture and SQL Plan', 'مخطط النظام و SQL')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <FileCode2 className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden md:inline">{t('Plan & SQL', 'الخطة و SQL')}</span>
-            </button>
 
             <button
               type="button"

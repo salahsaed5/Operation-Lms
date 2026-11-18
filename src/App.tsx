@@ -9,7 +9,6 @@ import { UserRole } from './types/database';
 import { AuthView } from './pages/auth/AuthView';
 import { AdminLayout } from './layouts/AdminLayout';
 import { InstructorLayout } from './layouts/InstructorLayout';
-import { ArchitecturePlanDrawer } from './components/ArchitecturePlanDrawer';
 import { AdminDashboardView } from './pages/admin/AdminDashboardView';
 import {
   AdminCampsView,
@@ -39,7 +38,7 @@ const AppRouter: React.FC = () => {
 
   if (isInitializingSession) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6">
         <div className="text-center space-y-2">
           <p className="text-sm font-bold tracking-tight">CITS Camp Operations</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -82,7 +81,6 @@ const AppRouter: React.FC = () => {
           {instructorRoute === 'profile' && <InstructorProfileAndSectionsView />}
         </InstructorLayout>
       )}
-      <ArchitecturePlanDrawer />
     </>
   );
 };

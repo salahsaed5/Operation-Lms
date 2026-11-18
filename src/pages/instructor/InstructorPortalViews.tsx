@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   MapPinCheck,
   ClipboardCheck,
@@ -10,6 +10,9 @@ import {
   ExternalLink,
   Navigation,
   UserPlus,
+  Search,
+  CalendarClock,
+  UserCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { resolveStudentOriginGroupForDay } from '../../domain/businessRules';
@@ -19,8 +22,45 @@ import {
   AttendanceRecordItem,
   AttendanceSheetStatus,
   CheckinStatus,
+  EntitlementStatus,
   OfflineSyncState,
+  RequestStatus,
 } from '../../types/database';
+import {
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  EmptyState,
+  INPUT_CLASS,
+  InlineBanner,
+  LABEL_CLASS,
+  PageHeader,
+  SELECT_CLASS,
+  SURFACE_CARD,
+  SURFACE_SUBTLE,
+  StatusBadge,
+} from '../../components/ui/UiPrimitives';
+
+function instructorCheckinBadge(
+  status: CheckinStatus,
+  t: (en: string, ar: string) => string
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
+  switch (status) {
+    case CheckinStatus.VERIFIED:
+      return { label: t('Checked In & Verified', 'تم الوصول والتوثيق'), tone: 'success' };
+    case CheckinStatus.EXCEPTION_APPROVED:
+      return { label: t('Exception Approved', 'استثناء معتمد'), tone: 'success' };
+    case CheckinStatus.LATE_FIRST_LECTURE:
+      return { label: t('Late Arrival (>=60m)', 'وصول متأخر (+60د)'), tone: 'warning' };
+    case CheckinStatus.EXCEPTION_PENDING:
+      return { label: t('Exception Pending', 'بانتظار مراجعة الإدارة'), tone: 'warning' };
+    case CheckinStatus.OUTSIDE_GEOFENCE:
+      return { label: t('Outside Geofence', 'خارج النطاق الجغرافي'), tone: 'danger' };
+    case CheckinStatus.EXCEPTION_REJECTED:
+      return { label: t('Exception Rejected', 'تم رفض الاستثناء'), tone: 'danger' };
+    default:
+      return { label: t('Recorded', 'مسجل'), tone: 'neutral' };
+  }
+}
 
 export const InstructorDashboardView: React.FC = () => {
   const {
@@ -43,12 +83,14 @@ export const InstructorDashboardView: React.FC = () => {
 
   if (!activeCamp || !currentInstructor) {
     return (
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t(
-          'No active camp or instructor assignment found yet.',
-          'لا يوجد معسكر نشط أو تعيين محاضر حالياً.'
+      <EmptyState
+        icon={CalendarClock}
+        title={t('No active camp assignment', 'لا يوجد تعيين معسكر نشط')}
+        description={t(
+          'Your account does not have an active camp assignment at the moment.',
+          'حسابك غير مرتبط بمعسكر نشط حالياً.'
         )}
-      </div>
+      />
     );
   }
 
@@ -90,9 +132,7 @@ export const InstructorDashboardView: React.FC = () => {
       assignedLectureIds.has(s.lectureId)
   );
 
-  const unacknowledgedLectures = myLecturesToday.filter(
-    (l) => !l.instructorAcknowledgedAt
-  );
+  const unacknowledgedLectures = myLecturesToday.filter((l) => !l.instructorAcknowledgedAt);
 
   const handleAck = async (lectureId: string) => {
     setAckFeedback(null);
@@ -100,44 +140,73 @@ export const InstructorDashboardView: React.FC = () => {
     if (!res.ok && res.error) setAckFeedback(res.error);
   };
 
+  const checkinDisplay = myCheckinToday
+    ? instructorCheckinBadge(myCheckinToday.status, t)
+    : null;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <PageHeader
+        title={t(
+          `Welcome, ${currentInstructor.fullNameEn}`,
+          `مرحباً، ${currentInstructor.fullNameAr}`
+        )}
+        subtitle={
+          <>
+            {t(activeCamp.nameEn, activeCamp.nameAr)} ·{' '}
+            <span className="font-mono tabular-nums">
+              {t(
+                `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
+                `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
+              )}
+            </span>
+          </>
+        }
+      />
+
       {ackFeedback && (
-        <div className="p-3.5 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-xs text-red-700 dark:text-red-300">
-          {ackFeedback}
-        </div>
+        <InlineBanner
+          type="error"
+          message={ackFeedback}
+          onDismiss={() => setAckFeedback(null)}
+        />
       )}
 
-      {/* Priority 1: Daily Check-in Status Card */}
-      <section
-        aria-labelledby="inst-priority-checkin"
-        className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs"
-      >
+      {/* 1. Daily Check-in Priority Card */}
+      <section aria-labelledby="inst-priority-checkin" className={`${SURFACE_CARD} p-5`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-              {t('1. Daily Check-in Status', '1. حالة تسجيل الوصول اليومي')} ·{' '}
-              <span className="font-mono tabular-nums">
-                {t(`Day ${activeCamp.currentCampDay}`, `اليوم ${activeCamp.currentCampDay}`)}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                {t('1. Daily Venue Check-in', '1. تسجيل الوصول اليومي')}
               </span>
-            </p>
-            <h1
+              {checkinDisplay ? (
+                <StatusBadge tone={checkinDisplay.tone}>{checkinDisplay.label}</StatusBadge>
+              ) : (
+                <StatusBadge tone="warning">
+                  {t('Action Required', 'مطلوب قبل المحاضرة')}
+                </StatusBadge>
+              )}
+            </div>
+
+            <h2
               id="inst-priority-checkin"
-              className="text-xl font-bold text-slate-900 dark:text-white"
+              className="text-base sm:text-lg font-bold text-slate-900 dark:text-white"
             >
               {myCheckinToday
-                ? myCheckinToday.status === CheckinStatus.VERIFIED ||
-                  myCheckinToday.status === CheckinStatus.EXCEPTION_APPROVED
-                  ? t('Checked In & Geofence Verified', 'تم تسجيل الوصول وتوثيق الموقع')
-                  : t(`Checked In (${myCheckinToday.status})`, `تم التسجيل (${myCheckinToday.status})`)
-                : t('Daily Check-in Required Before Lecture', 'مطلوب تسجيل الوصول اليومي قبل المحاضرة')}
-            </h1>
+                ? checkinDisplay?.label
+                : t(
+                    'Complete your GPS & selfie venue check-in before starting',
+                    'أكمل تسجيل الوصول بالموقع وصورة التحقق قبل بدء المحاضرة'
+                  )}
+            </h2>
+
             <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
               {myCheckinToday
-                ? `${myCheckinToday.distanceFromVenueMeters}m from venue pin · Selfie ${myCheckinToday.selfieSizeKb}KB · No continuous tracking`
+                ? `${myCheckinToday.distanceFromVenueMeters}m ${t('from venue', 'عن المقر')} · ${myCheckinToday.selfieSizeKb}KB`
                 : t(
-                    `Requires one GPS snapshot within ${activeCamp.settings.geofenceRadiusMeters}m venue pin + compressed selfie (<=${activeCamp.settings.maxSelfieKb}KB).`,
-                    `يتطلب لقطة موقع GPS داخل نطاق ${activeCamp.settings.geofenceRadiusMeters}م وصورة تحقق مضغوطة.`
+                    `Geofence: ${activeCamp.settings.geofenceRadiusMeters}m · Compressed photo <= ${activeCamp.settings.maxSelfieKb}KB`,
+                    `النطاق: ${activeCamp.settings.geofenceRadiusMeters}م · صورة التحقق <= ${activeCamp.settings.maxSelfieKb}KB`
                   )}
             </p>
           </div>
@@ -145,42 +214,37 @@ export const InstructorDashboardView: React.FC = () => {
           <button
             type="button"
             onClick={() => setInstructorRoute('checkin')}
-            className="min-h-[48px] px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+            className={`${BTN_PRIMARY} min-h-[44px] px-4`}
           >
             <MapPinCheck className="w-4 h-4" />
             <span>
               {myCheckinToday
                 ? t('View Check-in Receipt', 'عرض إيصال التسجيل')
-                : t('Complete Daily Check-in', 'تسجيل الوصول الآن')}
+                : t('Check In Now', 'تسجيل الوصول الآن')}
             </span>
           </button>
         </div>
       </section>
 
-      {/* Priority 2: Next Lecture Card */}
+      {/* 2. Next Assigned Lecture */}
       {nextLecture && (
-        <section
-          aria-labelledby="inst-priority-next-lecture"
-          className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-        >
+        <section aria-labelledby="inst-priority-next-lecture" className={`${SURFACE_CARD} p-5`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                {t('2. Next Assigned Lecture', '2. المحاضرة التالية')} ·{' '}
-                <span className="font-mono tabular-nums">
-                  P{nextLecture.periodNumber} ({nextLecture.startTime}–{nextLecture.endTime})
-                </span>
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 font-mono tabular-nums">
+                {t('2. Next Assigned Lecture', '2. المحاضرة التالية')} · P
+                {nextLecture.periodNumber} ({nextLecture.startTime}–{nextLecture.endTime})
               </p>
               <h2
                 id="inst-priority-next-lecture"
-                className="text-lg font-bold text-slate-900 dark:text-white"
+                className="text-base sm:text-lg font-bold text-slate-900 dark:text-white"
               >
                 {nextLecture.topic}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {groups.find((g) => g.id === nextLecture.groupId)?.code} ·{' '}
                 {rooms.find((r) => r.id === nextLecture.roomId)?.code} ·{' '}
-                <span className="font-mono tabular-nums">
+                <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-300">
                   {nextLecture.frozenRateEgp} EGP
                 </span>
               </p>
@@ -189,34 +253,34 @@ export const InstructorDashboardView: React.FC = () => {
             <button
               type="button"
               onClick={() => setInstructorRoute('attendance')}
-              className="min-h-[48px] px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-900 dark:text-white flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+              className={`${BTN_SECONDARY} min-h-[44px] px-4`}
             >
-              <ClipboardCheck className="w-4 h-4 text-blue-500" />
+              <ClipboardCheck className="w-4 h-4 text-blue-600" />
               <span>{t('Open Attendance Sheet', 'فتح كشف الحضور')}</span>
             </button>
           </div>
         </section>
       )}
 
-      {/* Priority 3 & 4: Daily Schedule + Pending Actions Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* 3. Today's Schedule & 4. Pending Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         <section
           aria-labelledby="inst-daily-schedule"
-          className="lg:col-span-7 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4"
+          className={`lg:col-span-7 ${SURFACE_CARD} p-5 space-y-4`}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2
               id="inst-daily-schedule"
-              className="text-base font-bold text-slate-900 dark:text-white"
+              className="text-sm font-bold text-slate-900 dark:text-white"
             >
-              {t('3. Today’s Schedule (My Groups Only)', '3. جدولي اليومي (مجموعاتي فقط)')}
+              {t('3. Today’s Schedule', '3. جدولي اليومي')}
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
               {myLecturesToday.length} {t('Lectures', 'محاضرات')}
             </span>
           </div>
 
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {myLecturesToday.length === 0 ? (
               <p className="py-6 text-xs text-slate-500 text-center">
                 {t('No lectures assigned to you today.', 'لا توجد محاضرات مسندة لك اليوم.')}
@@ -226,35 +290,37 @@ export const InstructorDashboardView: React.FC = () => {
                 const grp = groups.find((g) => g.id === lec.groupId);
                 const room = rooms.find((r) => r.id === lec.roomId);
                 const sheet = attendanceSheets.find((s) => s.lectureId === lec.id);
+                const isSynced =
+                  sheet?.status === AttendanceSheetStatus.SUBMITTED ||
+                  sheet?.status === AttendanceSheetStatus.LOCKED;
                 return (
                   <div
                     key={lec.id}
                     className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
-                        Period {lec.periodNumber} · {lec.startTime}–{lec.endTime} · {room?.code}
+                        P{lec.periodNumber} · {lec.startTime}–{lec.endTime} · {room?.code}
                       </p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5 truncate">
                         {lec.topic}
                       </p>
-                      <p className="text-slate-500">
+                      <p className="text-slate-500 truncate">
                         {grp ? t(grp.nameEn, grp.nameAr) : lec.groupId}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {sheet?.status === AttendanceSheetStatus.SUBMITTED ||
-                      sheet?.status === AttendanceSheetStatus.LOCKED ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{t('Synced', 'متزامن')}</span>
-                        </span>
+                      {isSynced ? (
+                        <StatusBadge tone="success">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{t('Submitted', 'معتمد')}</span>
+                        </StatusBadge>
                       ) : (
                         <button
                           type="button"
                           onClick={() => setInstructorRoute('attendance')}
-                          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold cursor-pointer"
+                          className={`${BTN_PRIMARY} min-h-[40px]`}
                         >
                           {t('Take Attendance', 'تسجيل الحضور')}
                         </button>
@@ -269,41 +335,46 @@ export const InstructorDashboardView: React.FC = () => {
 
         <section
           aria-labelledby="inst-pending-actions"
-          className="lg:col-span-5 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4"
+          className={`lg:col-span-5 ${SURFACE_CARD} p-5 space-y-4`}
         >
-          <h2
-            id="inst-pending-actions"
-            className="text-base font-bold text-slate-900 dark:text-white"
-          >
-            {t('4. Pending Actions', '4. إجراءات معلقة')}
-          </h2>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2
+              id="inst-pending-actions"
+              className="text-sm font-bold text-slate-900 dark:text-white"
+            >
+              {t('4. Pending Actions', '4. إجراءات معلقة')}
+            </h2>
+            <span className="text-xs font-mono tabular-nums text-slate-500">
+              {myDraftSheets.length + unacknowledgedLectures.length}
+            </span>
+          </div>
 
           <div className="space-y-3 text-xs">
             {myDraftSheets.map((draft) => (
               <div
                 key={draft.id}
-                className="p-3.5 rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 flex items-center justify-between gap-3"
+                className="p-3.5 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 flex items-center justify-between gap-3"
               >
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {t(
-                      `Offline Draft — Period ${draft.periodNumber}`,
-                      `مسودة غير متزامنة — الفترة ${draft.periodNumber}`
+                      `Pending Sheet — Period ${draft.periodNumber}`,
+                      `مسودة كشف حضور — الفترة ${draft.periodNumber}`
                     )}
                   </p>
                   <p className="text-slate-600 dark:text-slate-400 mt-0.5">
                     {t(
-                      'Drafts are not financially eligible until submitted and synced.',
-                      'المسودات لا تحتسب ضمن المستحقات حتى يتم اعتمادها ومزامنتها.'
+                      'Submit your attendance sheet once marking is complete.',
+                      'يرجى اعتماد وإرسال كشف الحضور فور الانتهاء.'
                     )}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setInstructorRoute('attendance')}
-                  className="min-h-[44px] px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold shrink-0 cursor-pointer"
+                  className={`${BTN_PRIMARY} min-h-[40px]`}
                 >
-                  {t('Sync', 'مزامنة')}
+                  {t('Review', 'مراجعة')}
                 </button>
               </div>
             ))}
@@ -311,13 +382,13 @@ export const InstructorDashboardView: React.FC = () => {
             {unacknowledgedLectures.map((lec) => (
               <div
                 key={lec.id}
-                className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-3"
+                className={`${SURFACE_SUBTLE} p-3.5 flex items-center justify-between gap-3`}
               >
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {t(
-                      `Acknowledge Revision ${lec.revisionNumber} (P${lec.periodNumber})`,
-                      `تأكيد استلام التعديل ${lec.revisionNumber} (ف${lec.periodNumber})`
+                      `Confirm Schedule Rev ${lec.revisionNumber} (P${lec.periodNumber})`,
+                      `تأكيد استلام الجدول (${lec.revisionNumber} - ف${lec.periodNumber})`
                     )}
                   </p>
                   <p className="text-slate-500 mt-0.5">{lec.topic}</p>
@@ -325,7 +396,7 @@ export const InstructorDashboardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleAck(lec.id)}
-                  className="min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 font-semibold shrink-0 cursor-pointer"
+                  className={`${BTN_SECONDARY} min-h-[40px]`}
                 >
                   {t('Confirm', 'تأكيد')}
                 </button>
@@ -333,8 +404,11 @@ export const InstructorDashboardView: React.FC = () => {
             ))}
 
             {myDraftSheets.length === 0 && unacknowledgedLectures.length === 0 && (
-              <p className="text-slate-500 py-4 text-center">
-                {t('All daily tasks and attendance sheets are up to date.', 'جميع المهام وكشوف الحضور محدثة بالكامل.')}
+              <p className="text-slate-500 py-5 text-center">
+                {t(
+                  'All daily tasks and attendance sheets are up to date.',
+                  'جميع المهام وكشوف الحضور محدثة بالكامل.'
+                )}
               </p>
             )}
           </div>
@@ -356,24 +430,29 @@ export const InstructorScheduleView: React.FC = () => {
     t,
   } = useApp();
 
+  const [dayFilter, setDayFilter] = useState<'all' | number>('all');
   const [ackError, setAckError] = useState<string | null>(null);
   const currentInstructor =
     instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
 
   if (!activeCamp || !currentInstructor) {
     return (
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t('No schedule records available.', 'لا توجد محاضرات مجدولة حالياً.')}
-      </div>
+      <EmptyState
+        icon={CalendarClock}
+        title={t('No schedule records available', 'لا توجد محاضرات مجدولة حالياً')}
+      />
     );
   }
 
-  const myLectures = lectures.filter(
-    (l) =>
-      l.campId === activeCamp.id &&
-      (l.instructorId === currentInstructor.id ||
-        l.substituteInstructorId === currentInstructor.id)
-  );
+  const myLectures = lectures
+    .filter(
+      (l) =>
+        l.campId === activeCamp.id &&
+        (l.instructorId === currentInstructor.id ||
+          l.substituteInstructorId === currentInstructor.id) &&
+        (dayFilter === 'all' || l.campDay === dayFilter)
+    )
+    .sort((a, b) => a.campDay - b.campDay || a.periodNumber - b.periodNumber);
 
   const handleAck = async (lectureId: string) => {
     setAckError(null);
@@ -383,66 +462,83 @@ export const InstructorScheduleView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          {t('My Assigned Schedule', 'جدول محاضراتي المخصص')}
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          {t(
-            'Isolated view: only lectures assigned to your account are shown.',
-            'عرض معزول: تظهر فقط المحاضرات المسندة لحسابك الشخصي.'
-          )}
-        </p>
-      </div>
+      <PageHeader
+        title={t('My Teaching Schedule', 'جدول محاضراتي')}
+        subtitle={t(
+          'Review your assigned lectures, rooms, and confirm schedule revisions.',
+          'استعرض محاضراتك والقاعات التدريبية وأكّد استلام أي تحديثات في الجدول.'
+        )}
+        actions={
+          <select
+            aria-label={t('Filter schedule by day', 'تصفية الجدول باليوم')}
+            value={dayFilter}
+            onChange={(e) =>
+              setDayFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
+            }
+            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold"
+          >
+            <option value="all">{t('All Camp Days', 'كل أيام المعسكر')}</option>
+            {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={d}>
+                {t(`Day ${d}`, `اليوم ${d}`)}
+              </option>
+            ))}
+          </select>
+        }
+      />
 
       {ackError && (
-        <div className="p-3.5 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-xs text-red-700 dark:text-red-300">
-          {ackError}
-        </div>
+        <InlineBanner type="error" message={ackError} onDismiss={() => setAckError(null)} />
       )}
 
-      <div className="space-y-3">
-        {myLectures.length === 0 ? (
-          <p className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-            {t('No lectures assigned in this camp yet.', 'لم تسند لك محاضرات في هذا المعسكر بعد.')}
-          </p>
-        ) : (
-          myLectures.map((lec) => {
+      {myLectures.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title={t('No lectures assigned', 'لا توجد محاضرات مسندة في هذا النطاق')}
+        />
+      ) : (
+        <div className="space-y-3">
+          {myLectures.map((lec) => {
             const grp = groups.find((g) => g.id === lec.groupId);
             const room = rooms.find((r) => r.id === lec.roomId);
             const isSubstitute = lec.substituteInstructorId === currentInstructor.id;
             return (
               <div
                 key={lec.id}
-                className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                className={`${SURFACE_CARD} p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
               >
                 <div className="space-y-1 text-xs">
-                  <p className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
-                    Day {lec.campDay} · Period {lec.periodNumber} ({lec.startTime}–{lec.endTime}) · {room?.code}
-                    {isSubstitute ? ` · ${t('Substitute Role', 'محاضر بديل')}` : ''}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
+                      {t(`Day ${lec.campDay}`, `اليوم ${lec.campDay}`)} · P{lec.periodNumber} (
+                      {lec.startTime}–{lec.endTime}) · {room?.code}
+                    </span>
+                    {isSubstitute && (
+                      <StatusBadge tone="info">{t('Substitute', 'محاضر بديل')}</StatusBadge>
+                    )}
+                  </div>
                   <h2 className="text-base font-bold text-slate-900 dark:text-white">
                     {lec.topic}
                   </h2>
                   <p className="text-slate-500">
                     {grp ? t(grp.nameEn, grp.nameAr) : lec.groupId} ·{' '}
-                    <span className="font-mono tabular-nums">
-                      Frozen Rate: {lec.frozenRateEgp} EGP
+                    <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-300">
+                      {lec.frozenRateEgp} EGP
                     </span>
                   </p>
                 </div>
 
                 <div className="shrink-0">
                   {lec.instructorAcknowledgedAt ? (
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{t('Schedule Acknowledged', 'تم تأكيد الجدول')}</span>
-                    </span>
+                    <StatusBadge tone="success">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{t('Acknowledged', 'تم التأكيد')}</span>
+                    </StatusBadge>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleAck(lec.id)}
-                      className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
+                      className={`${BTN_PRIMARY} min-h-[44px]`}
                     >
                       {t('Acknowledge Schedule', 'تأكيد استلام الجدول')}
                     </button>
@@ -450,9 +546,9 @@ export const InstructorScheduleView: React.FC = () => {
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 };
@@ -520,9 +616,14 @@ export const InstructorCheckinView: React.FC = () => {
 
   if (!activeCamp || !currentInstructor || !venue) {
     return (
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t('Check-in unavailable: no active camp venue configured.', 'تسجيل الوصول غير متاح لعدم وجود معسكر نشط.')}
-      </div>
+      <EmptyState
+        icon={MapPinCheck}
+        title={t('Check-in unavailable', 'تسجيل الوصول غير متاح')}
+        description={t(
+          'No active camp venue is currently configured.',
+          'لا يوجد مقر معسكر نشط مفعّل حالياً.'
+        )}
+      />
     );
   }
 
@@ -530,7 +631,10 @@ export const InstructorCheckinView: React.FC = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setResultMsg({
         ok: false,
-        text: t('Device geolocation is not available in this browser.', 'خدمة تحديد الموقع غير متاحة في هذا المتصفح.'),
+        text: t(
+          'Device geolocation is not available in this browser.',
+          'خدمة تحديد الموقع غير متاحة في هذا المتصفح.'
+        ),
       });
       return;
     }
@@ -579,14 +683,14 @@ export const InstructorCheckinView: React.FC = () => {
       setResultMsg({
         ok: true,
         text: t(
-          `Selfie compressed to ${compressed.sizeKb} KB (${compressed.ext.toUpperCase()}).`,
-          `تم ضغط صورة التحقق إلى ${compressed.sizeKb} كيلوبايت.`
+          `Selfie ready (${compressed.sizeKb} KB · ${compressed.ext.toUpperCase()}).`,
+          `تم تجهيز صورة التحقق (${compressed.sizeKb} كيلوبايت).`
         ),
       });
     } catch (err) {
       setResultMsg({
         ok: false,
-        text: err instanceof Error ? err.message : 'Selfie compression failed.',
+        text: err instanceof Error ? err.message : t('Selfie processing failed.', 'تعذر معالجة الصورة.'),
       });
     } finally {
       setIsBusy(false);
@@ -616,39 +720,37 @@ export const InstructorCheckinView: React.FC = () => {
     }
   };
 
+  const existingDisplay = existingCheckin
+    ? instructorCheckinBadge(existingCheckin.status, t)
+    : null;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          {t('Daily Venue Check-in (GPS + Selfie)', 'تسجيل الوصول اليومي للمقر (GPS + صورة تحقق)')}
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          {t(
-            'One check-in per day. Requires live server connection, geofence verification, and compressed selfie <= 300KB. No continuous location tracking.',
-            'تسجيل واحد يومياً. يتطلب اتصالاً مباشراً بالخادم، التحقق داخل النطاق الجغرافي، وصورة مضغوطة <= 300KB.'
-          )}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={t('Daily Venue Check-in', 'تسجيل الوصول اليومي للمقر')}
+        subtitle={t(
+          'One daily GPS snapshot within the venue geofence paired with a compressed verification selfie (<= 300KB).',
+          'تسجيل واحد يومياً داخل النطاق الجغرافي للمقر مع صورة تحقق مضغوطة (بحد أقصى 300 كيلوبايت).'
+        )}
+      />
 
       {resultMsg && (
-        <div
-          role="status"
-          className={`p-4 rounded-2xl border text-xs font-medium ${
-            resultMsg.ok
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-300'
-          }`}
-        >
-          {resultMsg.text}
-        </div>
+        <InlineBanner
+          type={resultMsg.ok ? 'success' : 'error'}
+          message={resultMsg.text}
+          onDismiss={() => setResultMsg(null)}
+        />
       )}
 
-      {existingCheckin && (
-        <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs flex flex-wrap items-center justify-between gap-4">
+      {existingCheckin && existingDisplay && (
+        <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/20 text-xs flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <p className="font-bold text-slate-900 dark:text-white">
-              {t('Today’s Recorded Check-in Receipt:', 'إيصال تسجيل الوصول اليوم:')} {existingCheckin.status}
-            </p>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-900 dark:text-white">
+                {t('Today’s Check-in Receipt', 'إيصال تسجيل الوصول اليوم')}
+              </span>
+              <StatusBadge tone={existingDisplay.tone}>{existingDisplay.label}</StatusBadge>
+            </div>
             <p className="font-mono text-slate-600 dark:text-slate-300">
               {existingCheckin.distanceFromVenueMeters}m · {existingCheckin.selfieSizeKb}KB ·{' '}
               {new Date(existingCheckin.serverTimestamp).toISOString().slice(11, 16)} UTC
@@ -657,24 +759,21 @@ export const InstructorCheckinView: React.FC = () => {
           {signedReceiptUrl && (
             <img
               src={signedReceiptUrl}
-              alt="Uploaded check-in selfie"
-              className="w-16 h-16 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
+              alt={t('Uploaded check-in selfie', 'صورة التحقق المرفوعة')}
+              className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
             />
           )}
         </div>
       )}
 
-      <form
-        onSubmit={handleCheckin}
-        className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-5"
-      >
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs flex flex-wrap items-center justify-between gap-3">
+      <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
+        <div className={`${SURFACE_SUBTLE} p-4 text-xs flex flex-wrap items-center justify-between gap-3`}>
           <div>
             <p className="font-semibold text-slate-900 dark:text-white">
               {t(venue.nameEn, venue.nameAr)}
             </p>
-            <p className="text-slate-500 font-mono tabular-nums">
-              Pin: ({venue.latitude}, {venue.longitude}) · Allowed Geofence:{' '}
+            <p className="text-slate-500 font-mono tabular-nums mt-0.5">
+              Pin: ({venue.latitude}, {venue.longitude}) · {t('Geofence:', 'النطاق:')}{' '}
               {activeCamp.settings.geofenceRadiusMeters}m
             </p>
           </div>
@@ -682,7 +781,7 @@ export const InstructorCheckinView: React.FC = () => {
             type="button"
             disabled={isBusy}
             onClick={handleCaptureGps}
-            className="min-h-[40px] px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[40px] px-3.5 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold flex items-center gap-1.5 cursor-pointer"
           >
             <Navigation className="w-3.5 h-3.5" />
             <span>{t('Capture Device GPS', 'التقاط موقعي الحالي')}</span>
@@ -691,7 +790,7 @@ export const InstructorCheckinView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           <div>
-            <label htmlFor="chk-lat" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label htmlFor="chk-lat" className={LABEL_CLASS}>
               {t('GPS Latitude', 'خط العرض')}
             </label>
             <input
@@ -702,11 +801,11 @@ export const InstructorCheckinView: React.FC = () => {
               max={90}
               value={lat}
               onChange={(e) => setLat(Number(e.target.value))}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
+              className={`${INPUT_CLASS} font-mono tabular-nums`}
             />
           </div>
           <div>
-            <label htmlFor="chk-lng" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label htmlFor="chk-lng" className={LABEL_CLASS}>
               {t('GPS Longitude', 'خط الطول')}
             </label>
             <input
@@ -717,12 +816,12 @@ export const InstructorCheckinView: React.FC = () => {
               max={180}
               value={lng}
               onChange={(e) => setLng(Number(e.target.value))}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
+              className={`${INPUT_CLASS} font-mono tabular-nums`}
             />
           </div>
           <div>
-            <label htmlFor="chk-acc" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-              {t('GPS Accuracy (m, max 500)', 'دقة GPS (متر، حد أقصى 500)')}
+            <label htmlFor="chk-acc" className={LABEL_CLASS}>
+              {t('GPS Accuracy (m)', 'دقة GPS (متر)')}
             </label>
             <input
               id="chk-acc"
@@ -731,14 +830,14 @@ export const InstructorCheckinView: React.FC = () => {
               max={500}
               value={gpsAccuracy}
               onChange={(e) => setGpsAccuracy(Number(e.target.value))}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono tabular-nums"
+              className={`${INPUT_CLASS} font-mono tabular-nums`}
             />
           </div>
           <div>
-            <label htmlFor="chk-time" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label htmlFor="chk-time" className={LABEL_CLASS}>
               {isSupabaseMode
-                ? t('Server Timestamp Mode (Authoritative)', 'توقيت الخادم الموثق تلقائياً')
-                : t('Arrival Time (HH:MM)', 'وقت الوصول (للمحاكاة)')}
+                ? t('Server Arrival Timestamp', 'توقيت الوصول الموثق')
+                : t('Arrival Time (HH:MM)', 'وقت الوصول')}
             </label>
             <input
               id="chk-time"
@@ -746,41 +845,39 @@ export const InstructorCheckinView: React.FC = () => {
               disabled={isSupabaseMode}
               value={checkinTime}
               onChange={(e) => setCheckinTime(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 disabled:opacity-60 font-mono tabular-nums"
+              className={`${INPUT_CLASS} font-mono tabular-nums`}
             />
           </div>
         </div>
 
-        {/* Real Camera / File Input + <= 300KB Canvas Compressor */}
-        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-4 text-xs">
+        {/* Camera / File Input */}
+        <div className={`${SURFACE_SUBTLE} p-4 flex flex-wrap items-center justify-between gap-4 text-xs`}>
           <div className="flex items-center gap-3">
             {selfiePreviewUrl ? (
               <img
                 src={selfiePreviewUrl}
-                alt="Compressed check-in selfie"
-                className="w-12 h-12 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                alt={t('Compressed check-in selfie', 'صورة التحقق')}
+                className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
               />
             ) : (
-              <Camera className="w-5 h-5 text-blue-500 shrink-0" />
+              <Camera className="w-5 h-5 text-blue-600 shrink-0" />
             )}
             <div>
               <p className="font-semibold text-slate-900 dark:text-white">
                 {selfieBlob
-                  ? t('Compressed Selfie Ready for Upload', 'صورة التحقق جاهزة ومضغوطة')
+                  ? t('Verification Selfie Ready', 'صورة التحقق جاهزة للرفع')
                   : t('Select or Capture Verification Selfie', 'اختر أو التقط صورة التحقق')}
               </p>
-              <p className="text-slate-500 font-mono tabular-nums">
+              <p className="text-slate-500 font-mono tabular-nums mt-0.5">
                 {selfieBlob
                   ? `${selfieExt.toUpperCase()}: ${selfieSizeKb} KB / ${activeCamp.settings.maxSelfieKb} KB max`
-                  : isSupabaseMode
-                  ? t('Required <= 300KB · Deleted automatically on camp archive', 'إلزامية <= 300KB · تحذف بعد أرشفة المعسكر')
-                  : `Sandbox Size: ${selfieSizeKb} KB / ${activeCamp.settings.maxSelfieKb} KB max`}
+                  : `${t('Required limit:', 'الحد الأقصى:')} <= ${activeCamp.settings.maxSelfieKb} KB`}
               </p>
             </div>
           </div>
 
-          <label className="min-h-[40px] px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold shrink-0 cursor-pointer flex items-center gap-1.5">
-            <Camera className="w-3.5 h-3.5 text-blue-500" />
+          <label className="min-h-[40px] px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 font-semibold shrink-0 cursor-pointer flex items-center gap-1.5">
+            <Camera className="w-3.5 h-3.5 text-blue-600" />
             <span>{t('Take / Choose Selfie', 'التقاط / اختيار صورة')}</span>
             <input
               type="file"
@@ -793,31 +890,34 @@ export const InstructorCheckinView: React.FC = () => {
         </div>
 
         <div>
-          <label htmlFor="chk-exception" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            {t('Exception Reason (Optional — if outside geofence or >=60m late)', 'سبب طلب الاستثناء (اختياري — في حال التواجد خارج النطاق أو التأخر)')}
+          <label htmlFor="chk-exception" className={LABEL_CLASS}>
+            {t(
+              'Exception Note (Optional — if outside geofence or >=60m late)',
+              'سبب طلب الاستثناء (اختياري — في حال التواجد خارج النطاق أو التأخر)'
+            )}
           </label>
           <input
             id="chk-exception"
             type="text"
-            placeholder={t('Explain any GPS drift or traffic delay...', 'وضح سبب التأخر أو انحراف GPS إن وجد...')}
+            placeholder={t('Explain any GPS drift or delay...', 'وضح سبب التأخر أو انحراف الموقع إن وجد...')}
             value={exceptionReason}
             onChange={(e) => setExceptionReason(e.target.value)}
-            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
+            className={INPUT_CLASS}
           />
         </div>
 
         <button
           type="submit"
           disabled={isBusy}
-          className="w-full min-h-[48px] py-3 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer"
+          className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm`}
         >
           <MapPinCheck className="w-4 h-4" />
           <span>
             {isBusy
-              ? t('Uploading & Verifying on Server...', 'جاري الرفع والتحقق...')
+              ? t('Submitting Check-in...', 'جاري التحقق والإرسال...')
               : existingCheckin
               ? t('Daily Check-in Recorded', 'تم تسجيل الوصول اليومي')
-              : t('Verify GPS & Submit Daily Check-in', 'توثيق الموقع وإرسال تسجيل الوصول')}
+              : t('Verify Location & Submit Check-in', 'توثيق الموقع وإرسال الوصول')}
           </span>
         </button>
       </form>
@@ -854,6 +954,7 @@ export const InstructorAttendanceView: React.FC = () => {
       : [];
 
   const [selectedLectureId, setSelectedLectureId] = useState<string>('');
+  const [studentSearch, setStudentSearch] = useState('');
   const [crossGroupStudentId, setCrossGroupStudentId] = useState<string>('');
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
@@ -868,16 +969,16 @@ export const InstructorAttendanceView: React.FC = () => {
 
   if (!activeCamp || !currentInstructor) {
     return (
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t('No lectures available for attendance.', 'لا توجد محاضرات متاحة لتسجيل الحضور.')}
-      </div>
+      <EmptyState
+        icon={ClipboardCheck}
+        title={t('No lectures available', 'لا توجد محاضرات متاحة لتسجيل الحضور')}
+      />
     );
   }
 
   const selectedLecture = myLectures.find((l) => l.id === selectedLectureId);
   const existingSheet = attendanceSheets.find((s) => s.lectureId === selectedLectureId);
 
-  // Build hydrated roster using historical origin group resolution for selectedLecture.campDay
   const baseRecords: AttendanceRecordItem[] = (() => {
     if (!selectedLecture) return [];
     const sheetRecords = existingSheet?.records || [];
@@ -913,6 +1014,16 @@ export const InstructorAttendanceView: React.FC = () => {
     return [...sheetRecords, ...missingFromRoster];
   })();
 
+  const filteredRecords = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return baseRecords;
+    return baseRecords.filter(
+      (r) =>
+        r.studentName.toLowerCase().includes(q) ||
+        r.studentCode.toLowerCase().includes(q)
+    );
+  }, [baseRecords, studentSearch]);
+
   const isLockedOrSubmitted =
     existingSheet?.status === AttendanceSheetStatus.SUBMITTED ||
     existingSheet?.status === AttendanceSheetStatus.LOCKED;
@@ -942,13 +1053,13 @@ export const InstructorAttendanceView: React.FC = () => {
     );
     const res = await saveAttendanceDraft(selectedLectureId, nextRecords, true);
     if (!res.ok) {
-      setFeedback({ ok: false, text: res.error || 'Unable to save draft.' });
+      setFeedback({ ok: false, text: res.error || t('Unable to save draft.', 'تعذر حفظ المسودة.') });
     } else {
       setFeedback({
         ok: true,
         text: t(
-          'Saved to IndexedDB Offline Draft (Unverified — not financially eligible until synced).',
-          'تم الحفظ في مسودة IndexedDB المحلية (غير موثقة مالياً حتى تتم المزامنة).'
+          'Saved locally as draft. Submit the sheet when finished.',
+          'تم الحفظ كمسودة محلية. يرجى اعتماد الكشف عند الانتهاء.'
         ),
       });
     }
@@ -985,8 +1096,8 @@ export const InstructorAttendanceView: React.FC = () => {
       setFeedback({
         ok: true,
         text: t(
-          `${stu.fullName} added as temporary cross-group attendee in local draft.`,
-          `تمت إضافة ${stu.fullName} كحضور مؤقت من مجموعة أخرى في المسودة المحلية.`
+          `${stu.fullName} added as visiting cross-group student.`,
+          `تمت إضافة ${stu.fullName} كحضور زائر من مجموعة أخرى.`
         ),
       });
     } else if (res.error) {
@@ -999,24 +1110,23 @@ export const InstructorAttendanceView: React.FC = () => {
     setIsBusy(true);
     setFeedback(null);
     try {
-      // Ensure full roster is persisted in draft state before submitting
       const draftRes = await saveAttendanceDraft(selectedLectureId, baseRecords, false);
       if (!draftRes.ok) {
         setFeedback({
           ok: false,
-          text: draftRes.error || 'Unable to sync attendance draft prior to submission.',
+          text: draftRes.error || t('Unable to prepare attendance sheet.', 'تعذر تجهيز كشف الحضور.'),
         });
         return;
       }
       const res = await submitAndSyncAttendanceSheet(selectedLectureId);
       if (!res.ok) {
-        setFeedback({ ok: false, text: res.error || 'Sync failed' });
+        setFeedback({ ok: false, text: res.error || t('Sync failed.', 'تعذر إرسال الكشف.') });
       } else {
         setFeedback({
           ok: true,
           text: t(
-            'Attendance sheet submitted & synchronized! Unmarked students were marked Absent and your lecture entitlement was updated.',
-            'تم اعتماد ومزامنة كشف الحضور! تم تحويل غير المحددين إلى غياب وتحديث مستحق المحاضرة.'
+            'Attendance sheet submitted & synchronized. Unmarked students were marked absent.',
+            'تم اعتماد ومزامنة كشف الحضور وتحويل غير المحددين إلى غياب.'
           ),
         });
       }
@@ -1027,194 +1137,206 @@ export const InstructorAttendanceView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {t('Lecture Attendance & Offline Drafts', 'تسجيل حضور المحاضرة والمسودات المحلية')}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {t(
-              'Unmarked students become absent only when submitted. Offline drafts use IndexedDB with idempotency keys.',
-              'يتحول الطلاب غير المحددين إلى غياب عند الاعتماد النهائي فقط.'
-            )}
-          </p>
-        </div>
-
-        <select
-          aria-label={t('Select lecture for attendance', 'اختر المحاضرة')}
-          value={selectedLectureId}
-          onChange={(e) => {
-            setSelectedLectureId(e.target.value);
-            setFeedback(null);
-          }}
-          className="px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold"
-        >
-          {myLectures.map((l) => (
-            <option key={l.id} value={l.id}>
-              D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        title={t('Lecture Attendance', 'تسجيل حضور المحاضرة')}
+        subtitle={t(
+          'Mark student attendance offline or online. Unmarked students become absent upon final submission.',
+          'سجل حضور الطلاب في أي وقت؛ يتحول الطلاب غير المحددين إلى غياب عند الاعتماد النهائي فقط.'
+        )}
+        actions={
+          <select
+            aria-label={t('Select lecture for attendance', 'اختر المحاضرة')}
+            value={selectedLectureId}
+            onChange={(e) => {
+              setSelectedLectureId(e.target.value);
+              setFeedback(null);
+            }}
+            className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold max-w-full"
+          >
+            {myLectures.map((l) => (
+              <option key={l.id} value={l.id}>
+                D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
+              </option>
+            ))}
+          </select>
+        }
+      />
 
       {feedback && (
-        <div
-          role="status"
-          className={`p-4 rounded-2xl border text-xs font-medium ${
-            feedback.ok
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-300'
-          }`}
-        >
-          {feedback.text}
-        </div>
+        <InlineBanner
+          type={feedback.ok ? 'success' : 'error'}
+          message={feedback.text}
+          onDismiss={() => setFeedback(null)}
+        />
       )}
 
       {selectedLecture ? (
-        <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-5">
-          {/* Sync Status Banner */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+          {/* Sheet Status Header */}
+          <div className={`${SURFACE_SUBTLE} p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs`}>
             <div className="flex items-center gap-2">
               {existingSheet?.syncState === OfflineSyncState.SYNCED ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               ) : (
-                <WifiOff className="w-4 h-4 text-amber-500" />
+                <WifiOff className="w-4 h-4 text-amber-600" />
               )}
               <span className="font-semibold text-slate-900 dark:text-white">
-                {t('Sheet State:', 'حالة الكشف:')}{' '}
-                {(existingSheet?.status || AttendanceSheetStatus.DRAFT).toUpperCase()} ·{' '}
-                {t('Sync Status:', 'حالة المزامنة:')}{' '}
-                {existingSheet?.syncState || OfflineSyncState.OFFLINE}
+                {isLockedOrSubmitted
+                  ? t('Submitted & Synced', 'معتمد ومتزامن')
+                  : t('Local Draft (Not Yet Submitted)', 'مسودة محلية (لم تُرسل بعد)')}
               </span>
             </div>
-            <span className="font-mono text-[11px] text-slate-500">
-              Key: {existingSheet?.idempotencyKey || `idem-${activeCamp.id}-${selectedLectureId}`}
-            </span>
+            <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
+              {isLockedOrSubmitted ? t('Locked', 'مغلق') : t('Editable Draft', 'قابل للتعديل')}
+            </StatusBadge>
           </div>
 
-          {/* Temporary Cross-Group Attendee Adder */}
-          {!isLockedOrSubmitted && eligibleCrossGroupStudents.length > 0 && (
-            <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center gap-2 text-xs">
-              <select
-                aria-label={t('Add cross-group visiting student', 'إضافة طالب حضور مؤقت من مجموعة أخرى')}
-                value={crossGroupStudentId}
-                onChange={(e) => setCrossGroupStudentId(e.target.value)}
-                className="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-              >
-                <option value="">
-                  {t('+ Add temporary cross-group student...', '+ إضافة طالب من مجموعة أخرى للحضور المؤقت...')}
-                </option>
-                {eligibleCrossGroupStudents.map((stu) => {
-                  const g = groups.find((grp) => grp.id === stu.groupId);
-                  return (
-                    <option key={stu.id} value={stu.id}>
-                      {stu.studentCode} · {stu.fullName} ({g?.code || stu.groupId})
-                    </option>
-                  );
-                })}
-              </select>
-              <button
-                type="button"
-                disabled={!crossGroupStudentId}
-                onClick={handleAddCrossGroupStudent}
-                className="min-h-[38px] px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>{t('Add Visiting Student', 'إضافة للكشف')}</span>
-              </button>
+          {/* Search Roster + Visiting Cross-Group Student */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="search"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder={t('Filter students by name or code...', 'ابحث عن طالب بالاسم أو الكود...')}
+                aria-label={t('Filter roster students', 'بحث في كشف الطلاب')}
+                className={`${INPUT_CLASS} ps-9`}
+              />
             </div>
-          )}
+
+            {!isLockedOrSubmitted && eligibleCrossGroupStudents.length > 0 && (
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label={t('Add cross-group visiting student', 'إضافة طالب زائر من مجموعة أخرى')}
+                  value={crossGroupStudentId}
+                  onChange={(e) => setCrossGroupStudentId(e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">
+                    {t('+ Add visiting student from another group...', '+ إضافة طالب زائر من مجموعة أخرى...')}
+                  </option>
+                  {eligibleCrossGroupStudents.map((stu) => {
+                    const g = groups.find((grp) => grp.id === stu.groupId);
+                    return (
+                      <option key={stu.id} value={stu.id}>
+                        {stu.studentCode} · {stu.fullName} ({g?.code || stu.groupId})
+                      </option>
+                    );
+                  })}
+                </select>
+                <button
+                  type="button"
+                  disabled={!crossGroupStudentId}
+                  onClick={handleAddCrossGroupStudent}
+                  className={`${BTN_SECONDARY} shrink-0`}
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{t('Add', 'إضافة')}</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Student Touch Rows */}
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {baseRecords.map((rec) => (
-              <div
-                key={rec.studentId}
-                className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {rec.studentName}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filteredRecords.length === 0 ? (
+              <p className="py-6 text-xs text-slate-500 text-center">
+                {t('No matching students in roster.', 'لا يوجد طلاب مطابقون للبحث.')}
+              </p>
+            ) : (
+              filteredRecords.map((rec) => (
+                <div
+                  key={rec.studentId}
+                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {rec.studentName}
+                      </p>
+                      {rec.isCrossGroup && (
+                        <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>
+                      )}
+                    </div>
+                    <p className="text-xs font-mono tabular-nums text-slate-500 mt-0.5">
+                      {rec.studentCode} ·{' '}
+                      {rec.mark === 'unmarked'
+                        ? t('Unmarked', 'غير محدد')
+                        : rec.mark === AttendanceMark.PRESENT
+                        ? t('Present', 'حاضر')
+                        : rec.mark === AttendanceMark.LATE
+                        ? t('Late', 'متأخر')
+                        : t('Absent', 'غائب')}
                     </p>
-                    {rec.isCrossGroup && (
-                      <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-mono text-[11px]">
-                        Cross-Group
-                      </span>
-                    )}
                   </div>
-                  <p className="text-xs font-mono tabular-nums text-slate-500">
-                    {rec.studentCode} ·{' '}
-                    {rec.mark === 'unmarked'
-                      ? t('Unmarked (Draft)', 'غير محدد (مسودة)')
-                      : rec.mark.toUpperCase()}
-                  </p>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isLockedOrSubmitted}
-                    onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
-                    className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                      rec.mark === AttendanceMark.PRESENT
-                        ? 'bg-emerald-600 text-white'
-                        : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {t('Present', 'حاضر')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isLockedOrSubmitted}
-                    onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
-                    className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                      rec.mark === AttendanceMark.LATE
-                        ? 'bg-amber-600 text-white'
-                        : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {t('Late', 'متأخر')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isLockedOrSubmitted}
-                    onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
-                    className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                      rec.mark === AttendanceMark.ABSENT
-                        ? 'bg-red-600 text-white'
-                        : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {t('Absent', 'غائب')}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
+                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.PRESENT
+                          ? 'bg-emerald-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Present', 'حاضر')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
+                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.LATE
+                          ? 'bg-amber-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Late', 'متأخر')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
+                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.ABSENT
+                          ? 'bg-red-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Absent', 'غائب')}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {!isLockedOrSubmitted && (
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
               <button
                 type="button"
                 disabled={isBusy}
                 onClick={handleSubmitAndSync}
-                className="min-h-[48px] px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                className={`${BTN_PRIMARY} min-h-[48px] px-6`}
               >
                 <RefreshCw className={`w-4 h-4 ${isBusy ? 'animate-spin' : ''}`} />
                 <span>
                   {isBusy
-                    ? t('Synchronizing...', 'جاري المزامنة...')
-                    : t('Submit & Sync Attendance to Server', 'اعتماد ومزامنة الكشف مع الخادم')}
+                    ? t('Submitting...', 'جاري الاعتماد...')
+                    : t('Submit & Sync Attendance', 'اعتماد ومزامنة الكشف')}
                 </span>
               </button>
             </div>
           )}
         </div>
       ) : (
-        <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-          {t('No lectures assigned yet for attendance tracking.', 'لا توجد محاضرات مسندة لتسجيل الحضور.')}
-        </div>
+        <EmptyState
+          icon={ClipboardCheck}
+          title={t('No lectures assigned yet', 'لا توجد محاضرات مسندة لتسجيل الحضور')}
+        />
       )}
     </div>
   );
@@ -1243,9 +1365,10 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
 
   if (!currentInstructor) {
     return (
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-500">
-        {t('Instructor profile data unavailable.', 'بيانات ملف المحاضر غير متاحة.')}
-      </div>
+      <EmptyState
+        icon={UserCircle}
+        title={t('Instructor profile unavailable', 'بيانات ملف المحاضر غير متاحة')}
+      />
     );
   }
 
@@ -1262,11 +1385,11 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
     try {
       const res = await submitInstructorRequest({
         requestType: 'schedule_change',
-        subject: reqSubject,
-        details: reqDetails,
+        subject: reqSubject.trim(),
+        details: reqDetails.trim(),
       });
       if (!res.ok) {
-        setReqFeedback({ ok: false, text: res.error || 'Failed submitting request.' });
+        setReqFeedback({ ok: false, text: res.error || t('Failed submitting request.', 'تعذر إرسال الطلب.') });
       } else {
         setReqSubject('');
         setReqDetails('');
@@ -1278,20 +1401,20 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5">
+      <div className={`${SURFACE_CARD} p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
         <div>
           <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
-            {currentInstructor.instructorCode} · Isolated Instructor Account
+            {currentInstructor.instructorCode} · {currentInstructor.username}
           </p>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mt-0.5">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-0.5">
             {t(currentInstructor.fullNameEn, currentInstructor.fullNameAr)}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {currentInstructor.specialization} · {currentInstructor.email}
           </p>
         </div>
-        <div className="text-left sm:text-right">
+        <div className="text-start sm:text-end">
           <p className="text-xs text-slate-500">{t('Default Lecture Rate', 'فئة المحاضرة الافتراضية')}</p>
           <p className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
             {currentInstructor.defaultLectureRateEgp} EGP
@@ -1299,12 +1422,13 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-900 rounded-2xl w-fit">
+      {/* Sub-section Tabs */}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {(
           [
             { id: 'groups', en: 'Groups', ar: 'مجموعاتي' },
-            { id: 'links', en: 'My Links', ar: 'روابطي' },
-            { id: 'history', en: 'My History', ar: 'سجل مستحقاتي' },
+            { id: 'links', en: 'Evaluations', ar: 'التقييمات' },
+            { id: 'history', en: 'Entitlement History', ar: 'سجل مستحقاتي' },
             { id: 'requests', en: 'My Requests', ar: 'طلباتي' },
           ] as const
         ).map((tab) => (
@@ -1312,10 +1436,10 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
             key={tab.id}
             type="button"
             onClick={() => setSubTab(tab.id)}
-            className={`min-h-[40px] px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+            className={`min-h-[40px] px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer ${
               subTab === tab.id
-                ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
+                ? 'bg-blue-600 text-white'
+                : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
             }`}
           >
             {t(tab.en, tab.ar)}
@@ -1324,17 +1448,17 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
       </div>
 
       {subTab === 'groups' && (
-        <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 text-xs">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
+        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Assigned Training Groups', 'المجموعات التدريبية المسندة')}
           </h2>
           {myGroups.length === 0 ? (
-            <p className="text-slate-500">{t('No primary groups assigned yet.', 'لا توجد مجموعات مسندة.')}</p>
+            <p className="text-slate-500 py-4">{t('No primary groups assigned yet.', 'لا توجد مجموعات مسندة.')}</p>
           ) : (
             myGroups.map((g) => (
               <div
                 key={g.id}
-                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between"
+                className={`${SURFACE_SUBTLE} p-4 flex items-center justify-between gap-3`}
               >
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-white">
@@ -1342,9 +1466,11 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
                   </p>
                   <p className="text-slate-500 mt-0.5">{g.track}</p>
                 </div>
-                <span className="font-mono tabular-nums font-semibold">
-                  Capacity: {g.capacity}
-                </span>
+                <StatusBadge tone="neutral">
+                  <span className="font-mono tabular-nums">
+                    {t(`Capacity: ${g.capacity}`, `السعة: ${g.capacity}`)}
+                  </span>
+                </StatusBadge>
               </div>
             ))
           )}
@@ -1352,51 +1478,71 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
       )}
 
       {subTab === 'links' && (
-        <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 text-xs">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('My Survey & Evaluation Links', 'روابط التقييم والاستبيانات الخاصة بي')}
+        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            {t('My Survey & Evaluation Links', 'روابط التقييم والاستبيانات')}
           </h2>
           {mySurveys.length > 0 ? (
             mySurveys.map((srv) => (
               <div
                 key={srv.id}
-                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between"
+                className={`${SURFACE_SUBTLE} p-4 flex items-center justify-between gap-3`}
               >
-                <div>
+                <div className="min-w-0">
                   <p className="font-semibold text-slate-900 dark:text-white">{srv.title}</p>
-                  <p className="font-mono text-slate-500 mt-0.5">{srv.url}</p>
+                  <p className="font-mono text-slate-500 mt-0.5 truncate">{srv.url}</p>
                 </div>
-                <span className="font-mono tabular-nums font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                  <span>{srv.averageScore} / 5.0</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </span>
+                <StatusBadge tone="info">
+                  <span className="font-mono tabular-nums">{srv.averageScore.toFixed(1)} / 5.0</span>
+                  <ExternalLink className="w-3 h-3" />
+                </StatusBadge>
               </div>
             ))
           ) : (
-            <p className="text-slate-500">{t('No survey links assigned yet.', 'لا توجد روابط حالياً.')}</p>
+            <p className="text-slate-500 py-4">{t('No survey links assigned yet.', 'لا توجد روابط حالياً.')}</p>
           )}
         </div>
       )}
 
       {subTab === 'history' && (
-        <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 text-xs">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي بالجنيه المصري')}
+        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي (جنيه مصري)')}
           </h2>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {myEntitlements.length === 0 ? (
-              <p className="py-3 text-slate-500">{t('No entitlement records yet.', 'لا توجد مستحقات مسجلة بعد.')}</p>
+              <p className="py-4 text-slate-500">{t('No entitlement records yet.', 'لا توجد مستحقات مسجلة بعد.')}</p>
             ) : (
               myEntitlements.map((ent) => (
-                <div key={ent.id} className="py-3 flex items-center justify-between">
+                <div key={ent.id} className="py-3 flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">
-                      Day {ent.campDay} · Period {ent.periodNumber} ({ent.status})
-                    </p>
-                    <p className="text-slate-500 mt-0.5">{ent.eligibilityReason}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900 dark:text-white font-mono">
+                        Day {ent.campDay} · P{ent.periodNumber}
+                      </span>
+                      <StatusBadge
+                        tone={
+                          ent.status === EntitlementStatus.ELIGIBLE ||
+                          ent.status === EntitlementStatus.APPROVED
+                            ? 'success'
+                            : ent.status === EntitlementStatus.EXCLUDED
+                            ? 'danger'
+                            : 'warning'
+                        }
+                      >
+                        {ent.status === EntitlementStatus.APPROVED
+                          ? t('Approved', 'معتمد')
+                          : ent.status === EntitlementStatus.ELIGIBLE
+                          ? t('Eligible', 'مستحق')
+                          : ent.status === EntitlementStatus.EXCLUDED
+                          ? t('Excluded', 'مستبعد')
+                          : t('Pending Review', 'قيد المراجعة')}
+                      </StatusBadge>
+                    </div>
+                    <p className="text-slate-500 mt-1">{ent.eligibilityReason}</p>
                   </div>
-                  <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
-                    {ent.entitlementAmountEgp} EGP
+                  <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white shrink-0">
+                    {ent.entitlementAmountEgp.toLocaleString()} EGP
                   </span>
                 </div>
               ))
@@ -1406,64 +1552,89 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
       )}
 
       {subTab === 'requests' && (
-        <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4 text-xs">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {t('Submit & Track My Requests', 'تقديم ومتابعة طلباتي')}
+        <div className={`${SURFACE_CARD} p-5 space-y-4 text-xs`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            {t('Submit & Track Requests', 'تقديم ومتابعة الطلبات')}
           </h2>
 
           {reqFeedback && (
-            <div
-              role="status"
-              className={`p-3 rounded-xl border font-medium ${
-                reqFeedback.ok
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300'
-                  : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-300'
-              }`}
-            >
-              {reqFeedback.text}
-            </div>
+            <InlineBanner
+              type={reqFeedback.ok ? 'success' : 'error'}
+              message={reqFeedback.text}
+              onDismiss={() => setReqFeedback(null)}
+            />
           )}
 
           <form onSubmit={handleCreateRequest} className="space-y-3">
-            <input
-              type="text"
-              required
-              placeholder={t('Request subject...', 'عنوان الطلب...')}
-              value={reqSubject}
-              onChange={(e) => setReqSubject(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
-            />
-            <textarea
-              rows={2}
-              required
-              placeholder={t('Details or reason...', 'التفاصيل أو السبب...')}
-              value={reqDetails}
-              onChange={(e) => setReqDetails(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950"
-            />
+            <div>
+              <label htmlFor="req-subject" className={LABEL_CLASS}>
+                {t('Subject *', 'عنوان الطلب *')}
+              </label>
+              <input
+                id="req-subject"
+                type="text"
+                required
+                placeholder={t('e.g. Room projector check or schedule swap', 'عنوان الطلب...')}
+                value={reqSubject}
+                onChange={(e) => setReqSubject(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label htmlFor="req-details" className={LABEL_CLASS}>
+                {t('Details *', 'التفاصيل *')}
+              </label>
+              <textarea
+                id="req-details"
+                rows={2}
+                required
+                placeholder={t('Describe details or operational reason...', 'التفاصيل أو السبب...')}
+                value={reqDetails}
+                onChange={(e) => setReqDetails(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
             <button
               type="submit"
               disabled={isBusy}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 disabled:opacity-60 text-white font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              className={`${BTN_PRIMARY} min-h-[44px]`}
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{isBusy ? t('Sending...', 'جاري الإرسال...') : t('Send Request to Operations', 'إرسال الطلب للإدارة')}</span>
+              <span>
+                {isBusy
+                  ? t('Sending...', 'جاري الإرسال...')
+                  : t('Send Request to Operations', 'إرسال الطلب للإدارة')}
+              </span>
             </button>
           </form>
 
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 pt-2">
-            {myRequests.map((r) => (
-              <div key={r.id} className="py-3 flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{r.subject}</p>
-                  <p className="text-slate-500 mt-0.5">{r.details}</p>
+          {myRequests.length > 0 && (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 pt-2">
+              {myRequests.map((r) => (
+                <div key={r.id} className="py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 dark:text-white">{r.subject}</p>
+                    <p className="text-slate-500 mt-0.5">{r.details}</p>
+                  </div>
+                  <StatusBadge
+                    tone={
+                      r.status === RequestStatus.APPROVED
+                        ? 'success'
+                        : r.status === RequestStatus.REJECTED
+                        ? 'danger'
+                        : 'warning'
+                    }
+                  >
+                    {r.status === RequestStatus.APPROVED
+                      ? t('Approved', 'مقبول')
+                      : r.status === RequestStatus.REJECTED
+                      ? t('Rejected', 'مرفوض')
+                      : t('Pending', 'معلق')}
+                  </StatusBadge>
                 </div>
-                <span className="font-mono uppercase text-[11px] font-semibold">
-                  {r.status}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
