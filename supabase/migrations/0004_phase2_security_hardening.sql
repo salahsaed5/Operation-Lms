@@ -36,6 +36,8 @@ CREATE OR REPLACE FUNCTION public.guard_instructor_attendance_sheet_write()
 RETURNS TRIGGER LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 DECLARE v_lecture RECORD;
 BEGIN
+ -- SECURITY DEFINER RPCs execute as their owner; permit trusted server-side transaction updates.
+ IF current_user NOT IN ('authenticated','anon') THEN RETURN NEW; END IF;
  IF public.is_cits_admin() THEN RETURN NEW; END IF;
  IF public.current_instructor_id() IS NULL OR NEW.instructor_id<>public.current_instructor_id() THEN
  RAISE EXCEPTION 'Not authorized to write attendance sheet.';
@@ -71,6 +73,8 @@ CREATE OR REPLACE FUNCTION public.guard_attendance_record_relationships()
 RETURNS TRIGGER LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 DECLARE v_sheet RECORD; v_lecture RECORD; v_student RECORD; v_group_camp UUID;
 BEGIN
+ -- SECURITY DEFINER RPCs execute as their owner; trusted server transactions may finalize records.
+ IF current_user NOT IN ('authenticated','anon') THEN RETURN NEW; END IF;
  SELECT camp_id,lecture_id,instructor_id,status INTO v_sheet FROM public.attendance_sheets
  WHERE id=NEW.attendance_sheet_id FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'Attendance sheet not found.'; END IF;
@@ -80,7 +84,7 @@ BEGIN
  OR v_sheet.camp_id IS DISTINCT FROM NEW.camp_id OR v_lecture.camp_id IS DISTINCT FROM NEW.camp_id THEN
  RAISE EXCEPTION 'Attendance sheet/lecture/camp linkage mismatch.';
  END IF;
- IF v_sheet.status<>'draft' THEN RAISE EXCEPTION 'Records editable only while sheet is draft.'; END IF;
+ IF NOT public.is_cits_admin() AND v_sheet.status<>'draft' THEN RAISE EXCEPTION 'Records editable only while sheet is draft.'; END IF;
  IF NOT public.is_cits_admin() AND (v_sheet.instructor_id IS DISTINCT FROM public.current_instructor_id()
  OR v_lecture.assigned_instructor IS DISTINCT FROM public.current_instructor_id()) THEN
  RAISE EXCEPTION 'Instructor is not assigned to this sheet and lecture.';
