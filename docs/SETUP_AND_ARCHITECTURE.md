@@ -115,11 +115,23 @@ VITE_SUPABASE_ANON_KEY="<your-public-anon-or-sb_publishable-key>"
 
 ---
 
-## 8. Phase 2 Final Verification Status Ledger
+## 8. Production Migration Procedure (Manual Approval Required)
+
+1. Never execute staging verification scripts or unapproved migrations against production (`wdmlxsgbjkboadkeekdq`). `.github/workflows/supabase-staging-verify.yml` explicitly aborts if `SUPABASE_STAGING_DB_URL` references `wdmlxsgbjkboadkeekdq`.
+2. **Preconditions before Production Apply**:
+   - `CITS Web CI` (`bun install --frozen-lockfile`, `bun run lint`, `bun test src/domain/businessRules.test.ts`, `bun run build`) is green on `main`.
+   - `Supabase Staging Security & Verification` succeeded cleanly against staging with `0` `FAIL` rows across `0003`, `0004`, and `0005`.
+   - Fresh pre-migration database backup / Point-in-Time Recovery (PITR) checkpoint confirmed in Supabase Dashboard.
+   - Explicit release owner / Admin approval recorded.
+3. Run `supabase/verification/0005_security_inventory_and_preflight.sql`, apply `supabase/migrations/0005_phase2_finalization_hardening.sql`, and verify with read-only inventory & transactional `ROLLBACK` suites during the maintenance window.
+
+---
+
+## 9. Phase 2 Verification Status Ledger
 
 | Scope | Verification Method | Status | Notes |
 |---|---|---|---|
-| TypeScript & Vite Production Build | `npm run lint` + `npm run build` | Executed locally | Re-verify after every code edit |
-| Domain, RLS Model, & Guard 1C Lexical Tests | `npx tsx --test src/domain/businessRules.test.ts` | Executed locally | Covers all 38+ SQL trigger/helper bodies across `0001`–`0005` |
-| UI Accessibility, Desktop/Mobile Layouts & Console | Headless Chromium (`playwright-cli`) at `1440x900` & `390x844` | Executed locally | Admin Portal, Architecture Drawer, Instructor Check-in/Attendance |
-| Remote Supabase Staging Execution (`0005` + `0003`/`0004`/`0005`) | `.github/workflows/supabase-staging-verify.yml` / SQL Editor | **BLOCKED in sandbox** | Requires staging DB credentials / SQL Editor access |
+| TypeScript & Vite Production Build | `bun install --frozen-lockfile && bun run lint && bun run build` | Executed & CI green (`d0e4858`) | Re-verified locally on closure branch |
+| Domain, RLS Model, & Guard 1C Lexical Tests | `bun test src/domain/businessRules.test.ts` | Executed & CI green | Covers all 38+ SQL trigger/helper bodies across `0001`–`0005` |
+| UI Accessibility, Desktop/Mobile Layouts & Console | Headless Chromium (`playwright-cli`) at `1440x900` & `390x844` | Executed locally (Sandbox Mode) | Admin Portal, Architecture Drawer, Attendance Correction, Instructor Check-in |
+| Remote Supabase Staging Execution (`0005` + `0003`/`0004`/`0005`) | `.github/workflows/supabase-staging-verify.yml` / Staging SQL Editor | **BLOCKED (Staging DB credentials absent in sandbox)** | Requires `SUPABASE_STAGING_DB_URL` secret or manual staging SQL Editor execution |

@@ -1451,6 +1451,19 @@ test('24. Migration 0005 & verification suites security and non-destructive inte
   ]) {
     assert.ok(verify3.includes(sym), `Missing 0005 symbol '${sym}' in 0003 verification allowlist`);
   }
+
+  // Confirm 0005 strict selfie path character whitelist & staging workflow safety guards
+  assert.ok(mig5Exec.includes("[^0-9a-zA-Z/_.-]"));
+  assert.ok(inv5.includes('duplicate_pending_checkin_exceptions_count'));
+
+  const stagingWf = fs.readFileSync(
+    path.resolve(process.cwd(), '.github/workflows/supabase-staging-verify.yml'),
+    'utf8'
+  );
+  assert.ok(stagingWf.includes('SUPABASE_STAGING_DB_URL'));
+  assert.ok(stagingWf.includes('wdmlxsgbjkboadkeekdq'));
+  assert.ok(stagingWf.includes('ON_ERROR_STOP=1'));
+  assert.ok(stagingWf.includes('upload-artifact'));
 });
 
 

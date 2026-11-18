@@ -1138,7 +1138,8 @@ BEGIN
     IF position('..' in NEW.selfie_storage_path) > 0
        OR position('//' in NEW.selfie_storage_path) > 0
        OR position(':' in NEW.selfie_storage_path) > 0
-       OR NEW.selfie_storage_path ~ '[[:space:]]' THEN
+       OR NEW.selfie_storage_path ~ '[[:space:]]'
+       OR NEW.selfie_storage_path ~ '[^0-9a-zA-Z/_.-]' THEN
       RAISE EXCEPTION 'CITS Security Violation: Invalid characters or path traversal segment in selfie storage path.';
     END IF;
     IF NOT (
@@ -1301,6 +1302,7 @@ BEGIN
      OR position('//' in p_selfie_storage_path) > 0
      OR position(':' in p_selfie_storage_path) > 0
      OR p_selfie_storage_path ~ '[[:space:]]'
+     OR p_selfie_storage_path ~ '[^0-9a-zA-Z/_.-]'
      OR split_part(p_selfie_storage_path, '/', 1) IS DISTINCT FROM v_uid_text
      OR split_part(p_selfie_storage_path, '/', 2) IS DISTINCT FROM p_camp_id::text
      OR split_part(p_selfie_storage_path, '/', 3) = ''

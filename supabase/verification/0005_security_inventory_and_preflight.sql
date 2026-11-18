@@ -85,11 +85,21 @@ WHERE schemaname = 'public'
    OR (schemaname = 'storage' AND tablename = 'objects')
 ORDER BY schemaname, tablename, policyname;
 
--- 5. Active Camp & Admin Cap Operational Preflight Summary
+-- 5. Active Camp, Admin Cap & Pending Exception Conflict Preflight Summary
 SELECT
   (SELECT COUNT(*) FROM public.admin_accounts) AS admin_accounts_count,
   (SELECT COUNT(*) FROM public.profiles WHERE role = 'admin' AND is_active = TRUE) AS active_admin_profiles,
   (SELECT COUNT(*) FROM public.camps WHERE status = 'active') AS active_camps_count,
   (SELECT COUNT(*) FROM public.camps WHERE status = 'archived') AS archived_camps_count,
+  (
+    SELECT COUNT(*)
+    FROM (
+      SELECT camp_id, instructor_id, camp_day
+      FROM public.checkin_exceptions
+      WHERE status = 'pending'
+      GROUP BY camp_id, instructor_id, camp_day
+      HAVING COUNT(*) > 1
+    ) dup_pending
+  ) AS duplicate_pending_checkin_exceptions_count,
   (SELECT id::text FROM storage.buckets WHERE id = 'checkin-selfies') AS checkin_selfies_bucket_id,
   (SELECT file_size_limit FROM storage.buckets WHERE id = 'checkin-selfies') AS checkin_selfies_limit_bytes;
