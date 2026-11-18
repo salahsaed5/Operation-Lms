@@ -33,14 +33,15 @@
 --      and a zero-overload check in public schema.
 --    - Lexical Stripping (PL/pgSQL State-Machine Scanner in Pre-Flight Guard 1C):
 --      Uses a character-by-character PL/pgSQL loop (not regex replacement) over each
---      of the 18 pre-approved functions' prosrc to strip single-line comments (--),
---      PostgreSQL nested block comments (/* ... /* ... */ ... */ tracked by depth),
---      and standard single-quoted string literals ('...' with '' escaped quotes).
+--      of the 18 pre-approved functions prosrc to strip single-line comments,
+--      PostgreSQL nested block comments (tracked by nesting depth),
+--      and standard single-quoted string literals (with doubled single-quote escapes).
 --    - Unproven Lexical Constructs (Immediate FAIL / Fixture Abort, Never PASS):
---      Explicitly flags any dollar-quoted string or '$' token ($tag$...$tag$, $$, $1),
---      double-quoted identifier ("..."), non-standard string literal prefix
---      (E'...', U&'...', B'...', X'...', N'...'), backslash inside a single-quoted
---      literal, unclosed single quote, or unclosed/unbalanced block comment.
+--      Explicitly flags any dollar-quoted string or dollar-sign token (tagged or
+--      untagged dollar quotes and positional parameters),
+--      double-quoted identifier, non-standard string literal prefix
+--      (escape, unicode, bit, hex, or national string prefixes), backslash inside
+--      a single-quoted literal, unclosed single quote, or unclosed/unbalanced block comment.
 --    - Explicit Unprovable Boundaries:
 --      After comment/literal stripping, call extraction uses regex pattern matching
 --      for identifier(...) tokens combined with pg_depend (pg_proc -> pg_proc) links.
@@ -1176,22 +1177,23 @@ BEGIN
     --   1. Scope: Operates strictly on the 18 pre-approved CITS trigger, helper, and RPC
     --      functions (v_expected_trigger_regprocs || v_expected_helper_regprocs).
     --   2. Step 1 (PL/pgSQL Character-by-Character Comment & String Scanner):
-    --      Iterates character-by-character over each pre-approved function's prosrc to
+    --      Iterates character-by-character over each pre-approved function prosrc to
     --      handle in exact lexical order:
-    --      - Single-line comments (-- ... up to CR/LF),
-    --      - PostgreSQL nested block comments (/* ... /* ... */ ... */ tracked via
+    --      - Single-line comments (double-dash up to CR/LF),
+    --      - PostgreSQL nested block comments (slash-star to star-slash tracked via
     --        v_block_comment_depth), and
-    --      - Standard single-quoted literals ('...' with '' escaped single quotes).
+    --      - Standard single-quoted literals (with doubled single-quote escapes).
     --   3. Step 2 (Unproven Lexical Construct Detection):
     --      Flags as unproven (lex_issues IS NOT NULL) any function containing:
     --      - Unclosed single-quoted literals (UNCLOSED_SINGLE_QUOTE),
     --      - Unclosed or unbalanced block comments (UNCLOSED_NESTED_BLOCK_COMMENT /
     --        STRAY_BLOCK_COMMENT_CLOSE),
-    --      - Non-standard string literal prefixes (E'...', U&'...', B'...', X'...', N'...'),
-    --      - Backslashes (\) inside single-quoted literals (which could alter escaping if
+    --      - Non-standard string literal prefixes (escape, unicode, bit, hex, or national),
+    --      - Backslash characters inside single-quoted literals (which could alter escaping if
     --        standard_conforming_strings were disabled),
-    --      - Dollar-quoted strings or '$' tokens ($tag$...$tag$, $$, $1) outside comments/strings,
-    --      - Double-quoted identifiers ("...") outside comments/strings.
+    --      - Dollar-quoted strings or dollar-sign tokens (tagged or untagged dollar quotes
+    --        and positional parameters) outside comments/strings,
+    --      - Double-quoted identifiers outside comments/strings.
     --   4. Step 3 (Regex Call-Token Extraction + pg_depend Traversal):
     --      Extracts identifier(...) tokens via regexp_matches on clean_src and unions them
     --      with pg_depend (pg_proc -> pg_proc) catalog edges across depths 1..4.
@@ -1236,7 +1238,7 @@ BEGIN
         v_next := CASE WHEN v_pos < v_len THEN substr(v_src, v_pos + 1, 1) ELSE '' END;
 
         IF v_in_line_comment THEN
-          -- Inside '--' line comment: consume characters until newline
+          -- Inside single-line comment: consume characters until newline
           IF v_ch IN (chr(10), chr(13)) THEN
             v_in_line_comment := FALSE;
             v_clean_buf := v_clean_buf || v_ch;
@@ -1244,7 +1246,7 @@ BEGIN
           v_pos := v_pos + 1;
 
         ELSIF v_block_comment_depth > 0 THEN
-          -- Inside '/* ... */' block comment: support PostgreSQL nested block comments
+          -- Inside block comment: support PostgreSQL nested block comments
           IF v_ch = '/' AND v_next = '*' THEN
             v_block_comment_depth := v_block_comment_depth + 1;
             v_pos := v_pos + 2;
@@ -1259,16 +1261,16 @@ BEGIN
           END IF;
 
         ELSIF v_in_single_quote THEN
-          -- Inside standard single-quoted string literal ('...'): handle '' escaped quotes
+          -- Inside standard single-quoted string literal: handle doubled single-quote escapes
           IF v_ch = '\' THEN
             v_has_backslash_in_quote := TRUE;
             v_pos := v_pos + 1;
           ELSIF v_ch = '''' THEN
             IF v_next = '''' THEN
-              -- Escaped single quote ('') inside literal: consume both characters
+              -- Escaped single quote inside literal: consume both characters
               v_pos := v_pos + 2;
             ELSE
-              -- End of single-quoted literal: emit empty string placeholder ''
+              -- End of single-quoted literal: emit empty string placeholder
               v_in_single_quote := FALSE;
               v_clean_buf := v_clean_buf || '''''';
               v_pos := v_pos + 1;
@@ -1296,12 +1298,12 @@ BEGIN
             v_in_single_quote := TRUE;
             v_pos := v_pos + 1;
           ELSIF v_ch = '$' THEN
-            -- Dollar-quoted string ($tag$...$tag$ / $$) or positional parameter ($1)
+            -- Dollar-quoted string or positional parameter token detected
             v_has_dollar_token := TRUE;
             v_clean_buf := v_clean_buf || v_ch;
             v_pos := v_pos + 1;
           ELSIF v_ch = '"' THEN
-            -- Double-quoted identifier ("...")
+            -- Double-quoted identifier token detected
             v_has_double_quote := TRUE;
             v_clean_buf := v_clean_buf || v_ch;
             v_pos := v_pos + 1;
