@@ -1124,6 +1124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await refreshOperationalData();
         return { ok: true };
       } catch (err) {
+        await refreshOperationalData().catch(() => undefined);
         return { ok: false, error: err instanceof Error ? err.message : 'Archive failed.' };
       }
     }
@@ -2139,6 +2140,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           sheet,
           lecture: lec,
           student: stu,
+          transfers: studentTransfers,
           mark: input.mark,
           note: input.note,
           adminProfileId: auth.currentProfile.id,
@@ -2600,8 +2602,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const markNotificationRead = async (notificationId: string): Promise<void> => {
     if (isSupabaseMode) {
-      await markNotificationReadInDb(notificationId);
-      await refreshOperationalData();
+      try {
+        await markNotificationReadInDb(notificationId);
+        await refreshOperationalData();
+      } catch (err) {
+        setDataError(
+          err instanceof Error ? err.message : 'Unable to mark notification as read.'
+        );
+      }
       return;
     }
     setNotifications((prev) =>
@@ -2641,8 +2649,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checksum = await recordBackupExportInDb({
           campId: activeCamp?.id || null,
           createdBy: auth.currentProfile.id,
+          actorName: auth.currentProfile.fullNameEn,
           jsonString,
         });
+        await refreshOperationalData();
       }
 
       if (typeof document !== 'undefined') {
@@ -2657,14 +2667,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         URL.revokeObjectURL(url);
       }
 
-      appendSandboxAudit(
-        'BACKUP_JSON_EXPORTED',
-        'backup_records',
-        activeCamp?.id || 'global',
-        null,
-        { filename },
-        'Admin exported operational JSON backup'
-      );
+      if (!isSupabaseMode) {
+        appendSandboxAudit(
+          'BACKUP_JSON_EXPORTED',
+          'backup_records',
+          activeCamp?.id || 'global',
+          null,
+          { filename },
+          'Admin exported operational JSON backup'
+        );
+      }
 
       return { ok: true, filename, checksum };
     } catch (err) {

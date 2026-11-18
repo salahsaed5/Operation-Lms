@@ -9,6 +9,59 @@
 BEGIN;
 
 -- -----------------------------------------------------------------------------
+-- 0. ADMIN MFA (AAL2) ENFORCEMENT & AUTH HELPER
+-- -----------------------------------------------------------------------------
+-- Upgrade is_cits_admin() so Admin privileges require verified MFA session
+-- assurance (aal2) in addition to active Admin profile and admin_accounts row.
+-- Allow authenticated Admins at aal1 to SELECT only their own admin_accounts
+-- row during the pre-challenge TOTP bootstrap check.
+CREATE OR REPLACE FUNCTION is_cits_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles p
+    JOIN public.admin_accounts a ON a.profile_id = p.id
+    WHERE p.id = auth.uid()
+      AND p.role = 'admin'
+      AND p.is_active = TRUE
+      AND COALESCE(auth.jwt() ->> 'aal', '') = 'aal2'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION is_cits_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_cits_admin() TO authenticated;
+
+DROP POLICY IF EXISTS "Admins view own admin_account" ON admin_accounts;
+CREATE POLICY "Admins view own admin_account" ON admin_accounts
+  FOR SELECT TO authenticated
+  USING (profile_id = auth.uid());
+
+-- Helper: Verify whether current authenticated instructor is the active
+-- instructor (substitute if assigned, otherwise primary) for a lecture.
+CREATE OR REPLACE FUNCTION is_lecture_active_instructor(p_lecture_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.lectures l
+    WHERE l.id = p_lecture_id
+      AND COALESCE(l.substitute_instructor_id, l.instructor_id) = current_instructor_id()
+  );
+$$;
+
+REVOKE ALL ON FUNCTION is_lecture_active_instructor(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_lecture_active_instructor(UUID) TO authenticated;
+
+-- -----------------------------------------------------------------------------
 -- 1. GEOSPATIAL HAVERSINE & HISTORICAL STUDENT TRANSFER HELPERS
 -- -----------------------------------------------------------------------------
 
@@ -198,8 +251,10 @@ BEGIN
     RAISE EXCEPTION 'CITS Attendance Error: Sheet camp_id (%) must match lecture camp_id (%).', NEW.camp_id, v_lecture.camp_id;
   END IF;
 
-  IF NEW.instructor_id IS DISTINCT FROM v_lecture.instructor_id
-     AND NEW.instructor_id IS DISTINCT FROM v_lecture.substitute_instructor_id THEN
+  IF NOT (
+    NEW.instructor_id IS NOT DISTINCT FROM v_lecture.instructor_id
+    OR (v_lecture.substitute_instructor_id IS NOT NULL AND NEW.instructor_id IS NOT DISTINCT FROM v_lecture.substitute_instructor_id)
+  ) THEN
     RAISE EXCEPTION 'CITS Attendance Error: Sheet instructor_id must match assigned lecture instructor.';
   END IF;
 
@@ -209,7 +264,12 @@ BEGIN
   END IF;
 
   v_inst_id := current_instructor_id();
-  IF v_inst_id IS NULL OR NEW.instructor_id IS DISTINCT FROM v_inst_id THEN
+  IF v_inst_id IS NULL OR NOT is_lecture_active_instructor(NEW.lecture_id) THEN
+    RAISE EXCEPTION 'CITS Security Violation: You may only manage attendance sheets where you are the active assigned instructor.';
+  END IF;
+
+  IF NEW.instructor_id IS DISTINCT FROM v_inst_id
+     AND NEW.instructor_id IS DISTINCT FROM COALESCE(v_lecture.substitute_instructor_id, v_lecture.instructor_id) THEN
     RAISE EXCEPTION 'CITS Security Violation: You may only manage attendance sheets assigned to your instructor account.';
   END IF;
 
@@ -255,12 +315,21 @@ CREATE TRIGGER trg_enforce_attendance_sheet_security
 BEFORE INSERT OR UPDATE OR DELETE ON attendance_sheets
 FOR EACH ROW EXECUTE FUNCTION enforce_attendance_sheet_security();
 
--- 3.2 Tighten attendance_sheets and attendance_records RLS for instructors (draft only)
+-- 3.2 Tighten attendance_sheets and attendance_records RLS for active instructors (draft only)
+DROP POLICY IF EXISTS "Instructors select own attendance_sheets" ON attendance_sheets;
+CREATE POLICY "Instructors select own attendance_sheets" ON attendance_sheets
+  FOR SELECT TO authenticated
+  USING (
+    current_instructor_id() IS NOT NULL
+    AND is_lecture_active_instructor(lecture_id)
+  );
+
 DROP POLICY IF EXISTS "Instructors insert own attendance_sheets" ON attendance_sheets;
 CREATE POLICY "Instructors insert own attendance_sheets" ON attendance_sheets
   FOR INSERT TO authenticated
   WITH CHECK (
-    instructor_id = current_instructor_id()
+    current_instructor_id() IS NOT NULL
+    AND is_lecture_active_instructor(lecture_id)
     AND status = 'draft'
     AND present_count = 0
     AND absent_count = 0
@@ -272,17 +341,38 @@ CREATE POLICY "Instructors insert own attendance_sheets" ON attendance_sheets
 DROP POLICY IF EXISTS "Instructors update own unlocked attendance_sheets" ON attendance_sheets;
 CREATE POLICY "Instructors update own unlocked attendance_sheets" ON attendance_sheets
   FOR UPDATE TO authenticated
-  USING (instructor_id = current_instructor_id() AND status = 'draft')
-  WITH CHECK (instructor_id = current_instructor_id() AND status = 'draft');
+  USING (
+    current_instructor_id() IS NOT NULL
+    AND is_lecture_active_instructor(lecture_id)
+    AND status = 'draft'
+  )
+  WITH CHECK (
+    current_instructor_id() IS NOT NULL
+    AND is_lecture_active_instructor(lecture_id)
+    AND status = 'draft'
+  );
+
+DROP POLICY IF EXISTS "Instructors select own lecture attendance_records" ON attendance_records;
+CREATE POLICY "Instructors select own lecture attendance_records" ON attendance_records
+  FOR SELECT TO authenticated
+  USING (
+    current_instructor_id() IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM public.attendance_sheets s
+      WHERE s.id = attendance_records.attendance_sheet_id
+        AND is_lecture_active_instructor(s.lecture_id)
+    )
+  );
 
 DROP POLICY IF EXISTS "Instructors insert own lecture attendance_records" ON attendance_records;
 CREATE POLICY "Instructors insert own lecture attendance_records" ON attendance_records
   FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (
+    current_instructor_id() IS NOT NULL
+    AND EXISTS (
       SELECT 1 FROM public.attendance_sheets s
       WHERE s.id = attendance_records.attendance_sheet_id
-        AND s.instructor_id = current_instructor_id()
+        AND is_lecture_active_instructor(s.lecture_id)
         AND s.status = 'draft'
     )
   );
@@ -291,18 +381,20 @@ DROP POLICY IF EXISTS "Instructors update own lecture attendance_records" ON att
 CREATE POLICY "Instructors update own lecture attendance_records" ON attendance_records
   FOR UPDATE TO authenticated
   USING (
-    EXISTS (
+    current_instructor_id() IS NOT NULL
+    AND EXISTS (
       SELECT 1 FROM public.attendance_sheets s
       WHERE s.id = attendance_records.attendance_sheet_id
-        AND s.instructor_id = current_instructor_id()
+        AND is_lecture_active_instructor(s.lecture_id)
         AND s.status = 'draft'
     )
   )
   WITH CHECK (
-    EXISTS (
+    current_instructor_id() IS NOT NULL
+    AND EXISTS (
       SELECT 1 FROM public.attendance_sheets s
       WHERE s.id = attendance_records.attendance_sheet_id
-        AND s.instructor_id = current_instructor_id()
+        AND is_lecture_active_instructor(s.lecture_id)
         AND s.status = 'draft'
     )
   );
@@ -427,15 +519,15 @@ BEGIN
 
   PERFORM assert_camp_not_archived(v_sheet.camp_id);
 
-  IF v_sheet.status = 'locked' AND NOT is_cits_admin() THEN
-    RAISE EXCEPTION 'CITS Integrity Violation: Locked attendance sheet % cannot be resubmitted by instructor.', v_sheet.id;
+  IF v_sheet.status IN ('submitted', 'locked') AND NOT is_cits_admin() THEN
+    RAISE EXCEPTION 'CITS Integrity Violation: Attendance sheet % is already % and cannot be resubmitted by instructor.', v_sheet.id, v_sheet.status;
   END IF;
 
   SELECT * INTO v_lecture FROM public.lectures WHERE id = v_sheet.lecture_id;
   v_active_instructor := COALESCE(v_lecture.substitute_instructor_id, v_lecture.instructor_id);
 
-  IF NOT (is_cits_admin() OR current_instructor_id() = v_active_instructor OR current_instructor_id() = v_lecture.instructor_id) THEN
-    RAISE EXCEPTION 'CITS Authorization Denied: You are not authorized to submit attendance for lecture %.', v_sheet.lecture_id;
+  IF NOT (is_cits_admin() OR current_instructor_id() = v_active_instructor) THEN
+    RAISE EXCEPTION 'CITS Authorization Denied: Only the active assigned instructor or Admin can submit attendance for lecture %.', v_sheet.lecture_id;
   END IF;
 
   -- Refresh existing record origin groups accurately for historical transfers
@@ -490,7 +582,8 @@ BEGIN
   WHERE attendance_sheet_id = v_sheet.id;
 
   UPDATE public.attendance_sheets
-  SET status = 'submitted',
+  SET instructor_id = v_active_instructor,
+      status = 'submitted',
       sync_state = 'Synced',
       present_count = v_present_count,
       absent_count = v_absent_count,
@@ -557,7 +650,10 @@ BEGIN
         WHEN public.lecture_entitlements.status IN ('approved', 'excluded') THEN public.lecture_entitlements.entitlement_amount_egp
         ELSE EXCLUDED.entitlement_amount_egp
       END,
-      eligibility_reason = EXCLUDED.eligibility_reason,
+      eligibility_reason = CASE
+        WHEN public.lecture_entitlements.status IN ('approved', 'excluded') THEN public.lecture_entitlements.eligibility_reason
+        ELSE EXCLUDED.eligibility_reason
+      END,
       updated_at = NOW();
 
   PERFORM append_audit_log_internal(
@@ -596,9 +692,16 @@ DECLARE
   v_camp RECORD;
   v_venue RECORD;
   v_settings RECORD;
+  v_first_lecture RECORD;
   v_distance DOUBLE PRECISION;
   v_max_kb INTEGER := 300;
   v_radius INTEGER := 100;
+  v_late_threshold INTEGER := 60;
+  v_now TIMESTAMPTZ := NOW();
+  v_lecture_start TIMESTAMPTZ;
+  v_minutes_late INTEGER := 0;
+  v_arrived_late BOOLEAN := FALSE;
+  v_inst_id UUID;
   v_trusted_rpc BOOLEAN := FALSE;
 BEGIN
   v_trusted_rpc := (
@@ -606,19 +709,20 @@ BEGIN
     AND current_user NOT IN ('anon', 'authenticated')
   );
 
-  SELECT id, status, venue_id INTO v_camp FROM public.camps WHERE id = NEW.camp_id;
+  SELECT id, status, venue_id, current_camp_day INTO v_camp FROM public.camps WHERE id = NEW.camp_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'CITS Check-in Error: Camp % not found.', NEW.camp_id;
   END IF;
 
   SELECT * INTO v_venue FROM public.venues WHERE id = v_camp.venue_id;
-  SELECT geofence_radius_meters, max_selfie_kb
+  SELECT geofence_radius_meters, first_lecture_late_threshold_minutes, max_selfie_kb
   INTO v_settings
   FROM public.camp_settings
   WHERE camp_id = NEW.camp_id;
 
   v_radius := COALESCE(v_settings.geofence_radius_meters, v_venue.geofence_radius_meters, 100);
   v_max_kb := COALESCE(v_settings.max_selfie_kb, 300);
+  v_late_threshold := COALESCE(v_settings.first_lecture_late_threshold_minutes, 60);
 
   IF NEW.selfie_size_kb IS NOT NULL AND NEW.selfie_size_kb > v_max_kb THEN
     RAISE EXCEPTION 'CITS Check-in Error: Selfie exceeds % KB limit.', v_max_kb;
@@ -629,29 +733,71 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Direct client check-in writes must enforce ownership, path prefix, and distance
-  IF NEW.instructor_id IS DISTINCT FROM current_instructor_id() THEN
+  IF TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'CITS Security Violation: Instructors cannot modify recorded daily check-ins.';
+  END IF;
+
+  -- Direct client check-in writes must enforce active camp, camp assignment, ownership, path prefix, distance, and lateness
+  IF v_camp.status IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'CITS Policy Violation: Check-ins are only accepted for active camps.';
+  END IF;
+
+  v_inst_id := current_instructor_id();
+  IF v_inst_id IS NULL OR NEW.instructor_id IS DISTINCT FROM v_inst_id THEN
     RAISE EXCEPTION 'CITS Security Violation: Cannot create check-in for another instructor.';
+  END IF;
+
+  IF NOT is_instructor_assigned_to_camp(NEW.camp_id) THEN
+    RAISE EXCEPTION 'CITS Authorization Denied: You are not assigned to camp %.', NEW.camp_id;
   END IF;
 
   IF NEW.status IN ('exception_approved', 'exception_rejected') THEN
     RAISE EXCEPTION 'CITS Security Violation: Instructors cannot self-approve or reject check-in exceptions.';
   END IF;
 
-  IF NEW.selfie_storage_path IS NOT NULL
-     AND NEW.selfie_storage_path NOT LIKE (auth.uid()::text || '/%') THEN
-    RAISE EXCEPTION 'CITS Security Violation: Selfie path must be scoped to your own storage folder.';
+  IF NEW.selfie_storage_path IS NULL
+     OR NEW.selfie_storage_path NOT LIKE auth.uid()::text || '/' || NEW.camp_id::text || '/%' THEN
+    RAISE EXCEPTION 'CITS Security Violation: Selfie path must be scoped to your own user and camp storage folder.';
   END IF;
+
+  IF NEW.selfie_size_kb IS NULL OR NEW.selfie_size_kb <= 0 OR NEW.selfie_size_kb > v_max_kb THEN
+    RAISE EXCEPTION 'CITS Check-in Error: Compressed selfie size must be between 1 KB and % KB.', v_max_kb;
+  END IF;
+
+  NEW.camp_day := v_camp.current_camp_day;
+  NEW.checkin_date := (v_now AT TIME ZONE 'Africa/Cairo')::date;
+  NEW.server_timestamp := v_now;
+  NEW.selfie_deleted_after_archive := FALSE;
 
   v_distance := haversine_distance_meters(NEW.latitude, NEW.longitude, v_venue.latitude, v_venue.longitude);
   NEW.distance_from_venue_meters := ROUND(v_distance)::DOUBLE PRECISION;
   NEW.within_geofence := (v_distance <= v_radius);
-  NEW.server_timestamp := NOW();
 
-  IF NOT NEW.within_geofence AND NEW.status = 'verified' THEN
-    NEW.status := 'outside_geofence';
-  ELSIF NEW.arrived_late_first_lecture AND NEW.status = 'verified' THEN
-    NEW.status := 'late_first_lecture';
+  SELECT id, lecture_date, start_time
+  INTO v_first_lecture
+  FROM public.lectures
+  WHERE camp_id = NEW.camp_id
+    AND camp_day = v_camp.current_camp_day
+    AND status != 'cancelled'
+    AND (instructor_id = NEW.instructor_id OR substitute_instructor_id = NEW.instructor_id)
+  ORDER BY period_number ASC
+  LIMIT 1;
+
+  IF FOUND THEN
+    v_lecture_start := (v_first_lecture.lecture_date + v_first_lecture.start_time) AT TIME ZONE 'Africa/Cairo';
+    v_minutes_late := GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (v_now - v_lecture_start)) / 60)::INTEGER);
+    v_arrived_late := (v_minutes_late >= v_late_threshold);
+  END IF;
+
+  NEW.minutes_after_first_lecture := v_minutes_late;
+  NEW.arrived_late_first_lecture := v_arrived_late;
+
+  IF NOT NEW.within_geofence THEN
+    NEW.status := CASE WHEN NEW.status = 'exception_pending' THEN 'exception_pending' ELSE 'outside_geofence' END;
+  ELSIF NEW.arrived_late_first_lecture THEN
+    NEW.status := CASE WHEN NEW.status = 'exception_pending' THEN 'exception_pending' ELSE 'late_first_lecture' END;
+  ELSE
+    NEW.status := 'verified';
   END IF;
 
   RETURN NEW;
@@ -662,6 +808,71 @@ DROP TRIGGER IF EXISTS trg_enforce_daily_checkin_security ON daily_checkins;
 CREATE TRIGGER trg_enforce_daily_checkin_security
 BEFORE INSERT OR UPDATE ON daily_checkins
 FOR EACH ROW EXECUTE FUNCTION enforce_daily_checkin_security();
+
+CREATE OR REPLACE FUNCTION enforce_checkin_exception_security()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_inst_id UUID;
+  v_checkin RECORD;
+  v_trusted_rpc BOOLEAN := FALSE;
+BEGIN
+  v_trusted_rpc := (
+    current_setting('cits.trusted_rpc', true) = 'submit_daily_checkin_tx'
+    AND current_user NOT IN ('anon', 'authenticated')
+  );
+
+  IF is_cits_admin() OR v_trusted_rpc THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    RAISE EXCEPTION 'CITS Security Violation: Instructors cannot modify or delete check-in exceptions.';
+  END IF;
+
+  v_inst_id := current_instructor_id();
+  IF v_inst_id IS NULL OR NEW.instructor_id IS DISTINCT FROM v_inst_id THEN
+    RAISE EXCEPTION 'CITS Security Violation: Cannot create check-in exception for another instructor.';
+  END IF;
+
+  IF NOT is_instructor_assigned_to_camp(NEW.camp_id) THEN
+    RAISE EXCEPTION 'CITS Authorization Denied: You are not assigned to camp %.', NEW.camp_id;
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM 'pending'
+     OR NEW.reviewed_by IS NOT NULL
+     OR NEW.review_note IS NOT NULL
+     OR NEW.reviewed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'CITS Security Violation: Direct check-in exceptions must start as pending with null review metadata.';
+  END IF;
+
+  IF TRIM(COALESCE(NEW.reason, '')) = '' THEN
+    RAISE EXCEPTION 'CITS Check-in Error: Exception reason cannot be empty.';
+  END IF;
+
+  IF NEW.checkin_id IS NOT NULL THEN
+    SELECT id, camp_id, instructor_id, camp_day INTO v_checkin
+    FROM public.daily_checkins
+    WHERE id = NEW.checkin_id;
+
+    IF NOT FOUND
+       OR v_checkin.camp_id IS DISTINCT FROM NEW.camp_id
+       OR v_checkin.instructor_id IS DISTINCT FROM NEW.instructor_id THEN
+      RAISE EXCEPTION 'CITS Security Violation: Referenced daily check-in does not belong to this instructor and camp.';
+    END IF;
+    NEW.camp_day := v_checkin.camp_day;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_checkin_exception_security ON checkin_exceptions;
+CREATE TRIGGER trg_enforce_checkin_exception_security
+BEFORE INSERT OR UPDATE OR DELETE ON checkin_exceptions
+FOR EACH ROW EXECUTE FUNCTION enforce_checkin_exception_security();
 
 CREATE OR REPLACE FUNCTION submit_daily_checkin_tx(
   p_camp_id UUID,
@@ -716,7 +927,8 @@ BEGIN
     RAISE EXCEPTION 'CITS Policy Violation: Check-ins are only accepted for active camps.';
   END IF;
 
-  IF p_selfie_storage_path IS NULL OR p_selfie_storage_path NOT LIKE (auth.uid()::text || '/' || p_camp_id::text || '/%') THEN
+  IF p_selfie_storage_path IS NULL
+     OR p_selfie_storage_path NOT LIKE auth.uid()::text || '/' || p_camp_id::text || '/%' THEN
     RAISE EXCEPTION 'CITS Check-in Error: Valid selfie upload path in checkin-selfies bucket is required.';
   END IF;
 
@@ -814,7 +1026,7 @@ BEGIN
       arrived_late_first_lecture = EXCLUDED.arrived_late_first_lecture,
       minutes_after_first_lecture = EXCLUDED.minutes_after_first_lecture,
       status = CASE
-        WHEN public.daily_checkins.status IN ('exception_approved', 'exception_rejected')
+        WHEN public.daily_checkins.status IN ('verified', 'exception_approved', 'exception_rejected')
           THEN public.daily_checkins.status
         ELSE EXCLUDED.status
       END
@@ -931,6 +1143,7 @@ BEGIN
     END IF;
     IF NEW.action IN (
       'CAMP_ACTIVATED', 'CAMP_ARCHIVED', 'ADMIN_ACCOUNT_BOOTSTRAPPED',
+      'ADMIN_MFA_VERIFIED', 'BACKUP_JSON_EXPORTED',
       'ENTITLEMENT_APPROVED', 'ENTITLEMENT_EXCLUDED', 'STUDENT_TRANSFERRED',
       'STUDENTS_BATCH_IMPORTED', 'EXCEPTION_APPROVED', 'EXCEPTION_REJECTED'
     ) THEN
@@ -1374,6 +1587,13 @@ BEGIN
   FROM public.daily_checkins
   WHERE camp_id = p_camp_id;
 
+  -- Clear selfie references in DB before marking camp archived (read-only)
+  UPDATE public.daily_checkins
+  SET selfie_storage_path = NULL,
+      selfie_deleted_after_archive = TRUE
+  WHERE camp_id = p_camp_id
+    AND (selfie_storage_path IS NOT NULL OR selfie_deleted_after_archive = FALSE);
+
   UPDATE public.camps
   SET status = 'archived',
       archived_at = NOW(),
@@ -1447,17 +1667,40 @@ AS $$
 DECLARE
   v_uid UUID;
   v_now TIMESTAMPTZ := NOW();
+  v_has_verified_totp BOOLEAN := FALSE;
 BEGIN
   IF NOT is_cits_admin() THEN
-    RAISE EXCEPTION 'CITS Security Violation: Only verified Admins can record TOTP MFA status.';
+    RAISE EXCEPTION 'CITS Security Violation: Only verified AAL2 Admins can record TOTP MFA status.';
   END IF;
 
   v_uid := auth.uid();
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM auth.mfa_factors f
+    WHERE f.user_id = v_uid
+      AND f.factor_type = 'totp'
+      AND f.status = 'verified'
+  ) INTO v_has_verified_totp;
+
+  IF NOT v_has_verified_totp THEN
+    RAISE EXCEPTION 'CITS MFA Violation: No verified TOTP factor exists in auth.mfa_factors for this Admin.';
+  END IF;
 
   UPDATE public.admin_accounts
   SET totp_enrolled = TRUE,
       totp_verified_at = v_now
   WHERE profile_id = v_uid;
+
+  PERFORM append_audit_log_internal(
+    NULL,
+    'ADMIN_MFA_VERIFIED',
+    'admin_accounts',
+    v_uid::text,
+    NULL,
+    jsonb_build_object('totp_enrolled', TRUE, 'aal', 'aal2'),
+    'Admin TOTP MFA verified with AAL2 session assurance'
+  );
 
   RETURN jsonb_build_object('ok', TRUE, 'profile_id', v_uid, 'totp_verified_at', v_now);
 END;
@@ -1474,6 +1717,7 @@ COMMIT;
 -- DROP TRIGGER IF EXISTS trg_enforce_lecture_update_security ON lectures;
 -- DROP TRIGGER IF EXISTS trg_enforce_attendance_sheet_security ON attendance_sheets;
 -- DROP TRIGGER IF EXISTS trg_enforce_daily_checkin_security ON daily_checkins;
+-- DROP TRIGGER IF EXISTS trg_enforce_checkin_exception_security ON checkin_exceptions;
 -- DROP TRIGGER IF EXISTS trg_enforce_notification_update_security ON notifications;
 -- DROP TRIGGER IF EXISTS trg_readonly_archived_camp_settings ON camp_settings;
 -- DROP TRIGGER IF EXISTS trg_readonly_archived_camp_instructors ON camp_instructors;
@@ -1488,11 +1732,14 @@ COMMIT;
 -- DROP TRIGGER IF EXISTS trg_readonly_archived_survey_links ON survey_links;
 -- DROP TRIGGER IF EXISTS trg_readonly_archived_survey_results ON survey_results;
 -- DROP TRIGGER IF EXISTS trg_readonly_archived_instructor_evaluations ON instructor_evaluations;
+-- DROP POLICY IF EXISTS "Admins view own admin_account" ON admin_accounts;
+-- DROP FUNCTION IF EXISTS is_lecture_active_instructor(UUID);
 -- DROP FUNCTION IF EXISTS haversine_distance_meters(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION);
 -- DROP FUNCTION IF EXISTS resolve_student_group_for_day(UUID, UUID, INTEGER);
 -- DROP FUNCTION IF EXISTS enforce_lecture_update_security();
 -- DROP FUNCTION IF EXISTS enforce_attendance_sheet_security();
 -- DROP FUNCTION IF EXISTS enforce_daily_checkin_security();
+-- DROP FUNCTION IF EXISTS enforce_checkin_exception_security();
 -- DROP FUNCTION IF EXISTS enforce_notification_update_security();
 -- DROP FUNCTION IF EXISTS submit_daily_checkin_tx(UUID, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, TEXT, INTEGER, TEXT);
 -- DROP FUNCTION IF EXISTS acknowledge_lecture_tx(UUID);

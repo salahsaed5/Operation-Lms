@@ -156,6 +156,7 @@ DECLARE
     'enforce_lecture_update_security',
     'enforce_attendance_sheet_security',
     'enforce_daily_checkin_security',
+    'enforce_checkin_exception_security',
     'enforce_notification_update_security'
   ];
 
@@ -171,6 +172,7 @@ DECLARE
     'public.enforce_lecture_update_security()',
     'public.enforce_attendance_sheet_security()',
     'public.enforce_daily_checkin_security()',
+    'public.enforce_checkin_exception_security()',
     'public.enforce_notification_update_security()'
   ];
 
@@ -183,6 +185,7 @@ DECLARE
     'assert_camp_not_archived',
     'is_instructor_assigned_to_camp',
     'is_instructor_assigned_to_group',
+    'is_lecture_active_instructor',
     'submit_attendance_sheet_tx',
     'admin_override_entitlement_tx',
     'bootstrap_cits_admin_account',
@@ -206,6 +209,7 @@ DECLARE
     'public.assert_camp_not_archived(uuid)',
     'public.is_instructor_assigned_to_camp(uuid)',
     'public.is_instructor_assigned_to_group(uuid)',
+    'public.is_lecture_active_instructor(uuid)',
     'public.submit_attendance_sheet_tx(uuid)',
     'public.admin_override_entitlement_tx(uuid,public.entitlement_status,text)',
     'public.bootstrap_cits_admin_account(uuid,text,text,text,smallint)',
@@ -225,7 +229,7 @@ DECLARE
   v_safe_builtin_call_tokens CONSTANT TEXT[] := ARRAY[
     'if', 'elsif', 'while', 'for', 'loop', 'return', 'raise', 'perform',
     'select', 'insert', 'update', 'delete', 'from', 'where', 'join', 'into',
-    'values', 'set', 'and', 'or', 'not', 'in', 'exists', 'case', 'when',
+    'values', 'set', 'and', 'or', 'not', 'in', 'like', 'ilike', 'exists', 'case', 'when',
     'then', 'else', 'end', 'filter', 'over', 'partition', 'unnest',
     'conflict', 'distinct', 'any', 'all', 'some', 'row',
     'coalesce', 'nullif', 'greatest', 'least', 'cast', 'substring', 'position',
@@ -809,6 +813,7 @@ BEGIN
           AND COALESCE(pol.qual, '') NOT ILIKE '%auth.uid()%'
           AND COALESCE(pol.qual, '') NOT ILIKE '%is_instructor_assigned_to_camp(%'
           AND COALESCE(pol.qual, '') NOT ILIKE '%is_instructor_assigned_to_group(%'
+          AND COALESCE(pol.qual, '') NOT ILIKE '%is_lecture_active_instructor(%'
         )
         -- Active WITH CHECK expression (when present) must reference a verified CITS identity/auth anchor
         OR (
@@ -818,6 +823,7 @@ BEGIN
           AND COALESCE(pol.with_check, '') NOT ILIKE '%auth.uid()%'
           AND COALESCE(pol.with_check, '') NOT ILIKE '%is_instructor_assigned_to_camp(%'
           AND COALESCE(pol.with_check, '') NOT ILIKE '%is_instructor_assigned_to_group(%'
+          AND COALESCE(pol.with_check, '') NOT ILIKE '%is_lecture_active_instructor(%'
         )
       );
 
@@ -2415,9 +2421,9 @@ BEGIN
       RAISE EXCEPTION 'Instructor call to admin_override_entitlement_tx was NOT blocked!';
     END IF;
 
-    -- 9C: Switch to Admin session and verify override WITHOUT reason is rejected
+    -- 9C: Switch to verified AAL2 Admin session and verify override WITHOUT reason is rejected
     PERFORM set_config('request.jwt.claim.sub', v_active_admin_uid::text, TRUE);
-    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_active_admin_uid::text, 'role', 'authenticated')::text, TRUE);
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_active_admin_uid::text, 'role', 'authenticated', 'aal', 'aal2')::text, TRUE);
 
     v_rejected := FALSE;
     BEGIN
@@ -2722,9 +2728,9 @@ BEGIN
         v_inst_a_entitlements, v_inst_b_lectures, v_inst_b_rates;
     END IF;
 
-    -- 10D: RLS Scenario 3 — Authenticated as Verified Admin
+    -- 10D: RLS Scenario 3 — Authenticated as Verified AAL2 Admin
     PERFORM set_config('request.jwt.claim.sub', v_active_admin_uid::text, TRUE);
-    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_active_admin_uid::text, 'role', 'authenticated')::text, TRUE);
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_active_admin_uid::text, 'role', 'authenticated', 'aal', 'aal2')::text, TRUE);
 
     SELECT COUNT(*) INTO v_admin_ent_a FROM public.lecture_entitlements WHERE id = v_ent_a_id;
     SELECT COUNT(*) INTO v_all_rates FROM public.instructor_rates WHERE camp_id = v_camp1_id;

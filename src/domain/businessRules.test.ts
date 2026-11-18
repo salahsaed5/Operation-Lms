@@ -995,6 +995,8 @@ test('19. Migration 0004 security hardening verification (non-destructive, searc
 
   // Required functions & SECURITY DEFINER hardening
   const expectedFunctions = [
+    'is_cits_admin',
+    'is_lecture_active_instructor',
     'haversine_distance_meters',
     'resolve_student_group_for_day',
     'enforce_lecture_update_security',
@@ -1002,6 +1004,7 @@ test('19. Migration 0004 security hardening verification (non-destructive, searc
     'validate_attendance_record_integrity',
     'submit_attendance_sheet_tx',
     'enforce_daily_checkin_security',
+    'enforce_checkin_exception_security',
     'submit_daily_checkin_tx',
     'enforce_notification_update_security',
     'enforce_audit_log_integrity',
@@ -1017,6 +1020,13 @@ test('19. Migration 0004 security hardening verification (non-destructive, searc
   for (const fn of expectedFunctions) {
     assert.ok(executableSql.includes(fn), `Missing expected function ${fn} in 0004`);
   }
+
+  // Admin MFA (aal2) enforcement & TOTP factor check
+  assert.ok(executableSql.includes("auth.jwt() ->> 'aal'"));
+  assert.ok(executableSql.includes('Admins view own admin_account'));
+  assert.ok(executableSql.includes('auth.mfa_factors'));
+  assert.ok(executableSql.includes('ADMIN_MFA_VERIFIED'));
+  assert.ok(executableSql.includes('selfie_deleted_after_archive = TRUE'));
 
   // Every function header in 0004 must pin search_path = public, pg_temp
   const funcCreateCount = (executableSql.match(/CREATE\s+OR\s+REPLACE\s+FUNCTION/gi) || []).length;
@@ -1064,11 +1074,11 @@ test('20. Verification suite 0004 & 0003 allowlist compatibility checks', () => 
   assert.equal(/\bCOMMIT\s*;/i.test(verify4), false);
   assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(verify4), false);
 
-  for (const h of ['H1', 'H2', 'H3', 'H4', 'H5', 'H6']) {
+  for (const h of ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8']) {
     assert.ok(verify4.includes(h), `Missing ${h} verification test in 0004 suite`);
   }
 
-  // Ensure 0003 remote verification allowlist includes 0004 trigger & helper signatures
+  // Ensure 0003 remote verification allowlist & Admin JWT simulation match 0004 controls
   const verify3Path = path.resolve(
     process.cwd(),
     'supabase/verification/0003_remote_verification_and_rls_test_suite.sql'
@@ -1079,14 +1089,17 @@ test('20. Verification suite 0004 & 0003 allowlist compatibility checks', () => 
     'enforce_lecture_update_security',
     'enforce_attendance_sheet_security',
     'enforce_daily_checkin_security',
+    'enforce_checkin_exception_security',
     'enforce_notification_update_security',
+    'is_lecture_active_instructor',
     'haversine_distance_meters',
     'resolve_student_group_for_day',
     'submit_daily_checkin_tx',
     'transfer_student_tx',
     'archive_camp_tx',
+    "'aal', 'aal2'",
   ]) {
-    assert.ok(verify3.includes(sig), `Missing 0004 symbol '${sig}' in 0003 Pre-Flight allowlist`);
+    assert.ok(verify3.includes(sig), `Missing 0004 symbol '${sig}' in 0003 Pre-Flight allowlist or claims`);
   }
 });
 

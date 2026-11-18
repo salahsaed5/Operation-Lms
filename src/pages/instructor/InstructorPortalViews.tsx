@@ -72,11 +72,22 @@ export const InstructorDashboardView: React.FC = () => {
   const nextLecture =
     myLecturesToday.find((l) => l.status !== 'completed') || myLecturesToday[0];
 
+  const assignedLectureIds = new Set(
+    lectures
+      .filter(
+        (l) =>
+          l.campId === activeCamp.id &&
+          (l.instructorId === currentInstructor.id ||
+            l.substituteInstructorId === currentInstructor.id)
+      )
+      .map((l) => l.id)
+  );
+
   const myDraftSheets = attendanceSheets.filter(
     (s) =>
       s.campId === activeCamp.id &&
-      s.instructorId === currentInstructor.id &&
-      s.status === AttendanceSheetStatus.DRAFT
+      s.status === AttendanceSheetStatus.DRAFT &&
+      assignedLectureIds.has(s.lectureId)
   );
 
   const unacknowledgedLectures = myLecturesToday.filter(
@@ -960,7 +971,14 @@ export const InstructorAttendanceView: React.FC = () => {
     setFeedback(null);
     try {
       // Ensure full roster is persisted in draft state before submitting
-      await saveAttendanceDraft(selectedLectureId, baseRecords, false);
+      const draftRes = await saveAttendanceDraft(selectedLectureId, baseRecords, false);
+      if (!draftRes.ok) {
+        setFeedback({
+          ok: false,
+          text: draftRes.error || 'Unable to sync attendance draft prior to submission.',
+        });
+        return;
+      }
       const res = await submitAndSyncAttendanceSheet(selectedLectureId);
       if (!res.ok) {
         setFeedback({ ok: false, text: res.error || 'Sync failed' });

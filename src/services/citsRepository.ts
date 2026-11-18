@@ -1,5 +1,8 @@
 import { supabase } from '../lib/supabase';
-import { calculateCampDayDate } from '../domain/businessRules';
+import {
+  calculateCampDayDate,
+  resolveStudentOriginGroupForDay,
+} from '../domain/businessRules';
 import {
   AdminAccount,
   AppNotification,
@@ -999,7 +1002,12 @@ export async function archiveCampInDb(campId: string): Promise<string[]> {
   if (error) throw new Error(error.message);
   const purged = (data as unknown as { purged_paths?: string[] })?.purged_paths || [];
   if (purged.length > 0) {
-    await client.storage.from('checkin-selfies').remove(purged);
+    const { error: rmErr } = await client.storage.from('checkin-selfies').remove(purged);
+    if (rmErr) {
+      throw new Error(
+        `Camp archived, but deleting selfie files from storage failed: ${rmErr.message}`
+      );
+    }
   }
   return purged;
 }
@@ -1051,7 +1059,7 @@ export async function upsertGroupInDb(input: {
   }
 
   if (input.primaryInstructorId) {
-    await client
+    const { error: ciErr } = await client
       .from('camp_instructors')
       .upsert(
         {
@@ -1061,16 +1069,30 @@ export async function upsertGroupInDb(input: {
         },
         { onConflict: 'camp_id,instructor_id' }
       );
+    if (ciErr) throw new Error(ciErr.message);
 
-    await client
+    const { data: existingGi, error: giLookupErr } = await client
       .from('group_instructors')
-      .insert({
+      .select('id, instructor_id')
+      .eq('camp_id', input.campId)
+      .eq('group_id', groupId)
+      .is('effective_to_day', null);
+    if (giLookupErr) throw new Error(giLookupErr.message);
+
+    const alreadyAssigned = (existingGi || []).some(
+      (row) => row.instructor_id === input.primaryInstructorId
+    );
+
+    if (!alreadyAssigned) {
+      const { error: giErr } = await client.from('group_instructors').insert({
         camp_id: input.campId,
         group_id: groupId,
         instructor_id: input.primaryInstructorId,
         effective_from_day: 1,
         assigned_by: input.actorProfileId,
       });
+      if (giErr) throw new Error(giErr.message);
+    }
   }
 }
 
@@ -1203,7 +1225,7 @@ export async function createLectureInDb(input: {
   if (lecErr || !lecRow) throw new Error(lecErr?.message || 'Failed scheduling lecture.');
 
   // Provision initial draft sheet so instructor and admin see it ready immediately
-  await client.from('attendance_sheets').insert({
+  const { error: sheetErr } = await client.from('attendance_sheets').insert({
     camp_id: input.campId,
     lecture_id: lecRow.id,
     instructor_id: input.instructorId,
@@ -1211,6 +1233,7 @@ export async function createLectureInDb(input: {
     sync_state: 'Offline',
     idempotency_key: `idem-${input.campId}-${lecRow.id}`,
   });
+  if (sheetErr) throw new Error(sheetErr.message);
 }
 
 export async function updateLectureInDb(input: {
@@ -1386,11 +1409,18 @@ export async function adminCorrectAttendanceRecordInDb(input: {
   sheet: AttendanceSheet;
   lecture: Lecture;
   student: Student;
+  transfers?: StudentTransfer[];
   mark: AttendanceMark;
   note?: string;
   adminProfileId: string;
 }): Promise<void> {
   const client = getClient();
+  const originGroupId = resolveStudentOriginGroupForDay({
+    student: input.student,
+    transfers: input.transfers || [],
+    campDay: input.lecture.campDay,
+  });
+
   const { error: upErr } = await client.from('attendance_records').upsert(
     {
       camp_id: input.campId,
@@ -1399,9 +1429,9 @@ export async function adminCorrectAttendanceRecordInDb(input: {
       camp_day: input.lecture.campDay,
       period_number: input.lecture.periodNumber,
       student_id: input.student.id,
-      origin_group_id: input.student.groupId,
+      origin_group_id: originGroupId,
       attended_group_id: input.lecture.groupId,
-      is_cross_group: input.student.groupId !== input.lecture.groupId,
+      is_cross_group: originGroupId !== input.lecture.groupId,
       mark: input.mark as DbAttendanceMark,
       note: input.note || null,
       updated_by: input.adminProfileId,
@@ -1472,13 +1502,14 @@ export async function reviewInstructorRequestInDb(input: {
   if (error) throw new Error(error.message);
 
   if (input.recipientProfileId) {
-    await client.from('notifications').insert({
+    const { error: notifErr } = await client.from('notifications').insert({
       recipient_profile_id: input.recipientProfileId,
       title_en: `Request ${input.status === RequestStatus.APPROVED ? 'Approved' : 'Rejected'}`,
       title_ar: input.status === RequestStatus.APPROVED ? 'تمت الموافقة على الطلب' : 'تم رفض الطلب',
       body_en: `${input.subject}: ${input.reviewNote}`,
       body_ar: `${input.subject}: ${input.reviewNote}`,
     });
+    if (notifErr) throw new Error(notifErr.message);
   }
 }
 
@@ -1551,6 +1582,7 @@ export async function markNotificationReadInDb(notificationId: string): Promise<
 export async function recordBackupExportInDb(input: {
   campId: string | null;
   createdBy: string;
+  actorName: string;
   jsonString: string;
 }): Promise<string> {
   const client = getClient();
@@ -1561,14 +1593,33 @@ export async function recordBackupExportInDb(input: {
     .join('');
 
   const sizeKb = Math.max(1, Math.ceil(bytes.byteLength / 1024));
-  const { error } = await client.from('backup_records').insert({
-    camp_id: input.campId,
-    created_by: input.createdBy,
-    backup_type: 'full_json_export',
-    size_kb: sizeKb,
-    checksum_sha256: checksum,
-    notes: 'Admin JSON operational snapshot export',
-  });
+  const { data: backupRow, error } = await client
+    .from('backup_records')
+    .insert({
+      camp_id: input.campId,
+      created_by: input.createdBy,
+      backup_type: 'full_json_export',
+      size_kb: sizeKb,
+      checksum_sha256: checksum,
+      notes: 'Admin JSON operational snapshot export',
+    })
+    .select('id')
+    .single();
   if (error) throw new Error(error.message);
+
+  const { error: auditErr } = await client.from('audit_logs').insert({
+    actor_profile_id: input.createdBy,
+    actor_name: input.actorName,
+    actor_role: 'admin',
+    camp_id: input.campId,
+    action: 'BACKUP_JSON_EXPORTED',
+    entity_type: 'backup_records',
+    entity_id: backupRow?.id || input.campId || 'global',
+    previous_value: null,
+    new_value: { size_kb: sizeKb, checksum_sha256: checksum },
+    reason: 'Admin exported operational JSON backup',
+  });
+  if (auditErr) throw new Error(auditErr.message);
+
   return checksum;
 }
