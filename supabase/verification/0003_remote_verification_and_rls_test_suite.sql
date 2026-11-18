@@ -256,6 +256,7 @@ DECLARE
   v_untracked_or_unsafe_callees TEXT;
   v_reached_helper_summary TEXT;
   v_preexisting_collision_count INTEGER;
+  v_collision_details TEXT;
 
   -- Character-by-character PL/pgSQL lexical scanner state variables for Pre-Flight Guard 1C
   v_proc_rec RECORD;
@@ -305,7 +306,11 @@ DECLARE
 
   v_lec_a_id UUID := '00000000-0000-4000-9000-000000000001';
   v_lec_b_id UUID := '00000000-0000-4000-9000-000000000002';
-  v_lec_a_p2_id UUID := '00000000-0000-4000-9000-000000000003';
+  v_lec_7a_base_id UUID := '00000000-0000-4000-9000-000000000081';
+  v_lec_7b_base_id UUID := '00000000-0000-4000-9000-000000000082';
+  v_lec_7c_base_id UUID := '00000000-0000-4000-9000-000000000083';
+  v_lec_7d_p1_id UUID := '00000000-0000-4000-9000-000000000084';
+  v_lec_7d_p2_id UUID := '00000000-0000-4000-9000-000000000085';
   v_lec_conflict_inst_id UUID := '00000000-0000-4000-9000-000000000091';
   v_lec_conflict_grp_id UUID := '00000000-0000-4000-9000-000000000092';
   v_lec_conflict_room_id UUID := '00000000-0000-4000-9000-000000000093';
@@ -321,6 +326,10 @@ DECLARE
 
   v_fixtures_ready BOOLEAN := FALSE;
   v_fixture_error TEXT := NULL;
+
+  v_arch_initial_status public.camp_status;
+  v_arch_after_status public.camp_status;
+  v_arch_after_at TIMESTAMPTZ;
 
   v_tx_result JSONB;
   v_override_result JSONB;
@@ -1533,21 +1542,136 @@ BEGIN
         v_profiles_fk_verified;
     END IF;
 
-    -- Pre-Flight Guard 3: Ensure zero pre-existing collisions on ephemeral test UUIDs or emails
-    SELECT COUNT(*) INTO v_preexisting_collision_count
-    FROM auth.users
-    WHERE id IN (v_admin1_uid, v_admin2_uid, v_admin3_uid, v_inst_a_uid, v_inst_b_uid)
-       OR email IN (
-         'verify_admin1_ephemeral@cits.org',
-         'verify_admin2_ephemeral@cits.org',
-         'verify_admin3_ephemeral@cits.org',
-         'verify_inst_a_ephemeral@cits.org',
-         'verify_inst_b_ephemeral@cits.org'
-       );
+    -- Pre-Flight Guard 3: Ensure zero pre-existing collisions across ALL ephemeral
+    -- fixture UUIDs and unique identifiers (emails, usernames, codes, idempotency keys)
+    WITH collision_checks AS (
+      SELECT 'auth.users' AS tbl, COUNT(*) AS cnt
+      FROM auth.users
+      WHERE id IN (v_admin1_uid, v_admin2_uid, v_admin3_uid, v_inst_a_uid, v_inst_b_uid)
+         OR LOWER(COALESCE(email, '')) IN (
+           'verify_admin1_ephemeral@cits.org',
+           'verify_admin2_ephemeral@cits.org',
+           'verify_admin3_ephemeral@cits.org',
+           'verify_inst_a_ephemeral@cits.org',
+           'verify_inst_b_ephemeral@cits.org'
+         )
+      UNION ALL
+      SELECT 'public.profiles', COUNT(*)
+      FROM public.profiles
+      WHERE id IN (v_admin1_uid, v_admin2_uid, v_admin3_uid, v_inst_a_uid, v_inst_b_uid)
+         OR LOWER(username) IN (
+           'verify_admin1_ephemeral',
+           'verify_admin2_ephemeral',
+           'verify_admin3_ephemeral',
+           'verify_admin3_direct',
+           'verify_inst_a_ephemeral',
+           'verify_inst_b_ephemeral'
+         )
+         OR LOWER(email) IN (
+           'verify_admin1_ephemeral@cits.org',
+           'verify_admin2_ephemeral@cits.org',
+           'verify_admin3_ephemeral@cits.org',
+           'verify_inst_a_ephemeral@cits.org',
+           'verify_inst_b_ephemeral@cits.org'
+         )
+      UNION ALL
+      SELECT 'public.admin_accounts', COUNT(*)
+      FROM public.admin_accounts
+      WHERE id = v_admin_extra_row_id
+         OR profile_id IN (v_admin1_uid, v_admin2_uid, v_admin3_uid, v_inst_a_uid, v_inst_b_uid)
+      UNION ALL
+      SELECT 'public.instructors', COUNT(*)
+      FROM public.instructors
+      WHERE id IN (v_inst_a_id, v_inst_b_id)
+         OR profile_id IN (v_inst_a_uid, v_inst_b_uid)
+         OR instructor_code IN ('INST-VERIFY-EPHEM-A', 'INST-VERIFY-EPHEM-B')
+      UNION ALL
+      SELECT 'public.venues', COUNT(*)
+      FROM public.venues
+      WHERE id = v_venue_id
+      UNION ALL
+      SELECT 'public.rooms', COUNT(*)
+      FROM public.rooms
+      WHERE id IN (v_room1_id, v_room2_id, v_room3_id)
+      UNION ALL
+      SELECT 'public.camps', COUNT(*)
+      FROM public.camps
+      WHERE id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+         OR code IN ('VERIFY-EPHEM-CAMP-1', 'VERIFY-EPHEM-CAMP-2', 'VERIFY-EPHEM-CAMP-ARCH')
+      UNION ALL
+      SELECT 'public.camp_settings', COUNT(*)
+      FROM public.camp_settings
+      WHERE id = v_camp_settings_id
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.camp_instructors', COUNT(*)
+      FROM public.camp_instructors
+      WHERE id IN (v_camp_inst_a_id, v_camp_inst_b_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.instructor_rates', COUNT(*)
+      FROM public.instructor_rates
+      WHERE id IN (v_rate_a_id, v_rate_b_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.groups', COUNT(*)
+      FROM public.groups
+      WHERE id IN (v_grp_a_id, v_grp_b_id, v_grp_c_id, v_grp_arch_test_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.group_instructors', COUNT(*)
+      FROM public.group_instructors
+      WHERE id IN (v_grp_inst_a_id, v_grp_inst_b_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.students', COUNT(*)
+      FROM public.students
+      WHERE id IN (v_stu_1_id, v_stu_2_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.lectures', COUNT(*)
+      FROM public.lectures
+      WHERE id IN (
+        v_lec_a_id, v_lec_b_id,
+        v_lec_7a_base_id, v_lec_7b_base_id, v_lec_7c_base_id, v_lec_7d_p1_id, v_lec_7d_p2_id,
+        v_lec_conflict_inst_id, v_lec_conflict_grp_id, v_lec_conflict_room_id, v_lec_conflict_limit_id
+      )
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.daily_checkins', COUNT(*)
+      FROM public.daily_checkins
+      WHERE id = v_checkin_a_id
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.attendance_sheets', COUNT(*)
+      FROM public.attendance_sheets
+      WHERE id IN (v_sheet_a_id, v_sheet_b_id)
+         OR idempotency_key IN ('idem-verify-ephem-sheet-a', 'idem-verify-ephem-sheet-b')
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.attendance_records', COUNT(*)
+      FROM public.attendance_records
+      WHERE id IN (v_rec_stu1_id, v_rec_dup_test_id)
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.lecture_entitlements', COUNT(*)
+      FROM public.lecture_entitlements
+      WHERE id = v_ent_a_id
+         OR camp_id IN (v_camp1_id, v_camp2_id, v_camp_arch_id)
+      UNION ALL
+      SELECT 'public.audit_logs', COUNT(*)
+      FROM public.audit_logs
+      WHERE id IN (v_test_audit_id, '00000000-0000-4000-8000-000000000002'::uuid)
+    )
+    SELECT
+      COALESCE(SUM(cnt), 0),
+      string_agg(format('%s (%s)', tbl, cnt), ', ' ORDER BY tbl) FILTER (WHERE cnt > 0)
+    INTO v_preexisting_collision_count, v_collision_details
+    FROM collision_checks;
 
     IF v_preexisting_collision_count > 0 THEN
-      RAISE EXCEPTION 'Aborted fixture setup: % pre-existing row(s) in auth.users matched ephemeral test UUIDs/emails',
-        v_preexisting_collision_count;
+      RAISE EXCEPTION 'Aborted fixture setup: % pre-existing fixture collision(s) detected across [%]. Fixtures cannot be isolated',
+        v_preexisting_collision_count, v_collision_details;
     END IF;
 
     INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -1862,7 +1986,7 @@ BEGIN
       UPDATE public.camps SET status = 'active'::public.camp_status WHERE id = v_camp2_id;
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Only one camp may be active%' OR SQLERRM LIKE '%idx_single_active_camp%' THEN
+        IF SQLERRM ILIKE '%Only one camp may be active%' OR SQLERRM ILIKE '%idx_single_active_camp%' THEN
           v_rejected := TRUE;
           v_err_msg := SQLERRM;
         ELSE
@@ -1873,15 +1997,37 @@ BEGIN
       RAISE EXCEPTION 'Second active camp (v_camp2_id) was NOT rejected!';
     END IF;
 
-    -- 6B: Archive v_camp_arch_id (by explicit test UUID) and verify mutations on archived camp & child tables are blocked
-    UPDATE public.camps SET status = 'archived'::public.camp_status WHERE id = v_camp_arch_id;
+    -- 6B: Ensure v_camp_arch_id starts in 'draft' state before archiving,
+    --     transition it cleanly to 'archived', verify archived state,
+    --     and assert all subsequent mutations on camp & child tables are blocked.
+    SELECT status INTO v_arch_initial_status
+    FROM public.camps
+    WHERE id = v_camp_arch_id;
+
+    IF v_arch_initial_status IS DISTINCT FROM 'draft'::public.camp_status THEN
+      RAISE EXCEPTION 'Expected initial status draft for v_camp_arch_id, found %', v_arch_initial_status;
+    END IF;
+
+    UPDATE public.camps
+    SET status = 'archived'::public.camp_status
+    WHERE id = v_camp_arch_id;
+
+    SELECT status, archived_at
+    INTO v_arch_after_status, v_arch_after_at
+    FROM public.camps
+    WHERE id = v_camp_arch_id;
+
+    IF v_arch_after_status IS DISTINCT FROM 'archived'::public.camp_status OR v_arch_after_at IS NULL THEN
+      RAISE EXCEPTION 'Failed to transition v_camp_arch_id to archived (status=%, archived_at=%)',
+        v_arch_after_status, v_arch_after_at;
+    END IF;
 
     v_rejected := FALSE;
     BEGIN
       UPDATE public.camps SET name_en = 'Illegal Edit After Archive' WHERE id = v_camp_arch_id;
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%archived%' AND SQLERRM LIKE '%read-only%' THEN
+        IF SQLERRM ILIKE '%archived%' AND SQLERRM ILIKE '%read-only%' THEN
           v_rejected := TRUE;
         ELSE
           RAISE;
@@ -1897,7 +2043,7 @@ BEGIN
       VALUES (v_grp_arch_test_id, v_camp_arch_id, 'ARCH-GRP', 'Archived Group', 'مجموعة مؤرشفة', 'Graphs');
     EXCEPTION
       WHEN OTHERS THEN
-        IF SQLERRM LIKE '%archived (read-only)%' THEN
+        IF SQLERRM ILIKE '%archived (read-only)%' THEN
           v_rejected := TRUE;
         ELSE
           RAISE;
@@ -1910,7 +2056,7 @@ BEGIN
     UPDATE _cits_verification_report
     SET test_code = '[PASS 6/10]',
         status = 'PASS',
-        evidence = format('2nd active camp blocked (%s); archived camp & child table mutations blocked', v_err_msg)
+        evidence = format('2nd active camp blocked (%s); draft->archived transition verified; archived camp & child table mutations blocked', v_err_msg)
     WHERE step_order = 6;
     RAISE NOTICE '[PASS 6/10] Single active camp & archived camp read-only verified';
   EXCEPTION
@@ -1925,13 +2071,18 @@ BEGIN
 
   -- ===========================================================================
   -- TEST 7/10: Schedule Conflicts (Instructor, Group, Room) & Max Daily Groups
+  --            Each sub-test runs on its own isolated camp_day (days 2..5) with
+  --            dedicated baseline rows so Day 1 fixture lectures never interfere.
   -- ===========================================================================
   BEGIN
-    -- 7A: Overlapping time window for Instructor A (10:30-13:30 overlaps 09:00-12:00) — explicit id provided
+    -- 7A (Isolated on camp_day = 2): Overlapping time window for Instructor A
+    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+    VALUES (v_lec_7a_base_id, v_camp1_id, 2, '2026-11-11', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 2 Base Instructor Slot', 750);
+
     v_rejected := FALSE;
     BEGIN
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_inst_id, v_camp1_id, 1, '2026-11-10', 2::smallint, '10:30'::time, '13:30'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Overlap Instructor', 750);
+      VALUES (v_lec_conflict_inst_id, v_camp1_id, 2, '2026-11-11', 2::smallint, '10:30'::time, '13:30'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Overlap Instructor', 750);
     EXCEPTION
       WHEN OTHERS THEN
         IF SQLERRM LIKE '%CITS Schedule Conflict: Instructor%' THEN
@@ -1945,11 +2096,14 @@ BEGIN
       RAISE EXCEPTION 'Overlapping Instructor schedule was NOT blocked!';
     END IF;
 
-    -- 7B: Overlapping Group (Group A already scheduled 09:00-12:00) — explicit id provided
+    -- 7B (Isolated on camp_day = 3): Overlapping Group A using conflict-free Instructor B & Room 3
+    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+    VALUES (v_lec_7b_base_id, v_camp1_id, 3, '2026-11-12', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 3 Base Group Slot', 750);
+
     v_rejected := FALSE;
     BEGIN
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_grp_id, v_camp1_id, 1, '2026-11-10', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_a_id, v_inst_b_id, v_room3_id, 'Overlap Group', 700);
+      VALUES (v_lec_conflict_grp_id, v_camp1_id, 3, '2026-11-12', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_a_id, v_inst_b_id, v_room3_id, 'Overlap Group', 700);
     EXCEPTION
       WHEN OTHERS THEN
         IF SQLERRM LIKE '%CITS Schedule Conflict: Group%' THEN
@@ -1962,11 +2116,14 @@ BEGIN
       RAISE EXCEPTION 'Overlapping Group schedule was NOT blocked!';
     END IF;
 
-    -- 7C: Overlapping Room (Room 1 already occupied 09:00-12:00) — explicit id provided
+    -- 7C (Isolated on camp_day = 4): Overlapping Room 1 using conflict-free Instructor B & Group C
+    INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
+    VALUES (v_lec_7c_base_id, v_camp1_id, 4, '2026-11-13', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'Day 4 Base Room Slot', 750);
+
     v_rejected := FALSE;
     BEGIN
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_room_id, v_camp1_id, 1, '2026-11-10', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_c_id, v_inst_b_id, v_room1_id, 'Overlap Room', 700);
+      VALUES (v_lec_conflict_room_id, v_camp1_id, 4, '2026-11-13', 2::smallint, '11:00'::time, '14:00'::time, 3, v_grp_c_id, v_inst_b_id, v_room1_id, 'Overlap Room', 700);
     EXCEPTION
       WHEN OTHERS THEN
         IF SQLERRM LIKE '%CITS Schedule Conflict: Room%' THEN
@@ -1979,14 +2136,16 @@ BEGIN
       RAISE EXCEPTION 'Overlapping Room schedule was NOT blocked!';
     END IF;
 
-    -- 7D: Daily group limit enforcement (camp_settings.max_instructor_groups_per_day = 2 for v_camp1_id) — explicit ids provided
+    -- 7D (Isolated on camp_day = 5): Daily group limit enforcement (camp_settings.max_instructor_groups_per_day = 2)
     INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-    VALUES (v_lec_a_p2_id, v_camp1_id, 1, '2026-11-10', 2::smallint, '12:00'::time, '15:00'::time, 3, v_grp_b_id, v_inst_a_id, v_room2_id, 'Second Group Valid Slot', 750);
+    VALUES
+      (v_lec_7d_p1_id, v_camp1_id, 5, '2026-11-14', 1::smallint, '09:00'::time, '12:00'::time, 3, v_grp_a_id, v_inst_a_id, v_room1_id, 'First Group Valid Slot', 750),
+      (v_lec_7d_p2_id, v_camp1_id, 5, '2026-11-14', 2::smallint, '12:00'::time, '15:00'::time, 3, v_grp_b_id, v_inst_a_id, v_room2_id, 'Second Group Valid Slot', 750);
 
     v_rejected := FALSE;
     BEGIN
       INSERT INTO public.lectures (id, camp_id, camp_day, lecture_date, period_number, start_time, end_time, duration_hours, group_id, instructor_id, room_id, topic, frozen_rate_egp)
-      VALUES (v_lec_conflict_limit_id, v_camp1_id, 1, '2026-11-10', 3::smallint, '15:00'::time, '18:00'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Third Group Exceeds Limit 2', 750);
+      VALUES (v_lec_conflict_limit_id, v_camp1_id, 5, '2026-11-14', 3::smallint, '15:00'::time, '18:00'::time, 3, v_grp_c_id, v_inst_a_id, v_room3_id, 'Third Group Exceeds Limit 2', 750);
     EXCEPTION
       WHEN OTHERS THEN
         IF SQLERRM LIKE '%CITS Schedule Limit Exceeded%' THEN
@@ -2002,7 +2161,7 @@ BEGIN
     UPDATE _cits_verification_report
     SET test_code = '[PASS 7/10]',
         status = 'PASS',
-        evidence = format('Instructor, Group, Room overlaps and max_instructor_groups_per_day trigger verified (%s)', v_err_msg)
+        evidence = format('Isolated days 2..5 verified Instructor, Group, Room overlaps and max_instructor_groups_per_day=2 limit (%s)', v_err_msg)
     WHERE step_order = 7;
     RAISE NOTICE '[PASS 7/10] Schedule conflict & daily group limit trigger verified';
   EXCEPTION
