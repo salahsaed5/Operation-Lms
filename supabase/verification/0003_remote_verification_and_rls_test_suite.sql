@@ -105,7 +105,7 @@ VALUES
   (9,  '[FAIL 9/10 (NOT RUN)]',  'FAIL', 'Attendance Submission & Entitlement RPCs',                                   'Test 9 did not complete execution'),
   (10, '[FAIL 10/10 (NOT RUN)]', 'FAIL', 'Audit Immutability & Targeted 6-Table 4-Role RLS Checks',                    'Test 10 did not complete execution');
 
-DO $$
+DO $cits_verify_1$
 DECLARE
   v_required_tables CONSTANT TEXT[] := ARRAY[
     'profiles',
@@ -2151,7 +2151,7 @@ BEGIN
       RAISE NOTICE '[FAIL 9/10] %', SQLERRM;
   END;
 END
-$$;
+$cits_verify_1$;
 
 -- =============================================================================
 -- TEST 10/10: Audit Log Immutability (Dedicated UUID) & Targeted 4-Role
@@ -2161,7 +2161,7 @@ $$;
 --             is checked in Tests 2 & 3; Test 10 tests live row visibility and
 --             mutation isolation on these 6 seeded tables, not all 29 tables.
 -- =============================================================================
-DO $$
+DO $cits_verify_2$
 DECLARE
   v_initial_role TEXT := current_user;
   v_admin1_uid UUID := '00000000-0000-4000-a000-000000000001';
@@ -2485,12 +2485,12 @@ EXCEPTION
     WHERE step_order = 10;
     RAISE NOTICE '[FAIL 10/10] %', SQLERRM;
 END
-$$;
+$cits_verify_2$;
 
 -- =============================================================================
 -- APPEND FINAL SUMMARY ROWS TO REPORT TABLE
 -- =============================================================================
-DO $$
+DO $cits_verify_3$
 DECLARE
   v_total INTEGER;
   v_passed INTEGER;
@@ -2538,7 +2538,7 @@ BEGIN
   RAISE NOTICE 'Final verification status: %', v_final_status;
   RAISE NOTICE '====================================================================';
 END
-$$;
+$cits_verify_3$;
 
 -- =============================================================================
 -- OUTPUT COMPLETE VERIFICATION TABLE IN SUPABASE SQL EDITOR RESULTS GRID
