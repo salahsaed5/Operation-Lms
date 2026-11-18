@@ -377,7 +377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isSupabaseMode = isSupabaseConfigured;
 
   const [lang, setLangState] = useState<Language>('en');
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [theme, setTheme] = useState<ThemeMode>('light');
   const [isInitializingSession, setIsInitializingSession] = useState<boolean>(isSupabaseMode);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [dataError, setDataError] = useState<string | null>(null);
