@@ -1,0 +1,11 @@
+{
+  "name": "Remix CITS Camp Operations",
+  "description": "Production-grade training camp operations, attendance, geofenced daily check-in, and instructor entitlement management system for CITS.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
