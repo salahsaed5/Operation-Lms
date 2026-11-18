@@ -2704,7 +2704,7 @@ BEGIN
         v_admin_ent_a, v_all_rates, v_all_audits;
     END IF;
 
-    -- 10E: RLS Scenario 4 — Anonymous Role (anon) with row_security_active proof
+    -- 10E: RLS Scenario 4 — Anonymous Role (anon)
     EXECUTE 'SET LOCAL ROLE anon';
     IF current_user != 'anon'
        OR NOT row_security_active('public.profiles'::regclass)
@@ -2717,13 +2717,42 @@ BEGIN
     PERFORM set_config('request.jwt.claim.sub', '', TRUE);
     PERFORM set_config('request.jwt.claims', '{"role":"anon"}', TRUE);
 
-    SELECT COUNT(*) INTO v_anon_profiles FROM public.profiles;
-    SELECT COUNT(*) INTO v_anon_camps FROM public.camps WHERE id = v_camp1_id;
-    SELECT COUNT(*) INTO v_anon_entitlements FROM public.lecture_entitlements WHERE id = v_ent_a_id;
-    SELECT COUNT(*) INTO v_anon_audits FROM public.audit_logs WHERE id = v_test_audit_id;
+    -- Direct table privilege denial is an acceptable security boundary.
+    -- If SELECT is granted, verify RLS returns zero rows instead.
+    v_anon_profiles := 0;
+    v_anon_camps := 0;
+    v_anon_entitlements := 0;
+    v_anon_audits := 0;
 
-    IF v_anon_profiles != 0 OR v_anon_camps != 0 OR v_anon_entitlements != 0 OR v_anon_audits != 0 THEN
-      RAISE EXCEPTION 'RLS Anonymous failed: expected 0 rows, got profiles=%, camps=%, entitlements=%, audits=%',
+    IF has_table_privilege('anon', 'public.profiles', 'SELECT') THEN
+      SELECT COUNT(*) INTO v_anon_profiles
+      FROM public.profiles;
+    END IF;
+
+    IF has_table_privilege('anon', 'public.camps', 'SELECT') THEN
+      SELECT COUNT(*) INTO v_anon_camps
+      FROM public.camps
+      WHERE id = v_camp1_id;
+    END IF;
+
+    IF has_table_privilege('anon', 'public.lecture_entitlements', 'SELECT') THEN
+      SELECT COUNT(*) INTO v_anon_entitlements
+      FROM public.lecture_entitlements
+      WHERE id = v_ent_a_id;
+    END IF;
+
+    IF has_table_privilege('anon', 'public.audit_logs', 'SELECT') THEN
+      SELECT COUNT(*) INTO v_anon_audits
+      FROM public.audit_logs
+      WHERE id = v_test_audit_id;
+    END IF;
+
+    IF v_anon_profiles != 0
+       OR v_anon_camps != 0
+       OR v_anon_entitlements != 0
+       OR v_anon_audits != 0 THEN
+      RAISE EXCEPTION
+        'Anonymous security failed: expected 0 rows, got profiles=%, camps=%, entitlements=%, audits=%',
         v_anon_profiles, v_anon_camps, v_anon_entitlements, v_anon_audits;
     END IF;
 
