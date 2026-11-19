@@ -4,8 +4,10 @@ import {
   resolveStudentOriginGroupForDay,
 } from '../domain/businessRules';
 import {
+  DEFAULT_PRODUCTION_ORIGINS,
   ProvisionInstructorInput,
   ProvisionInstructorOutcome,
+  validateInitialPasswordStrength,
 } from '../domain/accountProvisioning';
 import {
   AdminAccount,
@@ -338,8 +340,9 @@ export async function verifyAdminTotpCode(
 
 export async function completeUserPasswordChange(newPassword: string): Promise<void> {
   const client = getClient();
-  if (newPassword.trim().length < 8) {
-    throw new Error('New password must be at least 8 characters long.');
+  const pwCheck = validateInitialPasswordStrength(newPassword);
+  if (!pwCheck.valid) {
+    throw new Error(pwCheck.error || 'New password does not meet security requirements.');
   }
 
   const { error: updateErr } = await client.auth.updateUser({
@@ -1193,14 +1196,30 @@ export async function updateInstructorInDb(input: {
   }
 }
 
+function resolveSafeClientRedirectOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      const parsed = new URL(window.location.origin);
+      if (
+        parsed.protocol === 'https:' ||
+        (import.meta.env.DEV &&
+          parsed.protocol === 'http:' &&
+          (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'))
+      ) {
+        return parsed.origin;
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+  return DEFAULT_PRODUCTION_ORIGINS[0];
+}
+
 export async function provisionInstructorViaEdgeFunction(
   input: ProvisionInstructorInput
 ): Promise<ProvisionInstructorOutcome> {
   const client = getClient();
-  const redirectTo =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : undefined;
+  const redirectTo = resolveSafeClientRedirectOrigin();
 
   const { data, error } = await client.functions.invoke('provision-instructor', {
     body: {
@@ -1241,8 +1260,12 @@ export async function provisionInstructorViaEdgeFunction(
 
     const status =
       (error as unknown as { context?: Response }).context?.status || 500;
-    const normalizedStatus: 400 | 401 | 403 | 409 | 500 =
-      status === 400 || status === 401 || status === 403 || status === 409
+    const normalizedStatus: 400 | 401 | 403 | 409 | 429 | 500 =
+      status === 400 ||
+      status === 401 ||
+      status === 403 ||
+      status === 409 ||
+      status === 429
         ? status
         : 500;
 
@@ -1283,10 +1306,7 @@ export async function sendInstructorPasswordResetEmail(email: string): Promise<v
   if (!cleanEmail) {
     throw new Error('Instructor email is required to send a password reset link.');
   }
-  const redirectTo =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : undefined;
+  const redirectTo = resolveSafeClientRedirectOrigin();
   const { error } = await client.auth.resetPasswordForEmail(cleanEmail, {
     redirectTo,
   });

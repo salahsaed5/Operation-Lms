@@ -4,15 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   CallerAuthContext,
+  DEFAULT_PRODUCTION_ORIGINS,
   evaluateAuthenticatedSessionGate,
   evaluateCallerAuthorizationForProvisioning,
+  evaluateCorsOrigin,
   executeInstructorProvisioningWorkflow,
   generateSecureTemporaryPassword,
   normalizeProvisionInstructorInput,
+  parseAllowedOrigins,
   ProvisioningRepositoryDeps,
   ProvisionInstructorInput,
   validateInitialPasswordStrength,
   validateProvisionInstructorInput,
+  validateSafeRedirectUrl,
 } from './accountProvisioning';
 import { AdminAccount, CampStatus, Instructor, Profile, UserRole } from '../types/database';
 
@@ -506,6 +510,111 @@ test('Phase 3.2: Auth creation failure stops immediately with zero DB writes', a
   assert.equal(state.instructors.size, 0);
 });
 
+test('Phase 3.2: Audit log write failure does not roll back a validly provisioned account and reports auditRecorded=false', async () => {
+  const { repo, state } = createMockRepo({
+    appendAuditLog: async () => {
+      throw new Error('simulated audit_logs transient error');
+    },
+  });
+
+  const outcome = await executeInstructorProvisioningWorkflow(
+    repo,
+    ACTIVE_AAL2_ADMIN,
+    BASE_VALID_INPUT
+  );
+
+  assert.equal(outcome.ok, true);
+  if (!outcome.ok) return;
+  assert.equal(outcome.auditRecorded, false);
+  assert.equal(state.authUsers.size, 1);
+  assert.equal(state.profiles.size, 1);
+  assert.equal(state.instructors.size, 1);
+});
+
+test('Phase 3.2: Rollback failure reports rolledBack=false accurately when Auth cleanup fails', async () => {
+  const { repo } = createMockRepo({
+    insertProfile: async () => {
+      throw new Error('simulated profile failure');
+    },
+    deleteAuthUser: async () => {
+      throw new Error('simulated auth cleanup failure');
+    },
+  });
+
+  const outcome = await executeInstructorProvisioningWorkflow(
+    repo,
+    ACTIVE_AAL2_ADMIN,
+    BASE_VALID_INPUT
+  );
+
+  assert.equal(outcome.ok, false);
+  if (!outcome.ok) {
+    assert.equal(outcome.statusCode, 500);
+    assert.equal(outcome.rolledBack, false);
+  }
+});
+
+test('Phase 3.2: Explicit CORS allowlist & redirect validation reject wildcards, arbitrary origins, and open redirects', () => {
+  // Default production allowlist contains ONLY https://operation-lms.vercel.app (no wildcard, no localhost)
+  const defaultOrigins = parseAllowedOrigins('');
+  assert.deepEqual(defaultOrigins, ['https://operation-lms.vercel.app']);
+  assert.equal(DEFAULT_PRODUCTION_ORIGINS[0], 'https://operation-lms.vercel.app');
+
+  // Wildcards and malformed entries are stripped; valid explicit origins preserved
+  const parsed = parseAllowedOrigins(
+    '*, https://operation-lms.vercel.app/, https://staging.operation-lms.vercel.app, not-a-url, http://evil.com'
+  );
+  assert.deepEqual(parsed, [
+    'https://operation-lms.vercel.app',
+    'https://staging.operation-lms.vercel.app',
+  ]);
+
+  // Explicit localhost dev origin allowed only when explicitly configured
+  const withDev = parseAllowedOrigins('https://operation-lms.vercel.app, http://localhost:3000');
+  assert.deepEqual(withDev, ['https://operation-lms.vercel.app', 'http://localhost:3000']);
+
+  // Authorized OPTIONS & POST
+  const okPreflight = evaluateCorsOrigin('https://operation-lms.vercel.app', defaultOrigins, 'OPTIONS');
+  assert.equal(okPreflight.allowed, true);
+  assert.equal(okPreflight.statusCode, 204);
+  assert.equal(okPreflight.allowOriginHeader, 'https://operation-lms.vercel.app');
+
+  const okPost = evaluateCorsOrigin('https://operation-lms.vercel.app', defaultOrigins, 'POST');
+  assert.equal(okPost.allowed, true);
+  assert.equal(okPost.allowOriginHeader, 'https://operation-lms.vercel.app');
+
+  // Unauthorized origins explicitly rejected with 403 and ZERO ACAO reflection
+  const badPreflight = evaluateCorsOrigin('https://evil.example.com', defaultOrigins, 'OPTIONS');
+  assert.equal(badPreflight.allowed, false);
+  assert.equal(badPreflight.statusCode, 403);
+  assert.equal(badPreflight.allowOriginHeader, null);
+
+  const badPost = evaluateCorsOrigin('https://evil.example.com', defaultOrigins, 'POST');
+  assert.equal(badPost.allowed, false);
+  assert.equal(badPost.statusCode, 403);
+  assert.equal(badPost.allowOriginHeader, null);
+
+  // Missing Origin on OPTIONS rejected; missing Origin on server-side POST emits no wildcard ACAO
+  assert.equal(evaluateCorsOrigin(null, defaultOrigins, 'OPTIONS').statusCode, 403);
+  const noOriginPost = evaluateCorsOrigin(null, defaultOrigins, 'POST');
+  assert.equal(noOriginPost.allowed, true);
+  assert.equal(noOriginPost.allowOriginHeader, null);
+
+  // Redirect URL validation blocks open redirects and non-HTTP schemes
+  assert.equal(
+    validateSafeRedirectUrl('https://operation-lms.vercel.app/login', defaultOrigins).valid,
+    true
+  );
+  assert.equal(
+    validateSafeRedirectUrl('https://operation-lms.vercel.app/login', defaultOrigins).sanitizedOrigin,
+    'https://operation-lms.vercel.app'
+  );
+  assert.equal(validateSafeRedirectUrl('https://evil.example.com', defaultOrigins).valid, false);
+  assert.equal(validateSafeRedirectUrl('http://operation-lms.vercel.app', defaultOrigins).valid, false);
+  assert.equal(validateSafeRedirectUrl('javascript:alert(1)', defaultOrigins).valid, false);
+  assert.equal(validateSafeRedirectUrl('http://localhost:3000', defaultOrigins).valid, false);
+});
+
 // ============================================================================
 // 4. AUTHENTICATION, ACCOUNT STATUS, FIRST-LOGIN ROTATION & ADMIN MFA GATE TESTS
 // ============================================================================
@@ -589,6 +698,24 @@ test('Phase 3.3: Instructor must complete mandatory password change before dashb
   });
   assert.equal(afterPasswordChange.allowed, true);
   assert.equal(afterPasswordChange.nextStep, 'instructor_portal');
+
+  // Password recovery link forces password_change even when mustChangePassword was false
+  const recoverySession = evaluateAuthenticatedSessionGate({
+    authUserId: 'u-inst-5',
+    profile: makeProfile({
+      id: 'u-inst-5',
+      role: UserRole.INSTRUCTOR,
+      isActive: true,
+      mustChangePassword: false,
+    }),
+    adminAccount: null,
+    instructor: makeInstructor({ profileId: 'u-inst-5' }),
+    hasVerifiedTotpFactor: false,
+    aal: 'aal1',
+    recoveryFlow: true,
+  });
+  assert.equal(recoverySession.allowed, false);
+  assert.equal(recoverySession.nextStep, 'password_change');
 });
 
 test('Phase 3.3: Admin login enforces slot cap (1|2), TOTP enrollment, AAL2 challenge, and denies invalid slot', () => {
@@ -671,14 +798,25 @@ test('Phase 3 Security Audit: Frontend src/ never references SUPABASE_SERVICE_RO
   }
 });
 
-test('Phase 3 Security Audit: Edge Function enforces JWT auth, AAL2, admin_accounts slot, rollback, no-store, and safe audit log', () => {
+test('Phase 3 Security Audit: Edge Function enforces explicit CORS, JWT auth+sub, AAL2, admin_accounts slot, rate limit, rollback, no-store, and safe audit log', () => {
   const fnPath = path.resolve(process.cwd(), 'supabase/functions/provision-instructor/index.ts');
   const code = fs.readFileSync(fnPath, 'utf8');
 
   assert.match(code, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(code, /DEFAULT_PRODUCTION_ORIGINS\s*=\s*\['https:\/\/operation-lms\.vercel\.app'\]/);
+  assert.equal(/allowOrigin\s*=\s*'\*'/.test(code), false, 'Edge Function must never default to wildcard CORS');
+  assert.equal(
+    /Access-Control-Allow-Origin':\s*'\*'/.test(code),
+    false,
+    'Edge Function must never emit wildcard Access-Control-Allow-Origin'
+  );
+  assert.match(code, /Origin not allowed\./);
   assert.match(code, /userClient\.auth\.getUser\(token\)/);
+  assert.match(code, /jwtSub !== callerUser\.id/);
   assert.match(code, /jwtAal !== 'aal2'/);
   assert.match(code, /from\('admin_accounts'\)/);
+  assert.match(code, /RATE_LIMIT_MAX_PROVISIONS/);
+  assert.match(code, /429/);
   assert.match(code, /must_change_password:\s*true/);
   assert.match(code, /auth\.admin\.deleteUser\(createdAuthUserId\)/);
   assert.match(code, /'Cache-Control': 'no-store/);
@@ -692,6 +830,20 @@ test('Phase 3 Security Audit: Edge Function enforces JWT auth, AAL2, admin_accou
     /console\.log\(.*temporaryPassword/i.test(code),
     false,
     'Edge Function must never log temporary passwords'
+  );
+});
+
+test('Phase 3 Security Audit: AppContext handles PASSWORD_RECOVERY, guards USER_UPDATED race, and wipes operational state on sign-out', () => {
+  const ctxPath = path.resolve(process.cwd(), 'src/context/AppContext.tsx');
+  const code = fs.readFileSync(ctxPath, 'utf8');
+
+  assert.match(code, /event === 'PASSWORD_RECOVERY'/);
+  assert.match(code, /passwordUpdateInFlightRef/);
+  assert.match(code, /clearSupabaseOperationalState/);
+  assert.equal(
+    /\{\s*mustChangePassword:\s*true\s*\}/.test(code),
+    false,
+    'Sandbox audit log must not contain banned "password" key substring'
   );
 });
 

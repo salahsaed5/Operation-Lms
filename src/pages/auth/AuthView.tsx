@@ -11,6 +11,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { validateInitialPasswordStrength } from '../../domain/accountProvisioning';
 import { UserRole } from '../../types/database';
 
 export const AuthView: React.FC = () => {
@@ -110,11 +111,13 @@ export const AuthView: React.FC = () => {
   const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    if (newPassword.trim().length < 8) {
+    const strengthCheck = validateInitialPasswordStrength(newPassword);
+    if (!strengthCheck.valid) {
       setErrorMsg(
         t(
-          'New password must be at least 8 characters long.',
-          'يجب أن تتكون كلمة المرور الجديدة من 8 أحرف على الأقل.'
+          strengthCheck.error ||
+            'New password must be 8–128 characters and include uppercase, lowercase, and a number.',
+          'يجب أن تتكون كلمة المرور الجديدة من 8 أحرف على الأقل وتحتوي على حرف كبير وحرف صغير ورقم.'
         )
       );
       return;
@@ -570,7 +573,10 @@ export const AuthView: React.FC = () => {
                     htmlFor="new-password-input"
                     className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
                   >
-                    {t('New Password (min 8 characters)', 'كلمة المرور الجديدة (8 أحرف على الأقل)')}
+                    {t(
+                      'New Password (8+ chars, upper, lower, number)',
+                      'كلمة المرور الجديدة (8 أحرف، حرف كبير وصغير ورقم)'
+                    )}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
                       *
                     </span>

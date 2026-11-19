@@ -4,13 +4,20 @@
 //
 // Security Model:
 // - Uses SUPABASE_SERVICE_ROLE_KEY strictly server-side from Edge Function secrets.
+// - Explicit CORS allowlist (defaults to https://operation-lms.vercel.app; NEVER
+//   wildcard '*' and NEVER arbitrary origin reflection). Unauthorized origins
+//   are explicitly rejected with HTTP 403.
+// - Redirect URLs for invitations must match the explicit origin allowlist.
 // - Never trusts client claims: verifies caller JWT via auth.getUser(token),
-//   requires verified Admin MFA assurance (JWT aal === 'aal2'), active Admin
-//   profile (profiles.role = 'admin' AND is_active = true), and a valid slot
+//   binds JWT `sub` to verified user ID, requires verified Admin MFA assurance
+//   (JWT aal === 'aal2'), active Admin profile (profiles.role = 'admin' AND
+//   is_active = true AND must_change_password = false), and a valid slot
 //   assignment in public.admin_accounts (assigned_slot IN (1, 2)).
-// - Enforces schema validation, uniqueness checks, mandatory first-login
-//   password rotation (must_change_password = true), safe audit logging, and
-//   compensating rollback to prevent orphaned Auth users or partial DB rows.
+// - Enforces payload size guard, strict schema validation, uniqueness checks,
+//   rolling per-admin abuse rate limit (via audit_logs), mandatory first-login
+//   password rotation (must_change_password = true), credential-free audit
+//   logging (onboarding_mode: 'invite_email' | 'one_time_temp_credential'),
+//   and compensating rollback to prevent orphaned Auth users or partial DB rows.
 // - Never logs or persists plaintext passwords, JWTs, or service keys.
 // =============================================================================
 
@@ -35,6 +42,11 @@ interface ProvisionRequestBody {
   redirectTo?: string;
 }
 
+const DEFAULT_PRODUCTION_ORIGINS = ['https://operation-lms.vercel.app'];
+const MAX_BODY_BYTES = 32_768;
+const RATE_LIMIT_WINDOW_MINUTES = 10;
+const RATE_LIMIT_MAX_PROVISIONS = 20;
+
 const EMAIL_REGEX =
   /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 const USERNAME_REGEX = /^[a-z0-9][a-z0-9._-]{2,63}$/;
@@ -43,41 +55,94 @@ const PHONE_REGEX = /^[+0-9()\-\s]{6,32}$/;
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function buildCorsHeaders(req: Request): Record<string, string> {
-  const allowedRaw = (Deno.env.get('ALLOWED_ORIGINS') || '').trim();
-  const reqOrigin = req.headers.get('Origin') || '';
-  let allowOrigin = '*';
+function resolveAllowedOrigins(): string[] {
+  const raw = (Deno.env.get('ALLOWED_ORIGINS') || '').trim();
+  if (!raw) {
+    return [...DEFAULT_PRODUCTION_ORIGINS];
+  }
 
-  if (allowedRaw) {
-    const allowedList = allowedRaw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    allowOrigin = allowedList.includes(reqOrigin) ? reqOrigin : allowedList[0] || '*';
-  } else if (reqOrigin) {
-    allowOrigin = reqOrigin;
+  const parsed: string[] = [];
+  for (const part of raw.split(',')) {
+    const candidate = part.trim().replace(/\/+$/, '');
+    if (!candidate || candidate === '*') continue;
+    try {
+      const url = new URL(candidate);
+      const isHttps = url.protocol === 'https:';
+      const isExplicitLocalDev =
+        url.protocol === 'http:' &&
+        (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+      if (isHttps || isExplicitLocalDev) {
+        if (!parsed.includes(url.origin)) {
+          parsed.push(url.origin);
+        }
+      }
+    } catch {
+      // Ignore malformed origin entries
+    }
+  }
+
+  return parsed.length > 0 ? parsed : [...DEFAULT_PRODUCTION_ORIGINS];
+}
+
+function evaluateOriginPolicy(
+  req: Request,
+  allowedOrigins: string[]
+): {
+  allowed: boolean;
+  originHeader: string | null;
+  corsHeaders: Record<string, string>;
+} {
+  const rawOrigin = req.headers.get('Origin');
+  const origin = rawOrigin ? rawOrigin.trim().replace(/\/+$/, '') : null;
+
+  if (!origin) {
+    // Non-browser / server-to-server requests without Origin: never emit wildcard ACAO
+    return {
+      allowed: true,
+      originHeader: null,
+      corsHeaders: {
+        'Vary': 'Origin',
+      },
+    };
+  }
+
+  if (!allowedOrigins.includes(origin)) {
+    return {
+      allowed: false,
+      originHeader: origin,
+      corsHeaders: {
+        'Vary': 'Origin',
+      },
+    };
   }
 
   return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Vary': 'Origin',
+    allowed: true,
+    originHeader: origin,
+    corsHeaders: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin',
+    },
   };
 }
 
 function jsonResponse(
-  req: Request,
+  corsHeaders: Record<string, string>,
   status: number,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {}
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...buildCorsHeaders(req),
+      ...corsHeaders,
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',
+      ...extraHeaders,
     },
   });
 }
@@ -150,12 +215,42 @@ function validateInitialPasswordStrength(password: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
+  const allowedOrigins = resolveAllowedOrigins();
+  const originPolicy = evaluateOriginPolicy(req, allowedOrigins);
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: buildCorsHeaders(req) });
+    if (!originPolicy.originHeader || !originPolicy.allowed) {
+      return jsonResponse({ 'Vary': 'Origin' }, 403, {
+        ok: false,
+        error: 'Origin not allowed.',
+      });
+    }
+    return new Response(null, { status: 204, headers: originPolicy.corsHeaders });
+  }
+
+  if (!originPolicy.allowed) {
+    return jsonResponse({ 'Vary': 'Origin' }, 403, {
+      ok: false,
+      error: 'Origin not allowed.',
+    });
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse(req, 405, { ok: false, error: 'Method not allowed.' });
+    return jsonResponse(originPolicy.corsHeaders, 405, {
+      ok: false,
+      error: 'Method not allowed.',
+    });
+  }
+
+  const contentLengthHeader = req.headers.get('Content-Length');
+  if (contentLengthHeader) {
+    const parsedLength = Number(contentLengthHeader);
+    if (Number.isFinite(parsedLength) && parsedLength > MAX_BODY_BYTES) {
+      return jsonResponse(originPolicy.corsHeaders, 400, {
+        ok: false,
+        error: 'Request payload exceeds maximum allowed size.',
+      });
+    }
   }
 
   const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').trim();
@@ -164,7 +259,7 @@ Deno.serve(async (req: Request) => {
 
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     console.error('[provision-instructor] Missing required Supabase server environment variables.');
-    return jsonResponse(req, 500, {
+    return jsonResponse(originPolicy.corsHeaders, 500, {
       ok: false,
       error: 'Provisioning service is not configured on the server.',
     });
@@ -173,14 +268,14 @@ Deno.serve(async (req: Request) => {
   // 1. Authenticate caller from Bearer JWT
   const authHeader = req.headers.get('Authorization') || '';
   if (!authHeader.startsWith('Bearer ')) {
-    return jsonResponse(req, 401, {
+    return jsonResponse(originPolicy.corsHeaders, 401, {
       ok: false,
       error: 'Authentication required to provision instructor accounts.',
     });
   }
   const token = authHeader.slice('Bearer '.length).trim();
   if (!token) {
-    return jsonResponse(req, 401, {
+    return jsonResponse(originPolicy.corsHeaders, 401, {
       ok: false,
       error: 'Authentication token is missing.',
     });
@@ -197,17 +292,24 @@ Deno.serve(async (req: Request) => {
   } = await userClient.auth.getUser(token);
 
   if (callerErr || !callerUser) {
-    return jsonResponse(req, 401, {
+    return jsonResponse(originPolicy.corsHeaders, 401, {
       ok: false,
       error: 'Invalid or expired authentication session.',
     });
   }
 
-  // 2. Verify Admin MFA Assurance Level (AAL2) from verified JWT payload
+  // 2. Verify Admin MFA Assurance Level (AAL2) and subject binding from verified JWT payload
   const jwtPayload = decodeJwtPayload(token);
+  const jwtSub = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : null;
   const jwtAal = typeof jwtPayload?.aal === 'string' ? jwtPayload.aal : null;
+  if (!jwtSub || jwtSub !== callerUser.id) {
+    return jsonResponse(originPolicy.corsHeaders, 401, {
+      ok: false,
+      error: 'Authentication token subject mismatch.',
+    });
+  }
   if (jwtAal !== 'aal2') {
-    return jsonResponse(req, 403, {
+    return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
       error: 'Admin MFA (AAL2) verification is required before provisioning accounts.',
     });
@@ -223,7 +325,7 @@ Deno.serve(async (req: Request) => {
     await Promise.all([
       adminClient
         .from('profiles')
-        .select('id, role, is_active, full_name_en')
+        .select('id, role, is_active, must_change_password, full_name_en')
         .eq('id', callerUser.id)
         .maybeSingle(),
       adminClient
@@ -235,7 +337,7 @@ Deno.serve(async (req: Request) => {
 
   if (profLookupErr || adminLookupErr) {
     console.error('[provision-instructor] Failed verifying caller admin record.');
-    return jsonResponse(req, 500, {
+    return jsonResponse(originPolicy.corsHeaders, 500, {
       ok: false,
       error: 'Unable to verify administrator authorization.',
     });
@@ -244,22 +346,90 @@ Deno.serve(async (req: Request) => {
   if (
     !callerProfile ||
     !callerProfile.is_active ||
+    callerProfile.must_change_password ||
     callerProfile.role !== 'admin' ||
     !callerAdmin ||
     (callerAdmin.assigned_slot !== 1 && callerAdmin.assigned_slot !== 2)
   ) {
-    return jsonResponse(req, 403, {
+    return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
       error: 'Forbidden: Only active MFA-verified CITS Administrators can provision instructors.',
     });
   }
 
+  // 4b. Rolling per-admin abuse / rate-limit check via immutable audit_logs
+  const rateLimitWindowStart = new Date(
+    Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000
+  ).toISOString();
+  const { count: recentProvisionCount, error: rateErr } = await adminClient
+    .from('audit_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('actor_profile_id', callerProfile.id)
+    .eq('action', 'INSTRUCTOR_ACCOUNT_PROVISIONED')
+    .gte('created_at', rateLimitWindowStart);
+
+  if (
+    !rateErr &&
+    typeof recentProvisionCount === 'number' &&
+    recentProvisionCount >= RATE_LIMIT_MAX_PROVISIONS
+  ) {
+    return jsonResponse(
+      originPolicy.corsHeaders,
+      429,
+      {
+        ok: false,
+        error: `Provisioning rate limit reached (${RATE_LIMIT_MAX_PROVISIONS} accounts per ${RATE_LIMIT_WINDOW_MINUTES} minutes). Wait before provisioning additional accounts.`,
+      },
+      { 'Retry-After': String(RATE_LIMIT_WINDOW_MINUTES * 60) }
+    );
+  }
+
   // 5. Parse & strictly validate request payload
-  let body: ProvisionRequestBody;
+  let rawText = '';
   try {
-    body = (await req.json()) as ProvisionRequestBody;
+    rawText = await req.text();
   } catch {
-    return jsonResponse(req, 400, { ok: false, error: 'Invalid JSON request body.' });
+    return jsonResponse(originPolicy.corsHeaders, 400, {
+      ok: false,
+      error: 'Unable to read request body.',
+    });
+  }
+  if (rawText.length > MAX_BODY_BYTES) {
+    return jsonResponse(originPolicy.corsHeaders, 400, {
+      ok: false,
+      error: 'Request payload exceeds maximum allowed size.',
+    });
+  }
+
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(rawText);
+  } catch {
+    return jsonResponse(originPolicy.corsHeaders, 400, {
+      ok: false,
+      error: 'Invalid JSON request body.',
+    });
+  }
+  if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+    return jsonResponse(originPolicy.corsHeaders, 400, {
+      ok: false,
+      error: 'Request body must be a JSON object.',
+    });
+  }
+  const body = parsedBody as ProvisionRequestBody;
+
+  if (
+    body.deliveryMode !== undefined &&
+    body.deliveryMode !== 'invite_email' &&
+    body.deliveryMode !== 'temporary_password'
+  ) {
+    return jsonResponse(originPolicy.corsHeaders, 400, {
+      ok: false,
+      error: 'Invalid credential delivery mode.',
+      fieldErrors: {
+        deliveryMode: 'Delivery mode must be "invite_email" or "temporary_password".',
+      },
+    });
   }
 
   const fullNameEn = (body.fullNameEn || '').trim();
@@ -285,6 +455,36 @@ Deno.serve(async (req: Request) => {
     deliveryMode === 'temporary_password' && body.temporaryPassword
       ? body.temporaryPassword.trim()
       : null;
+
+  // Validate invitation redirectTo strictly against explicit allowedOrigins
+  let safeRedirectTo: string = allowedOrigins[0];
+  if (deliveryMode === 'invite_email' && body.redirectTo !== undefined && body.redirectTo !== null) {
+    const rawRedirect = typeof body.redirectTo === 'string' ? body.redirectTo.trim() : '';
+    if (rawRedirect.length > 0) {
+      let validRedirect = false;
+      try {
+        const parsedRedirect = new URL(rawRedirect);
+        if (
+          (parsedRedirect.protocol === 'https:' || parsedRedirect.protocol === 'http:') &&
+          allowedOrigins.includes(parsedRedirect.origin)
+        ) {
+          safeRedirectTo = parsedRedirect.origin;
+          validRedirect = true;
+        }
+      } catch {
+        validRedirect = false;
+      }
+      if (!validRedirect) {
+        return jsonResponse(originPolicy.corsHeaders, 400, {
+          ok: false,
+          error: 'Invitation redirect URL origin is not in the allowed origins list.',
+          fieldErrors: {
+            redirectTo: 'Redirect URL must belong to an authorized application origin.',
+          },
+        });
+      }
+    }
+  }
 
   const fieldErrors: Record<string, string> = {};
   if (fullNameEn.length < 2 || fullNameEn.length > 120) {
@@ -327,7 +527,7 @@ Deno.serve(async (req: Request) => {
 
   const firstFieldErr = Object.values(fieldErrors)[0];
   if (firstFieldErr) {
-    return jsonResponse(req, 400, {
+    return jsonResponse(originPolicy.corsHeaders, 400, {
       ok: false,
       error: firstFieldErr,
       fieldErrors,
@@ -347,28 +547,28 @@ Deno.serve(async (req: Request) => {
 
   if (emailLookup.error || usernameLookup.error || codeLookup.error) {
     console.error('[provision-instructor] Pre-check uniqueness query failed.');
-    return jsonResponse(req, 500, {
+    return jsonResponse(originPolicy.corsHeaders, 500, {
       ok: false,
       error: 'Unable to validate account uniqueness.',
     });
   }
 
   if ((emailLookup.data || []).length > 0) {
-    return jsonResponse(req, 409, {
+    return jsonResponse(originPolicy.corsHeaders, 409, {
       ok: false,
       error: `Email "${email}" is already registered.`,
       fieldErrors: { email: `Email "${email}" is already registered.` },
     });
   }
   if ((usernameLookup.data || []).length > 0) {
-    return jsonResponse(req, 409, {
+    return jsonResponse(originPolicy.corsHeaders, 409, {
       ok: false,
       error: `Username "${username}" is already taken.`,
       fieldErrors: { username: `Username "${username}" is already taken.` },
     });
   }
   if ((codeLookup.data || []).length > 0) {
-    return jsonResponse(req, 409, {
+    return jsonResponse(originPolicy.corsHeaders, 409, {
       ok: false,
       error: `Instructor code "${instructorCode}" already exists.`,
       fieldErrors: { instructorCode: `Instructor code "${instructorCode}" already exists.` },
@@ -383,14 +583,14 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (campErr || !campRow) {
-      return jsonResponse(req, 400, {
+      return jsonResponse(originPolicy.corsHeaders, 400, {
         ok: false,
         error: 'Selected camp does not exist.',
         fieldErrors: { assignToCampId: 'Selected camp does not exist.' },
       });
     }
     if (campRow.status === 'archived') {
-      return jsonResponse(req, 400, {
+      return jsonResponse(originPolicy.corsHeaders, 400, {
         ok: false,
         error: 'Cannot assign an instructor to an archived read-only camp.',
         fieldErrors: { assignToCampId: 'Archived camps are strictly read-only.' },
@@ -443,21 +643,6 @@ Deno.serve(async (req: Request) => {
   let currentStep = 'auth_user_creation';
   try {
     if (deliveryMode === 'invite_email') {
-      const allowedOrigins = (Deno.env.get('ALLOWED_ORIGINS') || '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      let safeRedirectTo: string | undefined;
-      if (typeof body.redirectTo === 'string' && /^https?:\/\//i.test(body.redirectTo.trim())) {
-        try {
-          const parsedRedirect = new URL(body.redirectTo.trim());
-          if (allowedOrigins.length === 0 || allowedOrigins.includes(parsedRedirect.origin)) {
-            safeRedirectTo = parsedRedirect.toString();
-          }
-        } catch {
-          safeRedirectTo = undefined;
-        }
-      }
       const { data: invited, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
         email,
         {
@@ -538,6 +723,8 @@ Deno.serve(async (req: Request) => {
 
     // 8. Append safe audit log (zero credential terms in JSON payload per enforce_audit_log_integrity)
     currentStep = 'audit_log';
+    const onboardingMode =
+      deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential';
     const { error: auditErr } = await adminClient.from('audit_logs').insert({
       actor_profile_id: callerProfile.id,
       actor_name: callerProfile.full_name_en,
@@ -552,9 +739,9 @@ Deno.serve(async (req: Request) => {
         instructor_code: instructorCode,
         username,
         email,
+        default_lecture_rate_egp: defaultLectureRateEgp,
         is_active: isActive,
-        onboarding_mode:
-          deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential',
+        onboarding_mode: onboardingMode,
         onboarding_rotation_required: true,
         assigned_camp_id: assignToCampId,
       },
@@ -564,7 +751,7 @@ Deno.serve(async (req: Request) => {
       console.warn('[provision-instructor] Secondary audit log insert warning:', auditErr.code);
     }
 
-    return jsonResponse(req, 201, {
+    return jsonResponse(originPolicy.corsHeaders, 201, {
       ok: true,
       profileId: createdAuthUserId,
       instructorId: createdInstructorId,
@@ -581,6 +768,7 @@ Deno.serve(async (req: Request) => {
       mustChangePassword: true,
       assignedCampId: assignToCampId,
       deliveryMode,
+      auditRecorded: !auditErr,
       ...(deliveryMode === 'temporary_password' && initialPassword
         ? { initialTemporaryPassword: initialPassword }
         : {}),
@@ -597,7 +785,7 @@ Deno.serve(async (req: Request) => {
       rolledBack,
     });
 
-    return jsonResponse(req, isConflict ? 409 : 500, {
+    return jsonResponse(originPolicy.corsHeaders, isConflict ? 409 : 500, {
       ok: false,
       error: isConflict
         ? 'An account with this email, username, or instructor code already exists.'

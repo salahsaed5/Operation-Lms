@@ -58,6 +58,7 @@ export interface ProvisionInstructorSuccess {
   mustChangePassword: true;
   assignedCampId: string | null;
   deliveryMode: CredentialDeliveryMode;
+  auditRecorded?: boolean;
   /**
    * Returned ONCE in memory when deliveryMode === 'temporary_password'.
    * Never persisted in PostgreSQL, never logged, and cleared on UI dismiss.
@@ -67,7 +68,7 @@ export interface ProvisionInstructorSuccess {
 
 export interface ProvisionInstructorFailure {
   ok: false;
-  statusCode: 400 | 401 | 403 | 409 | 500;
+  statusCode: 400 | 401 | 403 | 409 | 429 | 500;
   error: string;
   fieldErrors?: Partial<Record<keyof ProvisionInstructorInput, string>>;
   rolledBack?: boolean;
@@ -551,6 +552,7 @@ export async function executeInstructorProvisioningWorkflow(
     }
 
     // Best-effort safe audit log: never include credential words or secrets
+    let auditRecorded = false;
     try {
       await deps.appendAuditLog({
         actor_profile_id: caller.profile!.id,
@@ -566,6 +568,7 @@ export async function executeInstructorProvisioningWorkflow(
           instructor_code: input.instructorCode,
           username: input.username,
           email: input.email,
+          default_lecture_rate_egp: input.defaultLectureRateEgp,
           is_active: input.isActive,
           onboarding_mode:
             input.deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential',
@@ -574,8 +577,10 @@ export async function executeInstructorProvisioningWorkflow(
         },
         reason: 'Admin provisioned instructor account via server-side Edge Function',
       });
+      auditRecorded = true;
     } catch {
       // Do not rollback a valid account solely because secondary audit log write failed
+      auditRecorded = false;
     }
 
     return {
@@ -595,6 +600,7 @@ export async function executeInstructorProvisioningWorkflow(
       mustChangePassword: true,
       assignedCampId: input.assignToCampId,
       deliveryMode: input.deliveryMode,
+      auditRecorded,
       ...(input.deliveryMode === 'temporary_password' && initialPassword
         ? { initialTemporaryPassword: initialPassword }
         : {}),
@@ -632,6 +638,7 @@ export function evaluateAuthenticatedSessionGate(params: {
   instructor: Instructor | null;
   hasVerifiedTotpFactor: boolean;
   aal: 'aal1' | 'aal2' | null;
+  recoveryFlow?: boolean;
 }): AuthSessionDecision {
   if (!params.authUserId) {
     return { allowed: false, nextStep: 'sign_out_denied', error: 'No authenticated session.' };
@@ -680,7 +687,7 @@ export function evaluateAuthenticatedSessionGate(params: {
     if (params.aal !== 'aal2') {
       return { allowed: false, nextStep: 'totp_challenge' };
     }
-    if (params.profile.mustChangePassword) {
+    if (params.profile.mustChangePassword || params.recoveryFlow) {
       return { allowed: false, nextStep: 'password_change' };
     }
     return { allowed: true, nextStep: 'admin_portal' };
@@ -694,7 +701,7 @@ export function evaluateAuthenticatedSessionGate(params: {
         error: 'Instructor account verification failed: missing instructor record.',
       };
     }
-    if (params.profile.mustChangePassword) {
+    if (params.profile.mustChangePassword || params.recoveryFlow) {
       return { allowed: false, nextStep: 'password_change' };
     }
     return { allowed: true, nextStep: 'instructor_portal' };
@@ -705,4 +712,96 @@ export function evaluateAuthenticatedSessionGate(params: {
     nextStep: 'sign_out_denied',
     error: 'Invalid account role.',
   };
+}
+
+// =============================================================================
+// EXPLICIT CORS ALLOWLIST & SAFE REDIRECT VALIDATION (Mirrors Edge Function)
+// =============================================================================
+
+export const DEFAULT_PRODUCTION_ORIGINS = ['https://operation-lms.vercel.app'] as const;
+
+export function parseAllowedOrigins(rawEnv?: string | null): string[] {
+  const raw = (rawEnv || '').trim();
+  if (!raw) {
+    return [...DEFAULT_PRODUCTION_ORIGINS];
+  }
+
+  const parsed: string[] = [];
+  for (const part of raw.split(',')) {
+    const candidate = part.trim().replace(/\/+$/, '');
+    if (!candidate || candidate === '*') continue;
+    try {
+      const url = new URL(candidate);
+      const isHttps = url.protocol === 'https:';
+      const isExplicitLocalDev =
+        url.protocol === 'http:' &&
+        (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+      if (isHttps || isExplicitLocalDev) {
+        if (!parsed.includes(url.origin)) {
+          parsed.push(url.origin);
+        }
+      }
+    } catch {
+      // Skip malformed entries
+    }
+  }
+
+  return parsed.length > 0 ? parsed : [...DEFAULT_PRODUCTION_ORIGINS];
+}
+
+export function evaluateCorsOrigin(
+  originHeader: string | null | undefined,
+  allowedOrigins: string[],
+  method: string
+): {
+  allowed: boolean;
+  statusCode: 200 | 204 | 403;
+  allowOriginHeader: string | null;
+} {
+  const normalized = originHeader ? originHeader.trim().replace(/\/+$/, '') : null;
+
+  if (method.toUpperCase() === 'OPTIONS') {
+    if (!normalized || !allowedOrigins.includes(normalized)) {
+      return { allowed: false, statusCode: 403, allowOriginHeader: null };
+    }
+    return { allowed: true, statusCode: 204, allowOriginHeader: normalized };
+  }
+
+  if (!normalized) {
+    // Server-to-server call without Origin header: allowed, never emits wildcard ACAO
+    return { allowed: true, statusCode: 200, allowOriginHeader: null };
+  }
+
+  if (!allowedOrigins.includes(normalized)) {
+    return { allowed: false, statusCode: 403, allowOriginHeader: null };
+  }
+
+  return { allowed: true, statusCode: 200, allowOriginHeader: normalized };
+}
+
+export function validateSafeRedirectUrl(
+  redirectTo: string | null | undefined,
+  allowedOrigins: string[]
+): { valid: boolean; sanitizedOrigin?: string; error?: string } {
+  const trimmed = (redirectTo || '').trim();
+  if (!trimmed) {
+    return { valid: true, sanitizedOrigin: allowedOrigins[0] || DEFAULT_PRODUCTION_ORIGINS[0] };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const isHttpOrHttps = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    if (!isHttpOrHttps || !allowedOrigins.includes(parsed.origin)) {
+      return {
+        valid: false,
+        error: 'Redirect URL must belong to an authorized application origin.',
+      };
+    }
+    return { valid: true, sanitizedOrigin: parsed.origin };
+  } catch {
+    return {
+      valid: false,
+      error: 'Redirect URL is malformed.',
+    };
+  }
 }

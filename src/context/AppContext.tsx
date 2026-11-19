@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   AdminAccount,
   AdminRouteId,
@@ -73,6 +73,7 @@ import {
   generateSecureTemporaryPassword,
   ProvisionInstructorInput,
   ProvisionInstructorOutcome,
+  validateInitialPasswordStrength,
   validateProvisionInstructorInput,
 } from '../domain/accountProvisioning';
 import {
@@ -459,6 +460,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [instructorRoute, setInstructorRoute] = useState<InstructorRouteId>('dashboard');
   const [isArchitectureDrawerOpen, setArchitectureDrawerOpen] = useState(false);
 
+  const loginInFlightRef = useRef<boolean>(false);
+  const passwordUpdateInFlightRef = useRef<boolean>(false);
+  const pendingRecoveryFlowRef = useRef<boolean>(false);
+
+  const clearSupabaseOperationalState = useCallback(() => {
+    setSupabaseCtx(null);
+    setProfiles([]);
+    setAdminAccounts([]);
+    setInstructors([]);
+    setVenues([]);
+    setRooms([]);
+    setCamps([]);
+    setCampInstructorIds({});
+    setGroups([]);
+    setStudents([]);
+    setStudentTransfers([]);
+    setLectures([]);
+    setCheckins([]);
+    setCheckinExceptions([]);
+    setAttendanceSheets([]);
+    setEntitlements([]);
+    setRequests([]);
+    setNotifications([]);
+    setIssues([]);
+    setChecklists([]);
+    setSurveys([]);
+    setAuditLogs([]);
+    setAdminRoute('dashboard');
+    setInstructorRoute('dashboard');
+  }, []);
+
   useEffect(() => {
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = lang;
@@ -526,8 +558,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const applySupabaseAuthContext = useCallback(
-    async (ctx: SupabaseAuthContext) => {
+    async (ctx: SupabaseAuthContext, options?: { forcePasswordChange?: boolean }) => {
       setSupabaseCtx(ctx);
+      const mustRotateCredential =
+        ctx.profile.mustChangePassword ||
+        Boolean(options?.forcePasswordChange) ||
+        pendingRecoveryFlowRef.current;
 
       if (ctx.profile.role === UserRole.ADMIN) {
         if (ctx.mfa.needsEnrollment || ctx.mfa.needsChallenge) {
@@ -553,7 +589,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      if (ctx.profile.mustChangePassword) {
+      if (mustRotateCredential) {
         setAuth({
           isAuthenticated: false,
           pendingTotpProfileId: null,
@@ -590,6 +626,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const client = supabase;
     let mounted = true;
 
+    const urlSignalsRecovery = (() => {
+      if (typeof window === 'undefined') return false;
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      return /(?:^|[#&?])type=recovery(?:&|$)/i.test(hash) || /(?:^|[#&?])type=recovery(?:&|$)/i.test(search);
+    })();
+    if (urlSignalsRecovery) {
+      pendingRecoveryFlowRef.current = true;
+    }
+
+    const resetUnauthenticated = () => {
+      pendingRecoveryFlowRef.current = false;
+      clearSupabaseOperationalState();
+      setAuth({
+        isAuthenticated: false,
+        pendingTotpProfileId: null,
+        pendingPasswordChangeProfileId: null,
+        currentProfile: GUEST_PLACEHOLDER_PROFILE,
+        activeInstructorId: '',
+        mfaFactorId: null,
+        mfaNeedsEnrollment: false,
+        mfaEnrollment: null,
+      });
+    };
+
     const initSession = async () => {
       setIsInitializingSession(true);
       try {
@@ -600,19 +661,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (session?.user) {
           const ctx = await loadAuthenticatedUserContext(session.user.id);
           if (mounted) {
-            await applySupabaseAuthContext(ctx);
+            await applySupabaseAuthContext(ctx, {
+              forcePasswordChange: pendingRecoveryFlowRef.current,
+            });
           }
         }
       } catch (err) {
         if (mounted) {
+          resetUnauthenticated();
           setDataError(err instanceof Error ? err.message : 'Session restoration failed.');
-          setAuth((prev) => ({
-            ...prev,
-            isAuthenticated: false,
-            pendingTotpProfileId: null,
-            pendingPasswordChangeProfileId: null,
-            currentProfile: GUEST_PLACEHOLDER_PROFILE,
-          }));
         }
       } finally {
         if (mounted) setIsInitializingSession(false);
@@ -626,26 +683,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (event === 'SIGNED_OUT' || !session?.user) {
-        setSupabaseCtx(null);
-        setAuth({
-          isAuthenticated: false,
-          pendingTotpProfileId: null,
-          pendingPasswordChangeProfileId: null,
-          currentProfile: GUEST_PLACEHOLDER_PROFILE,
-          activeInstructorId: '',
-          mfaFactorId: null,
-          mfaNeedsEnrollment: false,
-          mfaEnrollment: null,
-        });
+        resetUnauthenticated();
         return;
       }
-      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      if (event === 'PASSWORD_RECOVERY') {
+        pendingRecoveryFlowRef.current = true;
         loadAuthenticatedUserContext(session.user.id)
           .then((ctx) => {
-            if (mounted) return applySupabaseAuthContext(ctx);
+            if (mounted) return applySupabaseAuthContext(ctx, { forcePasswordChange: true });
           })
           .catch((err) => {
             if (mounted) {
+              resetUnauthenticated();
+              setDataError(
+                err instanceof Error ? err.message : 'Unable to initialize password recovery.'
+              );
+            }
+          });
+        return;
+      }
+      if (event === 'SIGNED_IN') {
+        // Ignore when form loginWithCredentials is already driving context resolution
+        if (loginInFlightRef.current) return;
+        loadAuthenticatedUserContext(session.user.id)
+          .then((ctx) => {
+            if (mounted) {
+              return applySupabaseAuthContext(ctx, {
+                forcePasswordChange: pendingRecoveryFlowRef.current,
+              });
+            }
+          })
+          .catch((err) => {
+            if (mounted) {
+              resetUnauthenticated();
+              setDataError(err instanceof Error ? err.message : 'Session initialization failed.');
+            }
+          });
+        return;
+      }
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        // Avoid racing with completeFirstLoginPasswordChange before complete_password_change_tx commits
+        if (event === 'USER_UPDATED' && passwordUpdateInFlightRef.current) return;
+        loadAuthenticatedUserContext(session.user.id)
+          .then((ctx) => {
+            if (mounted) {
+              return applySupabaseAuthContext(ctx, {
+                forcePasswordChange: pendingRecoveryFlowRef.current,
+              });
+            }
+          })
+          .catch((err) => {
+            if (mounted) {
+              resetUnauthenticated();
               setDataError(
                 err instanceof Error ? err.message : 'Session synchronization failed.'
               );
@@ -658,7 +747,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [isSupabaseMode, applySupabaseAuthContext]);
+  }, [isSupabaseMode, applySupabaseAuthContext, clearSupabaseOperationalState]);
 
   const refreshOperationalData = useCallback(async () => {
     if (!isSupabaseMode || !supabaseCtx) return;
@@ -697,8 +786,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginWithCredentials = async (identifier: string, password: string) => {
     if (isSupabaseMode) {
+      loginInFlightRef.current = true;
       try {
         setDataError(null);
+        pendingRecoveryFlowRef.current = false;
         const ctx = await resolveAndSignInWithSupabase(identifier, password);
         const step = await applySupabaseAuthContext(ctx);
         return { ok: true, step };
@@ -707,6 +798,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ok: false,
           error: err instanceof Error ? err.message : 'Authentication failed.',
         };
+      } finally {
+        loginInFlightRef.current = false;
       }
     }
 
@@ -876,32 +969,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const completeFirstLoginPasswordChange = async (newPassword: string) => {
-    if (newPassword.trim().length < 8) {
+    const strengthCheck = validateInitialPasswordStrength(newPassword);
+    if (!strengthCheck.valid) {
       return {
         ok: false,
         error: t(
-          'New password must be at least 8 characters long.',
-          'يجب أن تتكون كلمة المرور الجديدة من 8 أحرف على الأقل.'
+          strengthCheck.error ||
+            'New password must be 8–128 characters and include uppercase, lowercase, and a number.',
+          'يجب أن تتكون كلمة المرور الجديدة من 8 أحرف على الأقل وتحتوي على حرف كبير وحرف صغير ورقم.'
         ),
       };
     }
 
     if (isSupabaseMode) {
+      passwordUpdateInFlightRef.current = true;
       try {
         await completeUserPasswordChange(newPassword);
+        pendingRecoveryFlowRef.current = false;
+        if (typeof window !== 'undefined' && (window.location.hash || window.location.search)) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
         if (!supabase) throw new Error('Supabase client missing.');
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) throw new Error('Session missing after password update.');
         const ctx = await loadAuthenticatedUserContext(user.id);
-        await applySupabaseAuthContext(ctx);
+        await applySupabaseAuthContext(ctx, { forcePasswordChange: false });
         return { ok: true };
       } catch (err) {
         return {
           ok: false,
           error: err instanceof Error ? err.message : 'Password update failed.',
         };
+      } finally {
+        passwordUpdateInFlightRef.current = false;
       }
     }
 
@@ -920,27 +1022,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'FIRST_LOGIN_PASSWORD_UPDATED',
       'profiles',
       targetId,
-      { mustChangePassword: true },
-      { mustChangePassword: false },
-      'Mandatory first-login password change completed'
+      { initialCredentialRotationRequired: true },
+      { initialCredentialRotationRequired: false },
+      'Mandatory first-login credential rotation completed'
     );
     return { ok: true };
   };
 
   const signOut = async () => {
+    pendingRecoveryFlowRef.current = false;
+    setDataError(null);
     if (isSupabaseMode) {
       await signOutSupabase();
-      setSupabaseCtx(null);
+      clearSupabaseOperationalState();
     }
-    setAuth((prev) => ({
-      ...prev,
+    setAuth({
       isAuthenticated: false,
       pendingTotpProfileId: null,
       pendingPasswordChangeProfileId: null,
+      currentProfile: isSupabaseMode ? GUEST_PLACEHOLDER_PROFILE : auth.currentProfile,
+      activeInstructorId: '',
       mfaFactorId: null,
       mfaNeedsEnrollment: false,
       mfaEnrollment: null,
-    }));
+    });
   };
 
   const switchDemoIdentity = (role: UserRole, instructorId?: string, profileId?: string) => {

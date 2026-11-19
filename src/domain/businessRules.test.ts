@@ -1314,13 +1314,14 @@ function extractSqlArrayLiterals(sql: string, varName: string): string[] {
   return items;
 }
 
-test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0005', () => {
+test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0006', () => {
   const migFiles = [
     'supabase/migrations/0001_cits_initial_schema.sql',
     'supabase/migrations/0002_phase2_security_rls_and_validation.sql',
     'supabase/migrations/0003_fix_archived_camp_child_trigger.sql',
     'supabase/migrations/0004_phase2_comprehensive_security_hardening.sql',
     'supabase/migrations/0005_phase2_finalization_hardening.sql',
+    'supabase/migrations/0006_fix_initial_password_change_audit.sql',
   ];
 
   // Negative synthetic tests verifying scanner catches banned lexical edge cases
@@ -1499,5 +1500,63 @@ test('25. Dev-only sandbox selector: strictly gated to DEV + !isSupabaseMode wit
     'Dr. Hoda Soliman',
   ]) {
     assert.ok(seedSrc.includes(fullName), `Missing sandbox account ${fullName}`);
+  }
+});
+
+test('26. Migration 0006: fixes complete_password_change_tx() audit payload without weakening audit integrity or altering prior migrations', () => {
+  const mig6 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/migrations/0006_fix_initial_password_change_audit.sql'),
+    'utf8'
+  );
+  const mig6Exec = mig6.split('-- ROLLBACK CONSIDERATIONS')[0];
+
+  assert.ok(mig6Exec.includes('BEGIN;'));
+  assert.ok(mig6Exec.includes('COMMIT;'));
+  assert.equal(/\bROLLBACK\s*;/i.test(mig6Exec), false);
+  assert.equal(/DROP\s+TABLE/i.test(mig6Exec), false);
+  assert.equal(/TRUNCATE\s+/i.test(mig6Exec), false);
+  assert.equal(/DELETE\s+FROM/i.test(mig6Exec), false);
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(mig6Exec), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(mig6Exec), false);
+  // Must NOT alter or weaken enforce_audit_log_integrity()
+  assert.equal(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?enforce_audit_log_integrity/i.test(mig6Exec), false);
+
+  // Must preserve SECURITY DEFINER, pinned search_path, row lock, and exact privilege grants
+  assert.match(mig6Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.complete_password_change_tx\(\)/);
+  assert.match(mig6Exec, /SECURITY\s+DEFINER/);
+  assert.match(mig6Exec, /SET\s+search_path\s*=\s*public,\s*pg_temp/);
+  assert.match(mig6Exec, /is_active_cits_user\(\)/);
+  assert.match(mig6Exec, /FOR\s+UPDATE/);
+  assert.match(mig6Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.complete_password_change_tx\(\)\s+FROM\s+PUBLIC;/);
+  assert.match(mig6Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.complete_password_change_tx\(\)\s+FROM\s+anon;/);
+  assert.match(mig6Exec, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.complete_password_change_tx\(\)\s+TO\s+authenticated;/);
+
+  // Extract append_audit_log_internal(...) call and verify p_prev/p_new JSON arguments do NOT match migration 0005 banned regex
+  const auditCallMatch = mig6Exec.match(/PERFORM\s+append_audit_log_internal\s*\(([\s\S]*?)\);/);
+  assert.ok(auditCallMatch, 'Expected append_audit_log_internal call inside migration 0006');
+  const jsonArgs = auditCallMatch[1].match(/jsonb_build_object\s*\([^)]*\)/gi) || [];
+  assert.equal(jsonArgs.length, 2, 'Expected both previous_value and new_value jsonb_build_object payloads');
+  const bannedAuditRegex =
+    /(password|service_role|totp_secret|mfa_secret|access_token|refresh_token|secret_key)/i;
+  for (const arg of jsonArgs) {
+    assert.equal(
+      bannedAuditRegex.test(arg),
+      false,
+      `Migration 0006 audit JSON payload must never match enforce_audit_log_integrity regex: ${arg}`
+    );
+  }
+
+  // Verify non-destructive 0006 verification SQL script
+  const verify6 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0006_verify_initial_password_change_audit.sql'),
+    'utf8'
+  );
+  const verify6NoComments = verify6.replace(/--.*$/gm, '');
+  assert.ok(verify6.includes('BEGIN;'));
+  assert.ok(verify6.includes('ROLLBACK;'));
+  assert.equal(/\bCOMMIT\s*;/i.test(verify6NoComments), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(verify6NoComments), false);
+  for (let i = 1; i <= 6; i++) {
+    assert.ok(verify6.includes(`VALUES (${i},`), `Missing verification check #${i} in 0006 verification script`);
   }
 });
