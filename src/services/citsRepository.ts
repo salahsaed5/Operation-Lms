@@ -4,6 +4,10 @@ import {
   resolveStudentOriginGroupForDay,
 } from '../domain/businessRules';
 import {
+  ProvisionInstructorInput,
+  ProvisionInstructorOutcome,
+} from '../domain/accountProvisioning';
+import {
   AdminAccount,
   AppNotification,
   AttendanceMark,
@@ -263,6 +267,7 @@ export async function loadAuthenticatedUserContext(
       phone: profile.phone,
       specialization: instRow.specialization,
       defaultLectureRateEgp: instRow.default_lecture_rate_egp,
+      bio: instRow.bio || '',
       isActive: profile.isActive,
     },
     mfa: {
@@ -468,6 +473,7 @@ export async function fetchOperationalSnapshot(
       phone: prof?.phone || '',
       specialization: i.specialization,
       defaultLectureRateEgp: i.default_lecture_rate_egp,
+      bio: i.bio || '',
       isActive: prof?.isActive ?? true,
     };
   });
@@ -1119,6 +1125,10 @@ export async function upsertGroupInDb(input: {
 export async function updateInstructorInDb(input: {
   instructorId: string;
   profileId: string;
+  fullNameEn?: string;
+  fullNameAr?: string;
+  phone?: string;
+  bio?: string;
   specialization: string;
   defaultLectureRateEgp: number;
   isActive: boolean;
@@ -1126,18 +1136,47 @@ export async function updateInstructorInDb(input: {
   assignedToCamp?: boolean;
 }): Promise<void> {
   const client = getClient();
+  const instUpdate: {
+    specialization: string;
+    default_lecture_rate_egp: number;
+    bio?: string | null;
+  } = {
+    specialization: input.specialization.trim(),
+    default_lecture_rate_egp: Math.max(0, Math.round(input.defaultLectureRateEgp)),
+  };
+  if (input.bio !== undefined) {
+    const cleanBio = input.bio.trim();
+    instUpdate.bio = cleanBio.length > 0 ? cleanBio : null;
+  }
+
   const { error: instErr } = await client
     .from('instructors')
-    .update({
-      specialization: input.specialization.trim(),
-      default_lecture_rate_egp: Math.max(0, Math.round(input.defaultLectureRateEgp)),
-    })
+    .update(instUpdate)
     .eq('id', input.instructorId);
   if (instErr) throw new Error(instErr.message);
 
+  const profUpdate: {
+    is_active: boolean;
+    full_name_en?: string;
+    full_name_ar?: string;
+    phone?: string | null;
+  } = {
+    is_active: input.isActive,
+  };
+  if (input.fullNameEn !== undefined && input.fullNameEn.trim().length >= 2) {
+    profUpdate.full_name_en = input.fullNameEn.trim();
+  }
+  if (input.fullNameAr !== undefined && input.fullNameAr.trim().length >= 2) {
+    profUpdate.full_name_ar = input.fullNameAr.trim();
+  }
+  if (input.phone !== undefined) {
+    const cleanPhone = input.phone.trim();
+    profUpdate.phone = cleanPhone.length > 0 ? cleanPhone : null;
+  }
+
   const { error: profErr } = await client
     .from('profiles')
-    .update({ is_active: input.isActive })
+    .update(profUpdate)
     .eq('id', input.profileId);
   if (profErr) throw new Error(profErr.message);
 
@@ -1151,6 +1190,108 @@ export async function updateInstructorInDb(input: {
       { onConflict: 'camp_id,instructor_id' }
     );
     if (ciErr) throw new Error(ciErr.message);
+  }
+}
+
+export async function provisionInstructorViaEdgeFunction(
+  input: ProvisionInstructorInput
+): Promise<ProvisionInstructorOutcome> {
+  const client = getClient();
+  const redirectTo =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : undefined;
+
+  const { data, error } = await client.functions.invoke('provision-instructor', {
+    body: {
+      fullNameEn: input.fullNameEn,
+      fullNameAr: input.fullNameAr,
+      email: input.email,
+      username: input.username,
+      instructorCode: input.instructorCode,
+      specialization: input.specialization,
+      phone: input.phone,
+      defaultLectureRateEgp: input.defaultLectureRateEgp,
+      bio: input.bio,
+      isActive: input.isActive,
+      assignToCampId: input.assignToCampId || null,
+      deliveryMode: input.deliveryMode,
+      temporaryPassword:
+        input.deliveryMode === 'temporary_password' && input.temporaryPassword
+          ? input.temporaryPassword
+          : undefined,
+      redirectTo,
+    },
+  });
+
+  if (error) {
+    let parsedErr: { error?: string; fieldErrors?: Record<string, string>; statusCode?: number } | null = null;
+    try {
+      const ctx = (error as unknown as { context?: Response }).context;
+      if (ctx && typeof ctx.json === 'function') {
+        parsedErr = (await ctx.json()) as {
+          error?: string;
+          fieldErrors?: Record<string, string>;
+          statusCode?: number;
+        };
+      }
+    } catch {
+      parsedErr = null;
+    }
+
+    const status =
+      (error as unknown as { context?: Response }).context?.status || 500;
+    const normalizedStatus: 400 | 401 | 403 | 409 | 500 =
+      status === 400 || status === 401 || status === 403 || status === 409
+        ? status
+        : 500;
+
+    return {
+      ok: false,
+      statusCode: normalizedStatus,
+      error:
+        parsedErr?.error ||
+        error.message ||
+        'Unable to reach the provision-instructor Edge Function.',
+      fieldErrors: parsedErr?.fieldErrors as ProvisionInstructorOutcome extends {
+        fieldErrors?: infer F;
+      }
+        ? F
+        : undefined,
+    };
+  }
+
+  if (!data || typeof data !== 'object' || !(data as { ok?: boolean }).ok) {
+    const payload = (data || {}) as {
+      error?: string;
+      fieldErrors?: Record<string, string>;
+    };
+    return {
+      ok: false,
+      statusCode: 500,
+      error: payload.error || 'Provisioning returned an unexpected response.',
+      fieldErrors: payload.fieldErrors,
+    };
+  }
+
+  return data as ProvisionInstructorOutcome;
+}
+
+export async function sendInstructorPasswordResetEmail(email: string): Promise<void> {
+  const client = getClient();
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) {
+    throw new Error('Instructor email is required to send a password reset link.');
+  }
+  const redirectTo =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : undefined;
+  const { error } = await client.auth.resetPasswordForEmail(cleanEmail, {
+    redirectTo,
+  });
+  if (error) {
+    throw new Error(error.message || 'Unable to send password recovery email.');
   }
 }
 

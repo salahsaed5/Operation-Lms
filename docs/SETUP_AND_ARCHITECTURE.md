@@ -135,3 +135,106 @@ VITE_SUPABASE_ANON_KEY="<your-public-anon-or-sb_publishable-key>"
 | Domain, RLS Model, & Guard 1C Lexical Tests | `bun test src/domain/businessRules.test.ts` | Executed & CI green | Covers all 38+ SQL trigger/helper bodies across `0001`–`0005` |
 | UI Accessibility, Desktop/Mobile Layouts & Console | Headless Chromium (`playwright-cli`) at `1440x900` & `390x844` | Executed locally (Sandbox Mode) | Admin Portal, Architecture Drawer, Attendance Correction, Instructor Check-in |
 | Remote Supabase Staging Execution (`0005` + `0003`/`0004`/`0005`) | `.github/workflows/supabase-staging-verify.yml` / Staging SQL Editor | **BLOCKED (Staging DB credentials absent in sandbox)** | Requires `SUPABASE_STAGING_DB_URL` secret or manual staging SQL Editor execution |
+
+---
+
+## 10. Phase 3 — Secure Account Provisioning & Authentication Integration
+
+### 10.1 Schema & Migration Statement
+
+Phase 3 requires **zero new database migrations** and **zero modifications to existing migrations (`0001`–`0005`)**. All required tables, columns, triggers, and RPCs already exist in the audited schema:
+
+- `profiles` (`id = auth.users.id`, `role`, `username`, `email`, `full_name_en`, `full_name_ar`, `phone`, `must_change_password`, `is_active`)
+- `admin_accounts` (`profile_id`, `assigned_slot IN (1, 2)`, `totp_enrolled`, `totp_verified_at`, hard-capped at 2 admins via `enforce_max_two_admins()`)
+- `instructors` (`profile_id`, `instructor_code`, `specialization`, `default_lecture_rate_egp`, `bio`)
+- `camp_instructors` (`camp_id`, `instructor_id`)
+- `bootstrap_cits_admin_account(UUID, TEXT, TEXT, TEXT, SMALLINT)` (revoked from `PUBLIC`, `anon`, and `authenticated`; executable only by privileged SQL/service role)
+- `resolve_login_identifier(TEXT)` (returns email only when `profiles.is_active = TRUE`)
+- `complete_password_change_tx()` & `record_admin_totp_verified_tx()`
+- `is_cits_admin()` (enforces `profiles.is_active = TRUE` AND `auth.jwt() ->> 'aal' = 'aal2'`)
+
+---
+
+### 10.2 Phase 3.1 — Secure Admin Account Bootstrap Procedure (Max 2 Slots)
+
+Admin accounts are **never** self-registered and cannot be created from the browser frontend.
+
+1. In **Supabase Dashboard → Authentication → Users**, click **Add user → Create new user**:
+   - Enter the Admin's official email and a strong initial password (confirm email).
+   - Copy the generated **User UID** (`auth.users.id`).
+2. Open **Supabase Dashboard → SQL Editor** (runs with privileged `postgres` / service role) and execute:
+   ```sql
+   SELECT public.bootstrap_cits_admin_account(
+     '<AUTH_USER_UUID>'::uuid,
+     'tarek.mansour',
+     'Eng. Tarek Mansour',
+     'م. طارق منصور',
+     1::smallint -- Slot 1 or Slot 2 only; 3rd admin is rejected by DB trigger
+   );
+   ```
+3. Verify the link:
+   ```sql
+   SELECT p.id, p.username, p.email, p.role, p.is_active, a.assigned_slot, a.totp_enrolled
+   FROM public.profiles p
+   JOIN public.admin_accounts a ON a.profile_id = p.id
+   ORDER BY a.assigned_slot;
+   ```
+4. On first login at the CITS Portal, the Admin signs in with their email or username, completes mandatory **TOTP Authenticator App Enrollment** (QR code + 6-digit code), upgrades their session to **AAL2**, and unlocks the Admin Dashboard.
+
+---
+
+### 10.3 Phase 3.2 — Deploying the `provision-instructor` Edge Function
+
+Instructor provisioning runs exclusively inside the server-side Supabase Edge Function `supabase/functions/provision-instructor/index.ts`. The browser never holds `SUPABASE_SERVICE_ROLE_KEY`.
+
+#### Required Secrets (Server-Side Only — Never in Frontend `.env`)
+
+| Variable | Location | Purpose |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Frontend `.env` / Hosting (Vercel) | Public project URL |
+| `VITE_SUPABASE_ANON_KEY` | Frontend `.env` / Hosting (Vercel) | Public anon / publishable key (RLS enforced) |
+| `SUPABASE_URL` | Supabase Edge Function Secret (auto-injected) | Project URL inside Deno runtime |
+| `SUPABASE_ANON_KEY` | Supabase Edge Function Secret (auto-injected) | Used to verify caller JWT via `auth.getUser(token)` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Edge Function Secret (auto-injected) | Used strictly server-side for `auth.admin.inviteUserByEmail` / `auth.admin.createUser` and atomic rollback |
+| `ALLOWED_ORIGINS` *(optional)* | Supabase Edge Function Secret | Comma-separated origin allowlist (e.g. `https://your-domain.vercel.app`) |
+
+#### Deploy Command (Supabase CLI)
+
+```bash
+supabase login
+supabase link --project-ref wdmlxsgbjkboadkeekdq
+supabase functions deploy provision-instructor --no-verify-jwt=false
+```
+
+*(Note: The function itself also explicitly validates `Authorization: Bearer <jwt>` via `userClient.auth.getUser(token)`, verifies `aal === 'aal2'`, verifies `profiles.role = 'admin' AND is_active = true`, and confirms the caller holds `admin_accounts.assigned_slot IN (1, 2)`.)*
+
+#### Compensating Rollback Guarantee
+
+If any step fails after `auth.users` creation (profile insert, instructor insert, or camp assignment), the Edge Function executes compensating deletes in reverse order (`camp_instructors` → `instructors` → `profiles` → `auth.admin.deleteUser(createdAuthUserId)`) so partial or orphan accounts are never left behind.
+
+---
+
+### 10.4 Instructor Onboarding Workflows
+
+Admins manage instructors from **Admin Dashboard → Instructors → Provision Instructor**:
+
+1. **Invite Email Flow (`invite_email` — Recommended)**:
+   - Edge Function calls `auth.admin.inviteUserByEmail(email)` and inserts `profiles` (`role = 'instructor'`, `must_change_password = true`) + `instructors` + optional `camp_instructors`.
+   - Instructor receives the Supabase invite email, sets their password, and signs in.
+2. **One-Time Temporary Password Flow (`temporary_password`)**:
+   - Edge Function generates a cryptographically strong 16-character password (or validates an admin-supplied strong password), calls `auth.admin.createUser({ email, password, email_confirm: true })`, and sets `profiles.must_change_password = true`.
+   - The temporary password is returned **once** with `Cache-Control: no-store`, displayed in a dismissible Admin handoff banner, and **never** logged or stored in plaintext.
+   - On first login, the instructor is locked to the **Mandatory First-Login Password Change** gate (`complete_password_change_tx()`) and cannot access the Instructor Dashboard until they rotate their password.
+
+---
+
+### 10.5 Account Lifecycle, Deactivation & Troubleshooting
+
+- **Deactivation (`profiles.is_active = FALSE`)**: Use **Deactivate** in Admin → Instructors (never delete instructor accounts). Deactivated users are immediately blocked by `resolve_login_identifier()`, `is_active_cits_user()`, RLS policies, and `loadAuthenticatedUserContext()`, while historical lectures, attendance sheets, and financial payouts remain preserved.
+- **Password Reset / Recovery**: Use **Reset** on any instructor row to dispatch a Supabase recovery email (`auth.resetPasswordForEmail`).
+- **Local Development Sandbox Selector**: Strictly restricted to `import.meta.env.DEV && !isSupabaseMode`. In production builds (`vite build`) or whenever `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are configured, the sandbox selector is completely omitted.
+- **Common Troubleshooting**:
+  - `403 Administrator MFA (AAL2) verification is required`: Admin session is at `aal1`; sign out and complete TOTP verification.
+  - `409 An account with this email/username/code already exists`: Duplicate identity prevented before Auth creation; verify existing accounts (including disabled ones).
+  - `Auth user exists without matching profile`: Verify `profiles.id === auth.users.id` in SQL Editor; never create instructors directly in Supabase Auth Dashboard without linked `profiles` and `instructors` rows.
+

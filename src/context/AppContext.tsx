@@ -70,6 +70,12 @@ import {
   validateStudentBatchImport,
 } from '../domain/businessRules';
 import {
+  generateSecureTemporaryPassword,
+  ProvisionInstructorInput,
+  ProvisionInstructorOutcome,
+  validateProvisionInstructorInput,
+} from '../domain/accountProvisioning';
+import {
   deleteOfflineAttendanceDraft,
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
@@ -92,12 +98,14 @@ import {
   loadAuthenticatedUserContext,
   markNotificationReadInDb,
   overrideEntitlementInDb,
+  provisionInstructorViaEdgeFunction,
   recordBackupExportInDb,
   resolveAndSignInWithSupabase,
   resolveIssueInDb,
   reviewCheckinExceptionInDb,
   reviewInstructorRequestInDb,
   saveAttendanceRecordsDraftToDb,
+  sendInstructorPasswordResetEmail,
   signOutSupabase,
   submitAttendanceSheetInDb,
   submitDailyCheckinInDb,
@@ -232,14 +240,22 @@ interface AppContextValue {
     capacity: number;
   }) => Promise<ActionResult>;
 
+  provisionInstructor: (input: ProvisionInstructorInput) => Promise<ProvisionInstructorOutcome>;
+
   updateInstructorAccount: (input: {
     instructorId: string;
     profileId: string;
+    fullNameEn?: string;
+    fullNameAr?: string;
+    phone?: string;
+    bio?: string;
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
     assignedToActiveCamp: boolean;
   }) => Promise<ActionResult>;
+
+  triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
 
   createSingleStudent: (input: {
     groupId: string;
@@ -1251,19 +1267,202 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const provisionInstructor = async (
+    input: ProvisionInstructorInput
+  ): Promise<ProvisionInstructorOutcome> => {
+    if (
+      !auth.isAuthenticated ||
+      auth.currentProfile.role !== UserRole.ADMIN ||
+      !auth.currentProfile.isActive
+    ) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: t(
+          'Only active, authenticated administrators may provision instructor accounts.',
+          'يُسمح فقط للمسؤولين النشطين والمصادق عليهم بإنشاء حسابات المحاضرين.'
+        ),
+      };
+    }
+
+    if (isSupabaseMode) {
+      const outcome = await provisionInstructorViaEdgeFunction(input);
+      if (outcome.ok) {
+        await refreshOperationalData();
+      }
+      return outcome;
+    }
+
+    if (!import.meta.env.DEV) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: 'Supabase configuration is required for instructor provisioning in production.',
+      };
+    }
+
+    const validation = validateProvisionInstructorInput(input, {
+      emails: profiles.map((p) => p.email),
+      usernames: profiles.map((p) => p.username),
+      instructorCodes: instructors.map((i) => i.instructorCode),
+    });
+
+    if (!validation.valid) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: validation.errors[0] || 'Invalid instructor provisioning input.',
+        fieldErrors: validation.fieldErrors,
+      };
+    }
+
+    const normalized = validation.normalized;
+    if (normalized.assignToCampId) {
+      const targetCamp = camps.find((c) => c.id === normalized.assignToCampId);
+      if (!targetCamp) {
+        return {
+          ok: false,
+          statusCode: 400,
+          error: 'Selected camp was not found.',
+          fieldErrors: { assignToCampId: 'Selected camp was not found.' },
+        };
+      }
+      if (targetCamp.status === CampStatus.ARCHIVED) {
+        return {
+          ok: false,
+          statusCode: 409,
+          error: 'Cannot assign an instructor to an archived camp.',
+          fieldErrors: { assignToCampId: 'Cannot assign an instructor to an archived camp.' },
+        };
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const newProfileId = `prof-inst-${Date.now()}`;
+    const newInstructorId = `inst-${Date.now()}`;
+    const oneTimeTempPassword =
+      normalized.deliveryMode === 'temporary_password'
+        ? normalized.temporaryPassword || generateSecureTemporaryPassword()
+        : undefined;
+
+    const newProfile: Profile = {
+      id: newProfileId,
+      role: UserRole.INSTRUCTOR,
+      username: normalized.username,
+      email: normalized.email,
+      fullNameEn: normalized.fullNameEn,
+      fullNameAr: normalized.fullNameAr,
+      phone: normalized.phone || '',
+      mustChangePassword: true,
+      isActive: normalized.isActive,
+      createdAt: nowIso,
+    };
+
+    const newInstructor: Instructor = {
+      id: newInstructorId,
+      profileId: newProfileId,
+      instructorCode: normalized.instructorCode,
+      username: normalized.username,
+      email: normalized.email,
+      fullNameEn: normalized.fullNameEn,
+      fullNameAr: normalized.fullNameAr,
+      phone: normalized.phone || '',
+      bio: normalized.bio || undefined,
+      specialization: normalized.specialization,
+      defaultLectureRateEgp: normalized.defaultLectureRateEgp,
+      isActive: normalized.isActive,
+    };
+
+    setProfiles((prev) => [...prev, newProfile]);
+    setInstructors((prev) => [...prev, newInstructor]);
+
+    if (normalized.assignToCampId) {
+      setCampInstructorIds((prev) => {
+        const list = prev[normalized.assignToCampId!] || [];
+        return {
+          ...prev,
+          [normalized.assignToCampId!]: Array.from(new Set([...list, newInstructorId])),
+        };
+      });
+    }
+
+    appendSandboxAudit(
+      'INSTRUCTOR_ACCOUNT_PROVISIONED',
+      'instructors',
+      newInstructorId,
+      null,
+      {
+        profile_id: newProfileId,
+        instructor_code: normalized.instructorCode,
+        username: normalized.username,
+        email: normalized.email,
+        default_lecture_rate_egp: normalized.defaultLectureRateEgp,
+        is_active: normalized.isActive,
+        onboarding_mode:
+          normalized.deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential',
+        onboarding_rotation_required: true,
+        assigned_camp_id: normalized.assignToCampId,
+      },
+      'Admin provisioned instructor account in local operational sandbox',
+      normalized.assignToCampId
+    );
+
+    return {
+      ok: true,
+      profileId: newProfileId,
+      instructorId: newInstructorId,
+      instructorCode: normalized.instructorCode,
+      username: normalized.username,
+      email: normalized.email,
+      fullNameEn: normalized.fullNameEn,
+      fullNameAr: normalized.fullNameAr,
+      specialization: normalized.specialization,
+      defaultLectureRateEgp: normalized.defaultLectureRateEgp,
+      phone: normalized.phone,
+      bio: normalized.bio,
+      isActive: normalized.isActive,
+      mustChangePassword: true,
+      assignedCampId: normalized.assignToCampId,
+      deliveryMode: normalized.deliveryMode,
+      ...(oneTimeTempPassword ? { initialTemporaryPassword: oneTimeTempPassword } : {}),
+    };
+  };
+
   const updateInstructorAccount = async (input: {
     instructorId: string;
     profileId: string;
+    fullNameEn?: string;
+    fullNameAr?: string;
+    phone?: string;
+    bio?: string;
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
     assignedToActiveCamp: boolean;
   }): Promise<ActionResult> => {
+    if (
+      !auth.isAuthenticated ||
+      auth.currentProfile.role !== UserRole.ADMIN ||
+      !auth.currentProfile.isActive
+    ) {
+      return {
+        ok: false,
+        error: t(
+          'Only active administrators can update instructor accounts.',
+          'فقط المسؤولون النشطون يمكنهم تعديل حسابات المحاضرين.'
+        ),
+      };
+    }
+
     if (isSupabaseMode) {
       try {
         await updateInstructorInDb({
           instructorId: input.instructorId,
           profileId: input.profileId,
+          fullNameEn: input.fullNameEn,
+          fullNameAr: input.fullNameAr,
+          phone: input.phone,
+          bio: input.bio,
           specialization: input.specialization,
           defaultLectureRateEgp: input.defaultLectureRateEgp,
           isActive: input.isActive,
@@ -1285,6 +1484,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         inst.id === input.instructorId
           ? {
               ...inst,
+              fullNameEn:
+                input.fullNameEn !== undefined && input.fullNameEn.trim()
+                  ? input.fullNameEn.trim()
+                  : inst.fullNameEn,
+              fullNameAr:
+                input.fullNameAr !== undefined && input.fullNameAr.trim()
+                  ? input.fullNameAr.trim()
+                  : inst.fullNameAr,
+              phone: input.phone !== undefined ? input.phone.trim() : inst.phone,
+              bio: input.bio !== undefined ? input.bio.trim() : inst.bio,
               specialization: input.specialization.trim(),
               defaultLectureRateEgp: Math.max(0, Math.round(input.defaultLectureRateEgp)),
               isActive: input.isActive,
@@ -1293,7 +1502,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     setProfiles((prev) =>
-      prev.map((p) => (p.id === input.profileId ? { ...p, isActive: input.isActive } : p))
+      prev.map((p) =>
+        p.id === input.profileId
+          ? {
+              ...p,
+              fullNameEn:
+                input.fullNameEn !== undefined && input.fullNameEn.trim()
+                  ? input.fullNameEn.trim()
+                  : p.fullNameEn,
+              fullNameAr:
+                input.fullNameAr !== undefined && input.fullNameAr.trim()
+                  ? input.fullNameAr.trim()
+                  : p.fullNameAr,
+              phone: input.phone !== undefined ? input.phone.trim() : p.phone,
+              isActive: input.isActive,
+            }
+          : p
+      )
     );
     if (activeCamp) {
       setCampInstructorIds((prev) => {
@@ -1313,7 +1538,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         defaultLectureRateEgp: input.defaultLectureRateEgp,
         isActive: input.isActive,
       },
-      'Instructor defaults & active status updated (existing lecture frozen rates preserved)'
+      'Instructor profile, defaults & active status updated (existing lecture frozen rates preserved)'
+    );
+    return { ok: true };
+  };
+
+  const triggerInstructorPasswordReset = async (instructorId: string): Promise<ActionResult> => {
+    if (
+      !auth.isAuthenticated ||
+      auth.currentProfile.role !== UserRole.ADMIN ||
+      !auth.currentProfile.isActive
+    ) {
+      return {
+        ok: false,
+        error: t(
+          'Only active administrators can initiate account recovery.',
+          'فقط المسؤولون النشطون يمكنهم بدء استعادة الحساب.'
+        ),
+      };
+    }
+
+    const inst = instructors.find((i) => i.id === instructorId);
+    if (!inst) {
+      return { ok: false, error: t('Instructor not found.', 'تعذر العثور على المحاضر.') };
+    }
+
+    if (isSupabaseMode) {
+      try {
+        await sendInstructorPasswordResetEmail(inst.email);
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Unable to send recovery email.',
+        };
+      }
+    }
+
+    setProfiles((prev) =>
+      prev.map((p) => (p.id === inst.profileId ? { ...p, mustChangePassword: true } : p))
+    );
+    appendSandboxAudit(
+      'INSTRUCTOR_RECOVERY_INITIATED',
+      'profiles',
+      inst.profileId,
+      null,
+      {
+        instructor_id: inst.id,
+        email: inst.email,
+        onboarding_rotation_required: true,
+      },
+      'Admin initiated instructor recovery and enforced next-login credential rotation'
     );
     return { ok: true };
   };
@@ -2823,7 +3098,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activateCamp,
         archiveCamp,
         upsertGroup,
+        provisionInstructor,
         updateInstructorAccount,
+        triggerInstructorPasswordReset,
         createSingleStudent,
         transferStudent,
         addScheduleLecture,

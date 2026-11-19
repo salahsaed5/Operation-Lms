@@ -12,10 +12,23 @@ import {
   Tent,
   Users,
   GraduationCap,
+  Eye,
+  KeyRound,
+  RefreshCw,
+  Copy,
+  Check,
+  Power,
+  X,
+  Mail,
+  Lock,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
 import { RawStudentImportRow } from '../../domain/businessRules';
+import {
+  CredentialDeliveryMode,
+  validateProvisionInstructorInput,
+} from '../../domain/accountProvisioning';
 import {
   BTN_PRIMARY,
   BTN_SECONDARY,
@@ -773,28 +786,100 @@ export const AdminCampsView: React.FC = () => {
   );
 };
 
+const INSTRUCTORS_PAGE_SIZE = 10;
+
+interface OneTimeCredentialHandoff {
+  fullNameEn: string;
+  username: string;
+  email: string;
+  instructorCode: string;
+  temporaryPassword: string;
+}
+
 export const AdminInstructorsView: React.FC = () => {
   const {
     activeCamp,
     campInstructorIds,
     instructors,
+    groups,
     adminAccounts,
     profiles,
+    isSupabaseMode,
+    isLoadingData,
+    dataError,
+    refreshOperationalData,
+    provisionInstructor,
     updateInstructorAccount,
+    triggerInstructorPasswordReset,
     t,
   } = useApp();
 
+  // Create / Provision Instructor form state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newFullNameEn, setNewFullNameEn] = useState('');
+  const [newFullNameAr, setNewFullNameAr] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newInstructorCode, setNewInstructorCode] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newSpecialization, setNewSpecialization] = useState('');
+  const [newRateEgp, setNewRateEgp] = useState(activeCamp?.settings.defaultLectureRateEgp ?? 700);
+  const [newBio, setNewBio] = useState('');
+  const [newIsActive, setNewIsActive] = useState(true);
+  const [newAssignToActiveCamp, setNewAssignToActiveCamp] = useState(
+    Boolean(activeCamp && activeCamp.status !== CampStatus.ARCHIVED)
+  );
+  const [deliveryMode, setDeliveryMode] = useState<CredentialDeliveryMode>('invite_email');
+  const [customTempPassword, setCustomTempPassword] = useState('');
+  const [createFieldErrors, setCreateFieldErrors] = useState<Record<string, string>>({});
+  const [oneTimeHandoff, setOneTimeHandoff] = useState<OneTimeCredentialHandoff | null>(null);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+
+  // View Details modal state
+  const [viewingInst, setViewingInst] = useState<Instructor | null>(null);
+
+  // Edit Instructor state
   const [editingInst, setEditingInst] = useState<Instructor | null>(null);
-  const [specialization, setSpecialization] = useState('');
+  const [editFullNameEn, setEditFullNameEn] = useState('');
+  const [editFullNameAr, setEditFullNameAr] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editSpecialization, setEditSpecialization] = useState('');
+  const [editBio, setEditBio] = useState('');
   const [rateEgp, setRateEgp] = useState(700);
   const [isActive, setIsActive] = useState(true);
   const [assignedToCamp, setAssignedToCamp] = useState(true);
+
+  // Confirmation dialog targets
+  const [toggleStatusTarget, setToggleStatusTarget] = useState<Instructor | null>(null);
+  const [resetTarget, setResetTarget] = useState<Instructor | null>(null);
+
+  // Search, filter, pagination, feedback
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InstructorFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const assignedSet = new Set(activeCamp ? campInstructorIds[activeCamp.id] || [] : []);
+  const assignedSet = useMemo(
+    () => new Set(activeCamp ? campInstructorIds[activeCamp.id] || [] : []),
+    [activeCamp, campInstructorIds]
+  );
+
+  const profileById = useMemo(
+    () => new Map(profiles.map((p) => [p.id, p])),
+    [profiles]
+  );
+
+  const groupsByInstructor = useMemo(() => {
+    const map = new Map<string, typeof groups>();
+    for (const grp of groups) {
+      if (activeCamp && grp.campId !== activeCamp.id) continue;
+      const list = map.get(grp.primaryInstructorId) || [];
+      list.push(grp);
+      map.set(grp.primaryInstructorId, list);
+    }
+    return map;
+  }, [groups, activeCamp]);
 
   const filteredInstructors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -807,14 +892,163 @@ export const AdminInstructorsView: React.FC = () => {
         inst.fullNameAr.toLowerCase().includes(q) ||
         inst.instructorCode.toLowerCase().includes(q) ||
         inst.username.toLowerCase().includes(q) ||
+        inst.email.toLowerCase().includes(q) ||
         inst.specialization.toLowerCase().includes(q)
       );
     });
   }, [instructors, searchQuery, statusFilter]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredInstructors.length / INSTRUCTORS_PAGE_SIZE));
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [filteredInstructors.length, currentPage]);
+
+  const paginatedInstructors = useMemo(() => {
+    const start = (currentPage - 1) * INSTRUCTORS_PAGE_SIZE;
+    return filteredInstructors.slice(start, start + INSTRUCTORS_PAGE_SIZE);
+  }, [filteredInstructors, currentPage]);
+
+  const resetCreateForm = () => {
+    setNewFullNameEn('');
+    setNewFullNameAr('');
+    setNewEmail('');
+    setNewUsername('');
+    setNewInstructorCode('');
+    setNewPhone('');
+    setNewSpecialization('');
+    setNewRateEgp(activeCamp?.settings.defaultLectureRateEgp ?? 700);
+    setNewBio('');
+    setNewIsActive(true);
+    setNewAssignToActiveCamp(Boolean(activeCamp && activeCamp.status !== CampStatus.ARCHIVED));
+    setDeliveryMode('invite_email');
+    setCustomTempPassword('');
+    setCreateFieldErrors({});
+  };
+
+  const handleOpenCreateForm = () => {
+    setEditingInst(null);
+    setViewingInst(null);
+    setFeedback(null);
+    setCreateFieldErrors({});
+    if (!showCreateForm) {
+      setNewRateEgp(activeCamp?.settings.defaultLectureRateEgp ?? 700);
+      setNewAssignToActiveCamp(Boolean(activeCamp && activeCamp.status !== CampStatus.ARCHIVED));
+    }
+    setShowCreateForm((prev) => !prev);
+  };
+
+  const handleProvisionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isBusy) return;
+    setFeedback(null);
+
+    const payload = {
+      fullNameEn: newFullNameEn,
+      fullNameAr: newFullNameAr,
+      email: newEmail,
+      username: newUsername,
+      instructorCode: newInstructorCode,
+      phone: newPhone,
+      specialization: newSpecialization,
+      defaultLectureRateEgp: newRateEgp,
+      bio: newBio,
+      isActive: newIsActive,
+      assignToCampId:
+        newAssignToActiveCamp && activeCamp && activeCamp.status !== CampStatus.ARCHIVED
+          ? activeCamp.id
+          : null,
+      deliveryMode,
+      temporaryPassword:
+        deliveryMode === 'temporary_password' && customTempPassword.trim()
+          ? customTempPassword
+          : undefined,
+    };
+
+    const clientCheck = validateProvisionInstructorInput(payload, {
+      emails: profiles.map((p) => p.email),
+      usernames: profiles.map((p) => p.username),
+      instructorCodes: instructors.map((i) => i.instructorCode),
+    });
+
+    if (!clientCheck.valid) {
+      setCreateFieldErrors(clientCheck.fieldErrors as Record<string, string>);
+      setFeedback({
+        ok: false,
+        text:
+          clientCheck.errors[0] ||
+          t('Please correct the highlighted fields.', 'يرجى تصحيح الحقول المحددة.'),
+      });
+      return;
+    }
+
+    setCreateFieldErrors({});
+    setIsBusy(true);
+    try {
+      const outcome = await provisionInstructor(payload);
+      if (!outcome.ok) {
+        if (outcome.fieldErrors) setCreateFieldErrors(outcome.fieldErrors as Record<string, string>);
+        setFeedback({
+          ok: false,
+          text: outcome.error || t('Unable to provision instructor.', 'تعذر إنشاء حساب المحاضر.'),
+        });
+        return;
+      }
+
+      if (outcome.deliveryMode === 'temporary_password' && outcome.initialTemporaryPassword) {
+        setOneTimeHandoff({
+          fullNameEn: newFullNameEn.trim(),
+          username: outcome.username,
+          email: outcome.email,
+          instructorCode: outcome.instructorCode,
+          temporaryPassword: outcome.initialTemporaryPassword,
+        });
+        setCopiedSecret(false);
+      }
+
+      setFeedback({
+        ok: true,
+        text:
+          outcome.deliveryMode === 'invite_email'
+            ? t(
+                `Instructor ${outcome.instructorCode} provisioned and onboarding invite dispatched to ${outcome.email}.`,
+                `تم إنشاء حساب المحاضر ${outcome.instructorCode} وإرسال دعوة التفعيل إلى ${outcome.email}.`
+              )
+            : t(
+                `Instructor ${outcome.instructorCode} provisioned with a one-time temporary password. Copy it below — it will not be shown again.`,
+                `تم إنشاء حساب المحاضر ${outcome.instructorCode} بكلمة مرور مؤقتة لمرة واحدة. انسخها أدناه لأنها لن تُعرض مرة أخرى.`
+              ),
+      });
+
+      resetCreateForm();
+      setShowCreateForm(false);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleCopyTempPassword = async () => {
+    if (!oneTimeHandoff) return;
+    try {
+      await navigator.clipboard.writeText(oneTimeHandoff.temporaryPassword);
+      setCopiedSecret(true);
+    } catch {
+      setCopiedSecret(false);
+    }
+  };
+
   const openEdit = (inst: Instructor) => {
+    setShowCreateForm(false);
+    setViewingInst(null);
     setEditingInst(inst);
-    setSpecialization(inst.specialization);
+    setEditFullNameEn(inst.fullNameEn);
+    setEditFullNameAr(inst.fullNameAr);
+    setEditPhone(inst.phone || '');
+    setEditSpecialization(inst.specialization);
+    setEditBio(inst.bio || '');
     setRateEgp(inst.defaultLectureRateEgp);
     setIsActive(inst.isActive);
     setAssignedToCamp(activeCamp ? assignedSet.has(inst.id) : true);
@@ -823,13 +1057,28 @@ export const AdminInstructorsView: React.FC = () => {
 
   const handleSaveInst = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingInst) return;
+    if (!editingInst || isBusy) return;
+    if (!editFullNameEn.trim() || !editSpecialization.trim() || rateEgp < 0) {
+      setFeedback({
+        ok: false,
+        text: t(
+          'English name, specialization, and a non-negative default rate are required.',
+          'الاسم بالإنجليزية والتخصص وفئة المحاضرة غير السالبة مطلوبة.'
+        ),
+      });
+      return;
+    }
+
     setIsBusy(true);
     try {
       const res = await updateInstructorAccount({
         instructorId: editingInst.id,
         profileId: editingInst.profileId,
-        specialization: specialization.trim(),
+        fullNameEn: editFullNameEn.trim(),
+        fullNameAr: editFullNameAr.trim() || editFullNameEn.trim(),
+        phone: editPhone.trim(),
+        bio: editBio.trim(),
+        specialization: editSpecialization.trim(),
         defaultLectureRateEgp: rateEgp,
         isActive,
         assignedToActiveCamp: assignedToCamp,
@@ -851,15 +1100,113 @@ export const AdminInstructorsView: React.FC = () => {
     }
   };
 
+  const handleConfirmToggleStatus = async () => {
+    if (!toggleStatusTarget || isBusy) return;
+    const nextActive = !toggleStatusTarget.isActive;
+    setIsBusy(true);
+    try {
+      const res = await updateInstructorAccount({
+        instructorId: toggleStatusTarget.id,
+        profileId: toggleStatusTarget.profileId,
+        specialization: toggleStatusTarget.specialization,
+        defaultLectureRateEgp: toggleStatusTarget.defaultLectureRateEgp,
+        isActive: nextActive,
+        assignedToActiveCamp: activeCamp ? assignedSet.has(toggleStatusTarget.id) : false,
+      });
+      if (!res.ok) {
+        setFeedback({
+          ok: false,
+          text: res.error || t('Unable to update account status.', 'تعذر تحديث حالة الحساب.'),
+        });
+      } else {
+        setFeedback({
+          ok: true,
+          text: nextActive
+            ? t(
+                `Account ${toggleStatusTarget.instructorCode} reactivated.`,
+                `تم إعادة تفعيل حساب المحاضر ${toggleStatusTarget.instructorCode}.`
+              )
+            : t(
+                `Account ${toggleStatusTarget.instructorCode} deactivated. Login access is blocked while historical records remain intact.`,
+                `تم تعطيل حساب المحاضر ${toggleStatusTarget.instructorCode}. تم حظر تسجيل الدخول مع الحفاظ على السجلات التاريخية.`
+              ),
+        });
+        setToggleStatusTarget(null);
+      }
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (!resetTarget || isBusy) return;
+    setIsBusy(true);
+    try {
+      const res = await triggerInstructorPasswordReset(resetTarget.id);
+      if (!res.ok) {
+        setFeedback({
+          ok: false,
+          text: res.error || t('Password recovery failed.', 'تعذر إرسال رابط استعادة كلمة المرور.'),
+        });
+      } else {
+        setFeedback({
+          ok: true,
+          text: isSupabaseMode
+            ? t(
+                `Password recovery email dispatched to ${resetTarget.email}.`,
+                `تم إرسال رابط استعادة كلمة المرور إلى ${resetTarget.email}.`
+              )
+            : t(
+                `Next-login password change enforced for ${resetTarget.username} (${resetTarget.email}).`,
+                `تم تفعيل التغيير الإلزامي لكلمة المرور عند الدخول التالي للمحاضر ${resetTarget.username}.`
+              ),
+        });
+        setResetTarget(null);
+      }
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const activeCount = instructors.filter((i) => i.isActive).length;
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={t('Instructors & Admin Accounts', 'المحاضرون وحسابات الإدارة')}
         subtitle={t(
-          'Manage instructor credentials, camp assignments, and frozen default lecture rates.',
-          'إدارة صلاحيات المحاضرين وتعيينهم بالمعسكر النشط وفئات المحاضرات.'
+          'Provision instructor accounts securely, manage camp assignments, account status, and frozen default lecture rates.',
+          'إنشاء حسابات المحاضرين بأمان، وإدارة التعيينات وحالة الحسابات وفئات المحاضرات الافتراضية.'
         )}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => refreshOperationalData()}
+              disabled={isLoadingData}
+              className={BTN_SECONDARY}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
+              <span>{t('Refresh', 'تحديث')}</span>
+            </button>
+            <button type="button" onClick={handleOpenCreateForm} className={BTN_PRIMARY}>
+              <UserPlus className="w-4 h-4" />
+              <span>
+                {showCreateForm
+                  ? t('Close Form', 'إغلاق النموذج')
+                  : t('Provision Instructor', 'إنشاء حساب محاضر')}
+              </span>
+            </button>
+          </>
+        }
       />
+
+      {dataError && (
+        <InlineBanner
+          type="error"
+          message={dataError}
+        />
+      )}
 
       {feedback && (
         <InlineBanner
@@ -869,12 +1216,105 @@ export const AdminInstructorsView: React.FC = () => {
         />
       )}
 
+      {/* One-Time Temporary Password Handoff Banner (cleared immediately on dismiss) */}
+      {oneTimeHandoff && (
+        <section
+          role="region"
+          aria-label={t('One-Time Temporary Password', 'كلمة المرور المؤقتة لمرة واحدة')}
+          className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-5 space-y-3"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <KeyRound className="w-5 h-5 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-sm font-bold text-amber-950 dark:text-amber-200">
+                  {t(
+                    'One-Time Temporary Password — Copy & Share Securely Now',
+                    'كلمة مرور مؤقتة لمرة واحدة — انسخها وشاركها بأمان الآن'
+                  )}
+                </h2>
+                <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                  {t(
+                    'This temporary password is displayed only once and is never stored in plaintext. The instructor will be forced to set a new password immediately on first sign-in.',
+                    'تُعرض كلمة المرور المؤقتة هذه مرة واحدة فقط ولا يتم تخزينها بنص واضح. سيُطلب من المحاضر تعيين كلمة مرور جديدة فور أول تسجيل دخول.'
+                  )}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOneTimeHandoff(null);
+                setCopiedSecret(false);
+              }}
+              className="px-2.5 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-xs font-medium text-amber-900 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 cursor-pointer shrink-0"
+            >
+              {t('Dismiss & Clear', 'إغلاق ومسح')}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-900/60 rounded-lg p-3.5">
+            <div>
+              <p className="text-slate-500">{t('Instructor', 'المحاضر')}</p>
+              <p className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                {oneTimeHandoff.fullNameEn} ({oneTimeHandoff.instructorCode})
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-500">{t('Login Identifier', 'معرّف الدخول')}</p>
+              <p className="font-mono text-slate-900 dark:text-white mt-0.5">
+                {oneTimeHandoff.username} · {oneTimeHandoff.email}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-500">{t('Temporary Password', 'كلمة المرور المؤقتة')}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <code
+                  data-testid="one-time-temp-password"
+                  className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-900 dark:text-white font-semibold select-all"
+                >
+                  {oneTimeHandoff.temporaryPassword}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopyTempPassword}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-slate-200 cursor-pointer"
+                >
+                  {copiedSecret ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>{t('Copied', 'تم النسخ')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>{t('Copy', 'نسخ')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Two Admin Accounts Policy Summary */}
       <section className={`${SURFACE_CARD} p-5 space-y-3`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('Provisioned Admin Accounts (2 / 2 Cap)', 'حسابات المسؤولين المعتمدة (الحد الأقصى 2 / 2)')}
-          </h2>
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t(
+                `Provisioned Admin Accounts (${adminAccounts.length} / 2 Cap)`,
+                `حسابات المسؤولين المعتمدة (الحد الأقصى ${adminAccounts.length} / 2)`
+              )}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {t(
+                'Admin accounts are server-bootstrapped only (max 2 slots) and require verified TOTP MFA (AAL2).',
+                'يتم تهيئة حسابات الإدارة من الخادم فقط (بحد أقصى حسابين) مع مصادقة ثنائية إلزامية TOTP (AAL2).'
+              )}
+            </p>
+          </div>
           <StatusBadge tone="info">
             {t('TOTP MFA Required', 'مصادقة ثنائية إلزامية')}
           </StatusBadge>
@@ -882,7 +1322,7 @@ export const AdminInstructorsView: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {adminAccounts.map((adm) => {
-            const prof = profiles.find((p) => p.id === adm.profileId);
+            const prof = profileById.get(adm.profileId);
             return (
               <div
                 key={adm.id}
@@ -896,26 +1336,435 @@ export const AdminInstructorsView: React.FC = () => {
                     {prof?.username} · {prof?.email}
                   </p>
                 </div>
-                <StatusBadge tone="success">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>{t(`Slot ${adm.assignedSlot}`, `منفذ ${adm.assignedSlot}`)}</span>
-                </StatusBadge>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <StatusBadge tone={adm.totpVerifiedAt ? 'success' : 'warning'}>
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>
+                      {adm.totpVerifiedAt
+                        ? t('MFA Verified', 'مصادقة مفعلة')
+                        : t('MFA Pending', 'بانتظار التفعيل')}
+                    </span>
+                  </StatusBadge>
+                  <StatusBadge tone="info">
+                    <span>{t(`Slot ${adm.assignedSlot}`, `منفذ ${adm.assignedSlot}`)}</span>
+                  </StatusBadge>
+                </div>
               </div>
             );
           })}
         </div>
       </section>
 
+      {/* Create / Provision Instructor Form */}
+      {showCreateForm && (
+        <form
+          onSubmit={handleProvisionSubmit}
+          noValidate
+          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('Provision New Instructor Account', 'إنشاء حساب محاضر جديد')}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {t(
+                  'Creates the Supabase Auth account, linked profile (must change password on first login), and instructor record atomically.',
+                  'ينشئ حساب المصادقة والملف الشخصي المرتبط (مع تغيير إلزامي لكلمة المرور عند أول دخول) وسجل المحاضر بشكل متكامل.'
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateForm(false);
+                setCreateFieldErrors({});
+              }}
+              aria-label={t('Close form', 'إغلاق النموذج')}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            <div>
+              <label htmlFor="prov-name-en" className={LABEL_CLASS}>
+                {t('Full Name (English) *', 'الاسم الكامل (بالإنجليزية) *')}
+              </label>
+              <input
+                id="prov-name-en"
+                type="text"
+                required
+                value={newFullNameEn}
+                onChange={(e) => setNewFullNameEn(e.target.value)}
+                placeholder="e.g. Eng. Youssef Nabil"
+                className={INPUT_CLASS}
+              />
+              {createFieldErrors.fullNameEn && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.fullNameEn}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-name-ar" className={LABEL_CLASS}>
+                {t('Full Name (Arabic)', 'الاسم الكامل (بالعربية)')}
+              </label>
+              <input
+                id="prov-name-ar"
+                type="text"
+                value={newFullNameAr}
+                onChange={(e) => setNewFullNameAr(e.target.value)}
+                placeholder="مثال: م. يوسف نبيل"
+                className={INPUT_CLASS}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="prov-email" className={LABEL_CLASS}>
+                {t('Email Address *', 'البريد الإلكتروني *')}
+              </label>
+              <input
+                id="prov-email"
+                type="email"
+                required
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="youssef.nabil@cits.edu.eg"
+                className={`${INPUT_CLASS} font-mono`}
+              />
+              {createFieldErrors.email && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.email}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-username" className={LABEL_CLASS}>
+                {t('Username *', 'اسم المستخدم *')}
+              </label>
+              <input
+                id="prov-username"
+                type="text"
+                required
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                placeholder="youssef.nabil"
+                className={`${INPUT_CLASS} font-mono`}
+              />
+              {createFieldErrors.username && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.username}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-code" className={LABEL_CLASS}>
+                {t('Instructor Code *', 'كود المحاضر *')}
+              </label>
+              <input
+                id="prov-code"
+                type="text"
+                required
+                value={newInstructorCode}
+                onChange={(e) => setNewInstructorCode(e.target.value)}
+                placeholder="INST-05"
+                className={`${INPUT_CLASS} font-mono uppercase`}
+              />
+              {createFieldErrors.instructorCode && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.instructorCode}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-spec" className={LABEL_CLASS}>
+                {t('Specialization *', 'التخصص *')}
+              </label>
+              <input
+                id="prov-spec"
+                type="text"
+                required
+                value={newSpecialization}
+                onChange={(e) => setNewSpecialization(e.target.value)}
+                placeholder="e.g. Algorithms & Dynamic Programming"
+                className={INPUT_CLASS}
+              />
+              {createFieldErrors.specialization && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.specialization}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-phone" className={LABEL_CLASS}>
+                {t('Phone Number', 'رقم الهاتف')}
+              </label>
+              <input
+                id="prov-phone"
+                type="tel"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="+20 100 000 0000"
+                className={`${INPUT_CLASS} font-mono`}
+              />
+              {createFieldErrors.phone && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.phone}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="prov-rate" className={LABEL_CLASS}>
+                {t('Default Lecture Rate (EGP) *', 'فئة المحاضرة الافتراضية (ج.م) *')}
+              </label>
+              <input
+                id="prov-rate"
+                type="number"
+                min={0}
+                required
+                value={newRateEgp}
+                onChange={(e) => setNewRateEgp(Number(e.target.value))}
+                className={`${INPUT_CLASS} font-mono tabular-nums`}
+              />
+              {createFieldErrors.defaultLectureRateEgp && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.defaultLectureRateEgp}
+                </p>
+              )}
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-1 flex flex-col justify-end gap-2.5 pb-1">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={newIsActive}
+                  onChange={(e) => setNewIsActive(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>{t('Account Active Immediately', 'تفعيل الحساب فوراً')}</span>
+              </label>
+              {activeCamp && activeCamp.status !== CampStatus.ARCHIVED && (
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={newAssignToActiveCamp}
+                    onChange={(e) => setNewAssignToActiveCamp(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{t(`Assign to ${activeCamp.code}`, `تعيين في معسكر ${activeCamp.code}`)}</span>
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="prov-bio" className={LABEL_CLASS}>
+              {t('Bio / Instructor Notes (Optional)', 'نبذة عن المحاضر (اختياري)')}
+            </label>
+            <textarea
+              id="prov-bio"
+              rows={2}
+              value={newBio}
+              onChange={(e) => setNewBio(e.target.value)}
+              placeholder={t(
+                'Short teaching profile or competition mentoring background...',
+                'نبذة مختصرة عن الخبرة التدريبية أو الإشراف على المسابقات...'
+              )}
+              className={INPUT_CLASS}
+            />
+            {createFieldErrors.bio && (
+              <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                {createFieldErrors.bio}
+              </p>
+            )}
+          </div>
+
+          {/* Onboarding Delivery Mode */}
+          <div className={`${SURFACE_SUBTLE} p-4 space-y-3`}>
+            <p className="text-xs font-semibold text-slate-900 dark:text-white">
+              {t('Onboarding Credential Flow', 'آلية تسليم بيانات الدخول الأولية')}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <label
+                className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  deliveryMode === 'invite_email'
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="invite_email"
+                  checked={deliveryMode === 'invite_email'}
+                  onChange={() => setDeliveryMode('invite_email')}
+                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
+                    <Mail className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{t('Send Invite Email (Recommended)', 'إرسال دعوة عبر البريد الإلكتروني (موصى به)')}</span>
+                  </div>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    {t(
+                      'Supabase sends a secure one-time invite link to the instructor’s email to set their own password.',
+                      'يرسل النظام رابط دعوة آمن لمرة واحدة إلى بريد المحاضر لتعيين كلمة مروره بنفسه.'
+                    )}
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  deliveryMode === 'temporary_password'
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="temporary_password"
+                  checked={deliveryMode === 'temporary_password'}
+                  onChange={() => setDeliveryMode('temporary_password')}
+                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
+                    <Lock className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{t('One-Time Temporary Password', 'كلمة مرور مؤقتة لمرة واحدة')}</span>
+                  </div>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    {t(
+                      'Generates a strong one-time password displayed once to the admin. Mandatory password change enforced on first login.',
+                      'تُنشأ كلمة مرور قوية لمرة واحدة تُعرض للمسؤول مرة واحدة فقط مع إلزام المحاضر بتغييرها عند أول دخول.'
+                    )}
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {deliveryMode === 'temporary_password' && (
+              <div className="pt-1">
+                <label htmlFor="prov-temp-password" className={LABEL_CLASS}>
+                  {t(
+                    'Custom Temporary Password (Optional — leave blank to auto-generate a 16-character strong password)',
+                    'كلمة مرور مؤقتة مخصصة (اختياري — اتركه فارغاً لتوليد كلمة مرور قوية تلقائياً)'
+                  )}
+                </label>
+                <input
+                  id="prov-temp-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={customTempPassword}
+                  onChange={(e) => setCustomTempPassword(e.target.value)}
+                  placeholder={t('Auto-generated if left blank', 'يتم التوليد تلقائياً إذا تُرك فارغاً')}
+                  className={`${INPUT_CLASS} font-mono max-w-md`}
+                />
+                {createFieldErrors.temporaryPassword && (
+                  <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                    {createFieldErrors.temporaryPassword}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                resetCreateForm();
+                setShowCreateForm(false);
+              }}
+              className={BTN_SECONDARY}
+            >
+              {t('Cancel', 'إلغاء')}
+            </button>
+            <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>
+              <UserPlus className="w-4 h-4" />
+              <span>
+                {isBusy
+                  ? t('Provisioning...', 'جاري إنشاء الحساب...')
+                  : t('Create Instructor Account', 'إنشاء حساب المحاضر')}
+              </span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Edit Instructor Form */}
       {editingInst && (
         <form
           onSubmit={handleSaveInst}
           className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
         >
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('Edit Instructor:', 'تعديل بيانات المحاضر:')}{' '}
-            {t(editingInst.fullNameEn, editingInst.fullNameAr)}
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('Edit Instructor:', 'تعديل بيانات المحاضر:')}{' '}
+                {t(editingInst.fullNameEn, editingInst.fullNameAr)}
+              </h2>
+              <p className="text-xs text-slate-500 font-mono mt-0.5">
+                {editingInst.instructorCode} · {editingInst.username} · {editingInst.email}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditingInst(null)}
+              aria-label={t('Close edit form', 'إغلاق نموذج التعديل')}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            <div>
+              <label htmlFor="inst-edit-name-en" className={LABEL_CLASS}>
+                {t('Full Name (English) *', 'الاسم الكامل (بالإنجليزية) *')}
+              </label>
+              <input
+                id="inst-edit-name-en"
+                type="text"
+                required
+                value={editFullNameEn}
+                onChange={(e) => setEditFullNameEn(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label htmlFor="inst-edit-name-ar" className={LABEL_CLASS}>
+                {t('Full Name (Arabic)', 'الاسم الكامل (بالعربية)')}
+              </label>
+              <input
+                id="inst-edit-name-ar"
+                type="text"
+                value={editFullNameAr}
+                onChange={(e) => setEditFullNameAr(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label htmlFor="inst-edit-phone" className={LABEL_CLASS}>
+                {t('Phone Number', 'رقم الهاتف')}
+              </label>
+              <input
+                id="inst-edit-phone"
+                type="tel"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                className={`${INPUT_CLASS} font-mono`}
+              />
+            </div>
             <div>
               <label htmlFor="inst-spec" className={LABEL_CLASS}>
                 {t('Specialization *', 'التخصص *')}
@@ -924,8 +1773,8 @@ export const AdminInstructorsView: React.FC = () => {
                 id="inst-spec"
                 type="text"
                 required
-                value={specialization}
-                onChange={(e) => setSpecialization(e.target.value)}
+                value={editSpecialization}
+                onChange={(e) => setEditSpecialization(e.target.value)}
                 className={INPUT_CLASS}
               />
             </div>
@@ -942,27 +1791,43 @@ export const AdminInstructorsView: React.FC = () => {
                 className={`${INPUT_CLASS} font-mono tabular-nums`}
               />
             </div>
-            <label className="flex items-center gap-2 pt-5 cursor-pointer text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={isActive}
-                onChange={(e) => setIsActive(e.target.checked)}
-                className="rounded text-blue-600 focus:ring-blue-500"
-              />
-              <span>{t('Account Active (Can Sign In)', 'الحساب نشط')}</span>
-            </label>
-            {activeCamp && (
-              <label className="flex items-center gap-2 pt-5 cursor-pointer text-slate-700 dark:text-slate-300">
+            <div className="flex flex-col justify-end gap-2 pb-1">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
                 <input
                   type="checkbox"
-                  checked={assignedToCamp}
-                  onChange={(e) => setAssignedToCamp(e.target.checked)}
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
                   className="rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>{t(`Assigned to ${activeCamp.code}`, `معين في ${activeCamp.code}`)}</span>
+                <span>{t('Account Active (Can Sign In)', 'الحساب نشط (يمكنه الدخول)')}</span>
               </label>
-            )}
+              {activeCamp && (
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={assignedToCamp}
+                    onChange={(e) => setAssignedToCamp(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{t(`Assigned to ${activeCamp.code}`, `معين في ${activeCamp.code}`)}</span>
+                </label>
+              )}
+            </div>
           </div>
+
+          <div>
+            <label htmlFor="inst-edit-bio" className={LABEL_CLASS}>
+              {t('Bio / Instructor Notes', 'نبذة عن المحاضر')}
+            </label>
+            <textarea
+              id="inst-edit-bio"
+              rows={2}
+              value={editBio}
+              onChange={(e) => setEditBio(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
@@ -980,13 +1845,16 @@ export const AdminInstructorsView: React.FC = () => {
 
       {/* Search & Status Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative sm:w-72">
+        <div className="relative sm:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('Search instructors or specialization...', 'ابحث عن محاضر أو تخصص...')}
+            placeholder={t(
+              'Search name, email, code, or specialization...',
+              'ابحث بالاسم أو البريد أو الكود أو التخصص...'
+            )}
             aria-label={t('Search instructors', 'بحث المحاضرين')}
             className={`${INPUT_CLASS} ps-9`}
           />
@@ -995,9 +1863,13 @@ export const AdminInstructorsView: React.FC = () => {
         <div className="flex items-center gap-1.5 text-xs">
           {(
             [
-              { id: 'all', en: 'All', ar: 'الكل' },
-              { id: 'active', en: 'Active', ar: 'نشط' },
-              { id: 'disabled', en: 'Disabled', ar: 'معطل' },
+              { id: 'all', en: `All (${instructors.length})`, ar: `الكل (${instructors.length})` },
+              { id: 'active', en: `Active (${activeCount})`, ar: `نشط (${activeCount})` },
+              {
+                id: 'disabled',
+                en: `Disabled (${instructors.length - activeCount})`,
+                ar: `معطل (${instructors.length - activeCount})`,
+              },
             ] as const
           ).map((tab) => (
             <button
@@ -1016,46 +1888,97 @@ export const AdminInstructorsView: React.FC = () => {
         </div>
       </div>
 
-      {filteredInstructors.length === 0 ? (
+      {/* Loading / Empty / Table States */}
+      {isLoadingData && instructors.length === 0 ? (
+        <div className={`${SURFACE_CARD} p-10 text-center text-xs text-slate-500`}>
+          {t('Loading instructor directory...', 'جاري تحميل قائمة المحاضرين...')}
+        </div>
+      ) : filteredInstructors.length === 0 ? (
         <EmptyState
           icon={Users}
           title={t('No matching instructors', 'لا يوجد محاضرون مطابقون للبحث')}
+          description={t(
+            'Adjust your search or status filter, or provision a new instructor account.',
+            'عدّل معايير البحث أو الفلترة، أو قم بإنشاء حساب محاضر جديد.'
+          )}
         />
       ) : (
         <div className={`${SURFACE_CARD} overflow-hidden`}>
           {/* Mobile Cards */}
           <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredInstructors.map((inst) => (
-              <div key={inst.id} className="p-4 space-y-2.5 text-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-sm text-slate-900 dark:text-white">
-                      {t(inst.fullNameEn, inst.fullNameAr)}
-                    </p>
-                    <p className="font-mono text-slate-500 mt-0.5">
-                      {inst.instructorCode} · {inst.username}
-                    </p>
+            {paginatedInstructors.map((inst) => {
+              const linkedProfile = profileById.get(inst.profileId);
+              const assignedGroups = groupsByInstructor.get(inst.id) || [];
+              const isAssigned = activeCamp ? assignedSet.has(inst.id) : false;
+              return (
+                <div key={inst.id} className="p-4 space-y-2.5 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
+                        {t(inst.fullNameEn, inst.fullNameAr)}
+                      </p>
+                      <p className="font-mono text-slate-500 mt-0.5 truncate">
+                        {inst.instructorCode} · {inst.username}
+                      </p>
+                      <p className="font-mono text-[11px] text-slate-400 truncate">{inst.email}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
+                        {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
+                      </StatusBadge>
+                      {linkedProfile?.mustChangePassword && (
+                        <StatusBadge tone="warning">
+                          {t('1st Login Pending', 'تغيير كلمة المرور')}
+                        </StatusBadge>
+                      )}
+                    </div>
                   </div>
-                  <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
-                    {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
-                  </StatusBadge>
+                  <p className="text-slate-600 dark:text-slate-400">{inst.specialization}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
+                        {inst.defaultLectureRateEgp} EGP
+                      </span>
+                      {activeCamp && (
+                        <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
+                          {isAssigned
+                            ? `${activeCamp.code} · ${assignedGroups.length} ${t('grp', 'مج')}`
+                            : t('Unassigned', 'غير معين')}
+                        </StatusBadge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingInst(inst)}
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>{t('View', 'عرض')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(inst)}
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>{t('Edit', 'تعديل')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setToggleStatusTarget(inst)}
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Power className="w-3 h-3" />
+                        <span>
+                          {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-slate-600 dark:text-slate-400">{inst.specialization}</p>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
-                    {inst.defaultLectureRateEgp} EGP
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(inst)}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Pencil className="w-3 h-3" />
-                    <span>{t('Edit', 'تعديل')}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Desktop Table */}
@@ -1063,64 +1986,120 @@ export const AdminInstructorsView: React.FC = () => {
             <table className="w-full text-start border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-                  <th className="py-3 px-5 font-semibold text-start">{t('Instructor', 'المحاضر')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Account', 'الحساب')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Specialization', 'التخصص')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Camp Scope', 'نطاق المعسكر')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Status', 'الحالة')}</th>
-                  <th className="py-3 px-4 font-semibold text-end">{t('Default Rate', 'الفئة الافتراضية')}</th>
-                  <th className="py-3 px-5 font-semibold text-end">{t('Actions', 'إجراءات')}</th>
+                  <th className="py-3 ps-4 pe-3 font-semibold text-start">{t('Instructor', 'المحاضر')}</th>
+                  <th className="py-3 px-3 font-semibold text-start">{t('Account', 'الحساب')}</th>
+                  <th className="py-3 px-3 font-semibold text-start">{t('Specialization', 'التخصص')}</th>
+                  <th className="py-3 px-3 font-semibold text-start">{t('Camp & Groups', 'المعسكر والمجموعات')}</th>
+                  <th className="py-3 px-3 font-semibold text-start">{t('Status', 'الحالة')}</th>
+                  <th className="py-3 px-3 font-semibold text-end whitespace-nowrap">{t('Default Rate', 'الفئة')}</th>
+                  <th className="py-3 ps-3 pe-4 font-semibold text-end">{t('Actions', 'إجراءات')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredInstructors.map((inst) => {
+                {paginatedInstructors.map((inst) => {
                   const isAssigned = activeCamp ? assignedSet.has(inst.id) : false;
+                  const linkedProfile = profileById.get(inst.profileId);
+                  const assignedGroups = groupsByInstructor.get(inst.id) || [];
                   return (
                     <tr
                       key={inst.id}
                       className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
                     >
-                      <td className="py-3.5 px-5">
-                        <p className="font-semibold text-slate-900 dark:text-white">
+                      <td className="py-3 ps-4 pe-3">
+                        <p className="font-semibold text-slate-900 dark:text-white whitespace-nowrap">
                           {t(inst.fullNameEn, inst.fullNameAr)}
                         </p>
                         <p className="text-slate-500 font-mono tabular-nums mt-0.5">
                           {inst.instructorCode}
                         </p>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-300">
-                        <div>{inst.username}</div>
-                        <div className="text-[11px] text-slate-400">{inst.email}</div>
+                      <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300 max-w-[190px]">
+                        <div className="truncate">{inst.username}</div>
+                        <div className="text-[11px] text-slate-400 truncate" title={inst.email}>
+                          {inst.email}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300">
-                        {inst.specialization}
+                      <td className="py-3 px-3 text-slate-700 dark:text-slate-300 max-w-[180px]">
+                        <span className="line-clamp-2">{inst.specialization}</span>
                       </td>
-                      <td className="py-3.5 px-4">
-                        {activeCamp ? (
-                          <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
-                            {isAssigned ? activeCamp.code : t('Unassigned', 'غير معين')}
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col items-start gap-1">
+                          {activeCamp ? (
+                            <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
+                              {isAssigned ? activeCamp.code : t('Unassigned', 'غير معين')}
+                            </StatusBadge>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                          <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                            {assignedGroups.length === 0
+                              ? t('No primary groups', 'لا توجد مجموعات')
+                              : t(
+                                  `${assignedGroups.length} group${assignedGroups.length > 1 ? 's' : ''}`,
+                                  `${assignedGroups.length} مجموعة`
+                                )}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
+                            {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
                           </StatusBadge>
-                        ) : (
-                          '—'
-                        )}
+                          {linkedProfile?.mustChangePassword && (
+                            <StatusBadge tone="warning">
+                              {t('1st Login Pending', 'تغيير كلمة المرور')}
+                            </StatusBadge>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
-                          {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
-                        </StatusBadge>
-                      </td>
-                      <td className="py-3.5 px-4 text-end font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
+                      <td className="py-3 px-3 text-end font-mono tabular-nums font-semibold text-slate-900 dark:text-white whitespace-nowrap">
                         {inst.defaultLectureRateEgp} EGP
                       </td>
-                      <td className="py-3.5 px-5 text-end">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(inst)}
-                          className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>{t('Edit', 'تعديل')}</span>
-                        </button>
+                      <td className="py-3 ps-3 pe-4 text-end">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingInst(inst)}
+                            title={t('View Details', 'عرض التفاصيل')}
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>{t('View', 'عرض')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(inst)}
+                            title={t('Edit Instructor', 'تعديل بيانات المحاضر')}
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>{t('Edit', 'تعديل')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResetTarget(inst)}
+                            title={t('Reset Password', 'استعادة كلمة المرور')}
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                          >
+                            <KeyRound className="w-3 h-3" />
+                            <span>{t('Reset', 'استعادة')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setToggleStatusTarget(inst)}
+                            className={`px-2 py-1 rounded-md border font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                              inst.isActive
+                                ? 'border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/30'
+                                : 'border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                            }`}
+                          >
+                            <Power className="w-3 h-3" />
+                            <span>
+                              {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                            </span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1128,8 +2107,218 @@ export const AdminInstructorsView: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          <PaginationBar
+            page={currentPage}
+            totalPages={Math.max(1, Math.ceil(filteredInstructors.length / INSTRUCTORS_PAGE_SIZE))}
+            totalItems={filteredInstructors.length}
+            pageSize={INSTRUCTORS_PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            labelShowing={t(
+              `Showing ${paginatedInstructors.length} of ${filteredInstructors.length} instructors`,
+              `عرض ${paginatedInstructors.length} من أصل ${filteredInstructors.length} محاضر`
+            )}
+          />
         </div>
       )}
+
+      {/* View Instructor Details Dialog */}
+      {viewingInst && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="view-instructor-title"
+          onClick={() => setViewingInst(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-lg space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2
+                  id="view-instructor-title"
+                  className="text-base font-bold text-slate-900 dark:text-white"
+                >
+                  {t(viewingInst.fullNameEn, viewingInst.fullNameAr)}
+                </h2>
+                <p className="text-xs font-mono text-slate-500 mt-0.5">
+                  {viewingInst.instructorCode} · {viewingInst.username}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingInst(null)}
+                aria-label={t('Close details', 'إغلاق التفاصيل')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {(() => {
+              const linkedProfile = profileById.get(viewingInst.profileId);
+              const assignedGroups = groupsByInstructor.get(viewingInst.id) || [];
+              const isAssigned = activeCamp ? assignedSet.has(viewingInst.id) : false;
+              return (
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('English Name', 'الاسم بالإنجليزية')}</dt>
+                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                      {viewingInst.fullNameEn}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Arabic Name', 'الاسم بالعربية')}</dt>
+                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                      {viewingInst.fullNameAr}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Email Address', 'البريد الإلكتروني')}</dt>
+                    <dd className="font-mono text-slate-900 dark:text-white mt-0.5 break-all">
+                      {viewingInst.email}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Phone', 'رقم الهاتف')}</dt>
+                    <dd className="font-mono text-slate-900 dark:text-white mt-0.5">
+                      {viewingInst.phone || '—'}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Specialization', 'التخصص')}</dt>
+                    <dd className="font-medium text-slate-900 dark:text-white mt-0.5">
+                      {viewingInst.specialization}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Default Lecture Rate', 'فئة المحاضرة الافتراضية')}</dt>
+                    <dd className="font-mono font-semibold text-slate-900 dark:text-white mt-0.5">
+                      {viewingInst.defaultLectureRateEgp} EGP
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Account Status', 'حالة الحساب')}</dt>
+                    <dd className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <StatusBadge tone={viewingInst.isActive ? 'success' : 'danger'}>
+                        {viewingInst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
+                      </StatusBadge>
+                      {linkedProfile?.mustChangePassword && (
+                        <StatusBadge tone="warning">
+                          {t('Password Change Pending', 'بانتظار تغيير كلمة المرور')}
+                        </StatusBadge>
+                      )}
+                    </dd>
+                  </div>
+                  <div className={`${SURFACE_SUBTLE} p-3`}>
+                    <dt className="text-slate-500">{t('Active Camp & Groups', 'المعسكر والمجموعات')}</dt>
+                    <dd className="mt-1 space-y-1">
+                      {activeCamp ? (
+                        <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
+                          {isAssigned ? activeCamp.code : t('Unassigned', 'غير معين')}
+                        </StatusBadge>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                      {assignedGroups.length > 0 && (
+                        <p className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                          {assignedGroups.map((g) => g.code).join(', ')}
+                        </p>
+                      )}
+                    </dd>
+                  </div>
+                  {viewingInst.bio && (
+                    <div className={`${SURFACE_SUBTLE} p-3 sm:col-span-2`}>
+                      <dt className="text-slate-500">{t('Bio / Notes', 'نبذة / ملاحظات')}</dt>
+                      <dd className="text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">
+                        {viewingInst.bio}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              );
+            })()}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setViewingInst(null)}
+                className={BTN_SECONDARY}
+              >
+                {t('Close', 'إغلاق')}
+              </button>
+              <button
+                type="button"
+                onClick={() => openEdit(viewingInst)}
+                className={BTN_PRIMARY}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{t('Edit Instructor', 'تعديل المحاضر')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Deactivate / Activate Dialog */}
+      <ConfirmDialog
+        open={Boolean(toggleStatusTarget)}
+        title={
+          toggleStatusTarget?.isActive
+            ? t('Deactivate Instructor Account?', 'تعطيل حساب المحاضر؟')
+            : t('Reactivate Instructor Account?', 'إعادة تفعيل حساب المحاضر؟')
+        }
+        description={
+          toggleStatusTarget
+            ? toggleStatusTarget.isActive
+              ? t(
+                  `Deactivating ${toggleStatusTarget.fullNameEn} (${toggleStatusTarget.instructorCode}) immediately prevents them from signing in. All historical lectures, attendance sheets, and payout records are preserved.`,
+                  `سيؤدي تعطيل حساب ${toggleStatusTarget.fullNameAr} (${toggleStatusTarget.instructorCode}) إلى منعه فوراً من تسجيل الدخول مع الحفاظ الكامل على سجل المحاضرات والحضور والمستحقات.`
+                )
+              : t(
+                  `Reactivating ${toggleStatusTarget.fullNameEn} (${toggleStatusTarget.instructorCode}) restores sign-in access to the Instructor Portal.`,
+                  `سيعيد تفعيل حساب ${toggleStatusTarget.fullNameAr} (${toggleStatusTarget.instructorCode}) صلاحية الدخول إلى بوابة المحاضرين.`
+                )
+            : ''
+        }
+        confirmLabel={
+          toggleStatusTarget?.isActive
+            ? t('Deactivate Account', 'تأكيد التعطيل')
+            : t('Activate Account', 'تأكيد التفعيل')
+        }
+        cancelLabel={t('Cancel', 'إلغاء')}
+        tone={toggleStatusTarget?.isActive ? 'danger' : 'primary'}
+        isBusy={isBusy}
+        onConfirm={handleConfirmToggleStatus}
+        onCancel={() => setToggleStatusTarget(null)}
+      />
+
+      {/* Confirm Password Reset / Recovery Dialog */}
+      <ConfirmDialog
+        open={Boolean(resetTarget)}
+        title={t('Initiate Password Reset?', 'إرسال استعادة كلمة المرور؟')}
+        description={
+          resetTarget
+            ? isSupabaseMode
+              ? t(
+                  `Send a Supabase password recovery email to ${resetTarget.email} for ${resetTarget.fullNameEn}?`,
+                  `هل تريد إرسال رابط استعادة كلمة المرور إلى ${resetTarget.email} للمحاضر ${resetTarget.fullNameAr}؟`
+                )
+              : t(
+                  `Require ${resetTarget.fullNameEn} (${resetTarget.username}) to set a new password on their next login?`,
+                  `هل تريد إلزام المحاضر ${resetTarget.fullNameAr} (${resetTarget.username}) بتغيير كلمة المرور عند الدخول التالي؟`
+                )
+            : ''
+        }
+        confirmLabel={t('Send Reset', 'تأكيد الاستعادة')}
+        cancelLabel={t('Cancel', 'إلغاء')}
+        tone="primary"
+        isBusy={isBusy}
+        onConfirm={handleConfirmPasswordReset}
+        onCancel={() => setResetTarget(null)}
+      />
     </div>
   );
 };

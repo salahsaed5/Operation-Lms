@@ -1323,6 +1323,7 @@ export interface Instructor {
   phone: string;
   specialization: string;
   defaultLectureRateEgp: number;
+  bio?: string;
   isActive: boolean;
 }
 
