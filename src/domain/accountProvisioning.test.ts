@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  AUTH_SERVICE_UNAVAILABLE_ERROR,
   AuthLoginAccountRecord,
   CallerAuthContext,
   createLoginRateLimitStore,
@@ -15,6 +16,7 @@ import {
   evaluateServerAuthorizationHelpers,
   evaluateStorageSelfieAccess,
   executeInstructorProvisioningWorkflow,
+  extractTrustedClientIp,
   ForcedPasswordChangeServerState,
   generateSecureTemporaryPassword,
   LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER,
@@ -25,6 +27,7 @@ import {
   ProvisioningRepositoryDeps,
   ProvisionInstructorInput,
   UNIFORM_AUTH_LOGIN_ERROR,
+  UNTRUSTED_IP_FALLBACK_KEY,
   validateInitialPasswordStrength,
   validateProvisionInstructorInput,
   validateSafeRedirectUrl,
@@ -1389,10 +1392,11 @@ test('Migration 0008 SEC-004: auth-login gateway prevents username/email enumera
   assert.ok((blockedIp.retryAfterSeconds || 0) >= 60);
 });
 
-test('Migration 0008 SEC-004 Static Audit: auth-login Edge Function enforces explicit CORS, SHA-256 rate limiting, uniform 401, timing floor, no-store, and zero secret logging', () => {
+test('Migration 0008 SEC-004/008/009/010 Static Audit: auth-login enforces explicit CORS, fail-closed 503 on pre/post RPC errors, cf-connecting-ip only, fixed-window docs, byte-limited stream read, 500ms+jitter floor, no-store, and zero secret logging', () => {
   const fnPath = path.resolve(process.cwd(), 'supabase/functions/auth-login/index.ts');
   const code = fs.readFileSync(fnPath, 'utf8');
 
+  // SEC-004 CORS & uniform 401
   assert.match(code, /DEFAULT_PRODUCTION_ORIGINS\s*=\s*\['https:\/\/operation-lms\.vercel\.app'\]/);
   assert.equal(/Access-Control-Allow-Origin':\s*'\*'/.test(code), false);
   assert.match(code, /Origin not allowed\./);
@@ -1400,11 +1404,262 @@ test('Migration 0008 SEC-004 Static Audit: auth-login Edge Function enforces exp
   assert.match(code, /resolve_login_identifier/);
   assert.match(code, /sha256Hex/);
   assert.match(code, /UNIFORM_AUTH_ERROR\s*=\s*'Invalid credentials or account unavailable\.'/);
-  assert.match(code, /MIN_AUTH_RESPONSE_MS/);
+  assert.match(code, /MIN_AUTH_FAILURE_RESPONSE_MS\s*=\s*500/);
+  assert.match(code, /TIMING_JITTER_MAX_MS/);
   assert.match(code, /'Retry-After':/);
   assert.match(code, /'Cache-Control': 'no-store/);
+  assert.match(code, /readBodyWithByteLimit/);
+
+  // SEC-008: Strict fail-closed 503 on both pre-auth and post-failure RPC errors
+  assert.match(code, /if\s*\(preRateErr\s*\|\|\s*!isValidRateLimitPayload\(preRateData\)\)/);
+  assert.match(code, /if\s*\(postRateErr\s*\|\|\s*!isValidRateLimitPayload\(postRateData\)\)/);
+  assert.match(code, /503,/);
+  assert.match(code, /SERVICE_UNAVAILABLE_ERROR/);
+
+  // SEC-009: Trust ONLY cf-connecting-ip; never read client-spoofable x-forwarded-for or x-real-ip
+  assert.match(code, /req\.headers\.get\('cf-connecting-ip'\)/);
+  assert.equal(/req\.headers\.get\(['"]x-forwarded-for['"]\)/i.test(code), false);
+  assert.equal(/req\.headers\.get\(['"]x-real-ip['"]\)/i.test(code), false);
+  assert.match(code, /UNTRUSTED_IP_FALLBACK_KEY\s*=\s*'untrusted-source'/);
+
+  // SEC-010: Accurate fixed-window terminology (zero false sliding-window claims)
+  assert.equal(/sliding-window/i.test(code), false, 'auth-login must not falsely claim sliding-window rate limiting');
+  assert.match(code, /fixed-window/i);
+
+  // Zero credential or token logging
   assert.equal(/console\.log\(.*password/i.test(code), false);
   assert.equal(/console\.log\(.*access_token/i.test(code), false);
+});
+
+test('SEC-008 Fail-Closed Rate Limiting: Pre-auth and post-failure RPC errors MUST return HTTP 503 without exposing internals or authenticating on pre-check failure', () => {
+  const accounts: AuthLoginAccountRecord[] = [
+    {
+      userId: 'uid-active-1',
+      username: 'ahmed.khalil',
+      email: 'ahmed.khalil@cits.edu.eg',
+      isActive: true,
+      password: 'ValidStrongPassword!99',
+    },
+  ];
+  const allowedOrigins = [...DEFAULT_PRODUCTION_ORIGINS];
+  const origin = 'https://operation-lms.vercel.app';
+  const nowMs = 1_700_000_000_000;
+
+  // 1. Pre-auth rate-limit RPC failure -> MUST fail closed with 503 even for valid credentials,
+  //    and MUST NOT perform credential authentication (authAttempted === false).
+  const preRpcFail = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'ValidStrongPassword!99',
+    requestHeaders: { 'cf-connecting-ip': '198.51.100.20' },
+    nowMs,
+    accounts,
+    rateLimitStore: createLoginRateLimitStore(),
+    simulatePreRateLimitRpcError: true,
+  });
+  assert.equal(preRpcFail.statusCode, 503);
+  assert.equal(preRpcFail.ok, false);
+  assert.equal(preRpcFail.authAttempted, false);
+  assert.equal(preRpcFail.error, AUTH_SERVICE_UNAVAILABLE_ERROR);
+  assert.equal(preRpcFail.retryAfterSeconds, 60);
+  assert.equal(/postgres|rpc|sql|cits_internal/i.test(preRpcFail.error || ''), false);
+
+  // 2. Post-failure recording RPC error (wrong password) -> MUST fail closed with 503 (never silent 401)
+  const postRpcFailWrongPw = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'WrongPassword1!',
+    requestHeaders: { 'cf-connecting-ip': '198.51.100.20' },
+    nowMs,
+    accounts,
+    rateLimitStore: createLoginRateLimitStore(),
+    simulatePostRateLimitRpcError: true,
+  });
+  assert.equal(postRpcFailWrongPw.statusCode, 503);
+  assert.equal(postRpcFailWrongPw.ok, false);
+  assert.equal(postRpcFailWrongPw.error, AUTH_SERVICE_UNAVAILABLE_ERROR);
+  assert.equal(postRpcFailWrongPw.retryAfterSeconds, 60);
+
+  // 3. Post-failure recording RPC error (unknown user) -> identical sanitized 503 (no existence leak)
+  const postRpcFailUnknown = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'nonexistent.user',
+    password: 'WrongPassword1!',
+    requestHeaders: { 'cf-connecting-ip': '198.51.100.20' },
+    nowMs,
+    accounts,
+    rateLimitStore: createLoginRateLimitStore(),
+    simulatePostRateLimitRpcError: true,
+  });
+  assert.equal(postRpcFailUnknown.statusCode, 503);
+  assert.equal(postRpcFailUnknown.error, postRpcFailWrongPw.error);
+});
+
+test('SEC-009 Spoof-Resistant IP Extraction: ignores spoofed x-forwarded-for & x-real-ip, trusts only valid cf-connecting-ip, and blocks spoofing bypass across 25 attempts', () => {
+  // 1. Direct unit checks on extractTrustedClientIp
+  assert.equal(
+    extractTrustedClientIp({
+      'cf-connecting-ip': '203.0.113.42',
+      'x-forwarded-for': '1.1.1.1, 2.2.2.2',
+      'x-real-ip': '9.9.9.9',
+    }),
+    '203.0.113.42'
+  );
+  // IPv6 cf-connecting-ip accepted & lowercased
+  assert.equal(
+    extractTrustedClientIp({ 'CF-Connecting-IP': '2001:DB8::1' }),
+    '2001:db8::1'
+  );
+  // Missing cf-connecting-ip MUST ignore x-forwarded-for / x-real-ip and use shared fallback bucket
+  assert.equal(
+    extractTrustedClientIp({
+      'x-forwarded-for': '198.51.100.77',
+      'x-real-ip': '198.51.100.88',
+    }),
+    UNTRUSTED_IP_FALLBACK_KEY
+  );
+  // Malformed/injected cf-connecting-ip rejected to fallback bucket
+  assert.equal(
+    extractTrustedClientIp({
+      'cf-connecting-ip': '1.2.3.4, 5.6.7.8',
+      'x-forwarded-for': '198.51.100.77',
+    }),
+    UNTRUSTED_IP_FALLBACK_KEY
+  );
+
+  const accounts: AuthLoginAccountRecord[] = [
+    {
+      userId: 'uid-active-1',
+      username: 'ahmed.khalil',
+      email: 'ahmed.khalil@cits.edu.eg',
+      isActive: true,
+      password: 'ValidStrongPassword!99',
+    },
+  ];
+  const allowedOrigins = [...DEFAULT_PRODUCTION_ORIGINS];
+  const origin = 'https://operation-lms.vercel.app';
+  const baseTime = 1_700_000_000_000;
+
+  // 2. Attacker rotates fake x-forwarded-for and x-real-ip on every request while behind real cf-connecting-ip:
+  //    MUST still hit HTTP 429 on attempt 25!
+  const spoofStore = createLoginRateLimitStore();
+  for (let i = 1; i < LOGIN_RATE_LIMIT_MAX_PER_IP; i++) {
+    const res = evaluateAuthLoginGateway({
+      origin,
+      allowedOrigins,
+      method: 'POST',
+      identifier: `spray-user-${i}`,
+      password: 'WrongPassword1!',
+      requestHeaders: {
+        'cf-connecting-ip': '203.0.113.90',
+        'x-forwarded-for': `10.0.0.${i}, 192.0.2.${i}`,
+        'x-real-ip': `172.16.0.${i}`,
+      },
+      nowMs: baseTime + i * 100,
+      accounts,
+      rateLimitStore: spoofStore,
+    });
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.trustedIpBucketKey, '203.0.113.90');
+  }
+  const spoofBlocked = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'spray-user-25',
+    password: 'WrongPassword1!',
+    requestHeaders: {
+      'cf-connecting-ip': '203.0.113.90',
+      'x-forwarded-for': '198.51.100.250',
+      'x-real-ip': '198.51.100.251',
+    },
+    nowMs: baseTime + 5000,
+    accounts,
+    rateLimitStore: spoofStore,
+  });
+  assert.equal(spoofBlocked.statusCode, 429);
+  assert.equal(spoofBlocked.trustedIpBucketKey, '203.0.113.90');
+
+  // 3. Attacker omits cf-connecting-ip and rotates x-forwarded-for -> all fall into shared
+  //    'untrusted-source' bucket and still hit HTTP 429 at attempt 25!
+  const noCfStore = createLoginRateLimitStore();
+  for (let i = 1; i < LOGIN_RATE_LIMIT_MAX_PER_IP; i++) {
+    const res = evaluateAuthLoginGateway({
+      origin,
+      allowedOrigins,
+      method: 'POST',
+      identifier: `nocf-user-${i}`,
+      password: 'WrongPassword1!',
+      requestHeaders: {
+        'x-forwarded-for': `198.51.100.${i}`,
+        'x-real-ip': `203.0.113.${i}`,
+      },
+      nowMs: baseTime + i * 100,
+      accounts,
+      rateLimitStore: noCfStore,
+    });
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.trustedIpBucketKey, UNTRUSTED_IP_FALLBACK_KEY);
+  }
+  const noCfBlocked = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'nocf-user-25',
+    password: 'WrongPassword1!',
+    requestHeaders: { 'x-forwarded-for': '192.0.2.250' },
+    nowMs: baseTime + 5000,
+    accounts,
+    rateLimitStore: noCfStore,
+  });
+  assert.equal(noCfBlocked.statusCode, 429);
+
+  // 4. Successful login does NOT clear existing IP failure bucket (prevents dummy-account bucket reset abuse)
+  const abuseStore = createLoginRateLimitStore();
+  for (let i = 1; i <= 24; i++) {
+    evaluateAuthLoginGateway({
+      origin,
+      allowedOrigins,
+      method: 'POST',
+      identifier: `victim-${i}`,
+      password: 'WrongPassword1!',
+      requestHeaders: { 'cf-connecting-ip': '203.0.113.120' },
+      nowMs: baseTime + i * 100,
+      accounts,
+      rateLimitStore: abuseStore,
+    });
+  }
+  const validBetweenBurst = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'ValidStrongPassword!99',
+    requestHeaders: { 'cf-connecting-ip': '203.0.113.120' },
+    nowMs: baseTime + 3000,
+    accounts,
+    rateLimitStore: abuseStore,
+  });
+  assert.equal(validBetweenBurst.statusCode, 200);
+  // 25th failure still trips 429 because valid login did NOT reset the IP bucket
+  const postValidFailure = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'victim-25',
+    password: 'WrongPassword1!',
+    requestHeaders: { 'cf-connecting-ip': '203.0.113.120' },
+    nowMs: baseTime + 4000,
+    accounts,
+    rateLimitStore: abuseStore,
+  });
+  assert.equal(postValidFailure.statusCode, 429);
 });
 
 test('Storage Access Policy (checkin-selfies): blocks must_change_password, inactive, anon, cross-user paths, path traversal, instructor delete, and AAL1 admin', () => {

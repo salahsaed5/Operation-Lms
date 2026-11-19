@@ -159,6 +159,12 @@ export async function resolveAndSignInWithSupabase(
     }
 
     const status = (error as unknown as { context?: Response }).context?.status;
+    if (status === 503) {
+      throw new Error(
+        parsedErr?.error ||
+          'Authentication service is temporarily unavailable. Please try again shortly.'
+      );
+    }
     if (status === 429) {
       throw new Error(
         parsedErr?.error || 'Too many sign-in attempts. Please wait before trying again.'

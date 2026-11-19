@@ -1713,9 +1713,10 @@ test('28. Migration 0008 & Security Phase Closure: closes SEC-004 enumeration, S
     assert.ok(verify8.includes(`VALUES (${i},`), `Missing verification check #${i} in 0008 verification script`);
   }
 
-  // Verify citsRepository calls auth-login Edge Function and NEVER calls resolve_login_identifier from client
+  // Verify citsRepository calls auth-login Edge Function, handles 503 fail-closed, and NEVER calls resolve_login_identifier from client
   const repoSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/services/citsRepository.ts'), 'utf8');
   assert.match(repoSrc, /functions\.invoke\('auth-login'/);
+  assert.match(repoSrc, /status === 503/);
   assert.equal(
     /\.rpc\(\s*['"]resolve_login_identifier['"]/.test(repoSrc),
     false,
@@ -1726,6 +1727,18 @@ test('28. Migration 0008 & Security Phase Closure: closes SEC-004 enumeration, S
   const ctxSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/context/AppContext.tsx'), 'utf8');
   assert.match(ctxSrc, /const liveCtx = await loadAuthenticatedUserContext\(supabaseCtx\.userId\)/);
   assert.match(ctxSrc, /await markProfileMustChangePassword\(inst\.profileId\)/);
+
+  // Verify Staging verification workflow prevents psql|tee false-passes, incomplete schemas, and clearly states DB-only scope
+  const stagingWf = fs.readFileSync(
+    path.resolve(process.cwd(), '.github/workflows/supabase-staging-verify.yml'),
+    'utf8'
+  );
+  assert.match(stagingWf, /set -euo pipefail/);
+  assert.match(stagingWf, /apply_migrations:/);
+  assert.match(stagingWf, /Schema Readiness Preflight Gate/);
+  assert.match(stagingWf, /TABLE_COUNT.*-ne 29/);
+  assert.match(stagingWf, /produced no PASS rows/);
+  assert.match(stagingWf, /does NOT deploy Supabase Edge Functions/i);
 });
 
 

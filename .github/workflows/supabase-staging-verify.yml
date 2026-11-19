@@ -1,15 +1,22 @@
+# =============================================================================
+# Supabase Staging Database Migration & SQL Security Verification Workflow
+#
+# SCOPE NOTICE:
+#   This workflow applies ordered PostgreSQL migrations (0005 -> 0008) and runs
+#   all 6 non-destructive transactional SQL verification suites (0003 -> 0008)
+#   strictly against a STAGING database.
+#   It does NOT deploy Supabase Edge Functions (auth-login, provision-instructor)
+#   and does NOT deploy the frontend. Edge Functions MUST be deployed separately
+#   via Supabase CLI (`supabase functions deploy`) before running live E2E tests.
+# =============================================================================
+
 name: Supabase Staging Security & Verification
 
 on:
   workflow_dispatch:
     inputs:
-      apply_0005:
-        description: 'Apply 0005_phase2_finalization_hardening.sql before running verification suites'
-        required: true
-        default: 'true'
-        type: boolean
-      apply_0006_to_0008:
-        description: 'Apply migrations 0006, 0007, and 0008 before running verification suites'
+      apply_migrations:
+        description: 'Apply ordered forward-only migrations 0005 -> 0006 -> 0007 -> 0008 before running verification suites'
         required: true
         default: 'true'
         type: boolean
@@ -18,12 +25,16 @@ jobs:
   staging-verify:
     runs-on: ubuntu-latest
     environment: staging
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install PostgreSQL client
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
@@ -31,11 +42,13 @@ jobs:
         env:
           SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
+          set -euo pipefail
           if [ -z "$SUPABASE_STAGING_DB_URL" ]; then
             echo "ERROR: secrets.SUPABASE_STAGING_DB_URL is not configured."
             exit 1
           fi
-          case "$SUPABASE_STAGING_DB_URL" in
+          LOWER_URL="$(printf '%s' "$SUPABASE_STAGING_DB_URL" | tr '[:upper:]' '[:lower:]')"
+          case "$LOWER_URL" in
             *wdmlxsgbjkboadkeekdq*)
               echo "ERROR: SUPABASE_STAGING_DB_URL references production project wdmlxsgbjkboadkeekdq. Aborting."
               exit 1
@@ -43,101 +56,120 @@ jobs:
           esac
           mkdir -p staging-reports
 
+      - name: Schema Readiness Preflight Gate (Require Baseline 0001–0004)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          set -euo pipefail
+          TABLE_COUNT="$(psql "$PGURL" -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")"
+          echo "Detected public base table count: ${TABLE_COUNT}"
+          if [ "$TABLE_COUNT" -ne 29 ]; then
+            echo "ERROR: Expected 29 public base tables from baseline migrations 0001–0004, found ${TABLE_COUNT}. Aborting to avoid incomplete-schema verification."
+            exit 1
+          fi
+          if [ "${{ inputs.apply_migrations }}" != "true" ]; then
+            HAS_0008="$(psql "$PGURL" -v ON_ERROR_STOP=1 -Atc "SELECT CASE WHEN to_regclass('cits_internal.auth_login_rate_limits') IS NOT NULL AND to_regprocedure('public.evaluate_login_rate_limit_internal(text,text,boolean)') IS NOT NULL THEN 'ok' ELSE 'missing' END;")"
+            if [ "$HAS_0008" != "ok" ]; then
+              echo "ERROR: apply_migrations=false was selected, but Migration 0008 artifacts are missing from Staging DB. Re-run with apply_migrations=true."
+              exit 1
+            fi
+          fi
+
       - name: Run Read-Only Preflight Inventory (0005)
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
+          set -euo pipefail
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_security_inventory_and_preflight.sql \
-            | tee staging-reports/01-preflight-inventory.log
+            2>&1 | tee staging-reports/01-preflight-inventory.log
 
-      - name: Apply Migration 0005 (Staging)
-        if: ${{ inputs.apply_0005 == true }}
+      - name: Apply Ordered Forward-Only Migrations 0005 -> 0006 -> 0007 -> 0008 (Staging)
+        if: ${{ inputs.apply_migrations == true }}
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
+          set -euo pipefail
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_phase2_finalization_hardening.sql \
-            | tee staging-reports/02-migration-0005.log
-
-      - name: Apply Migrations 0006–0008 (Staging)
-        if: ${{ inputs.apply_0006_to_0008 == true }}
-        env:
-          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
-        run: |
+            2>&1 | tee staging-reports/02a-migration-0005.log
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_fix_initial_password_change_audit.sql \
-            | tee staging-reports/02b-migration-0006.log
+            2>&1 | tee staging-reports/02b-migration-0006.log
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_enforce_forced_password_change_security.sql \
-            | tee staging-reports/02c-migration-0007.log
+            2>&1 | tee staging-reports/02c-migration-0007.log
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_security_phase_closure_hardening.sql \
-            | tee staging-reports/02d-migration-0008.log
+            2>&1 | tee staging-reports/02d-migration-0008.log
 
-      - name: Run Transactional RLS & Guard 1C Suite (0003)
+      - name: Run All 6 Transactional Verification Suites (0003–0008) with Strict Pass/Fail Enforcement
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0003_remote_verification_and_rls_test_suite.sql \
-            2>&1 | tee staging-reports/03-suite-0003.log
-          if grep -Eq '\|\s*FAIL\s*\||\[FAIL ' staging-reports/03-suite-0003.log; then
-            echo "ERROR: Suite 0003 reported FAIL result(s)."
-            exit 1
-          fi
+          set -euo pipefail
 
-      - name: Run Phase 2 Hardening Verification Suite (0004)
-        env:
-          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
-        run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0004_phase2_hardening_verification.sql \
-            2>&1 | tee staging-reports/04-suite-0004.log
-          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/04-suite-0004.log; then
-            echo "ERROR: Suite 0004 reported FAIL result(s)."
-            exit 1
-          fi
+          run_suite() {
+            local label="$1"
+            local sql_file="$2"
+            local log_file="$3"
+            local pass_pattern="$4"
 
-      - name: Run 30-Case Phase 2 Finalization Suite (0005)
-        env:
-          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
-        run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_finalization_behavioral_test_suite.sql \
-            2>&1 | tee staging-reports/05-suite-0005.log
-          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/05-suite-0005.log; then
-            echo "ERROR: Suite 0005 reported FAIL result(s)."
-            exit 1
-          fi
+            echo "=== Running ${label} (${sql_file}) ==="
+            psql "$PGURL" -v ON_ERROR_STOP=1 -f "$sql_file" 2>&1 | tee "$log_file"
 
-      - name: Run Password Audit, Forced Password Change & Security Closure Suites (0006–0008)
-        env:
-          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
-        run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0006_verify_initial_password_change_audit.sql \
-            2>&1 | tee staging-reports/06a-suite-0006.log
-          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06a-suite-0006.log; then
-            echo "ERROR: Suite 0006 reported FAIL result(s)."
-            exit 1
-          fi
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0007_verify_forced_password_change_security.sql \
-            2>&1 | tee staging-reports/06b-suite-0007.log
-          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06b-suite-0007.log; then
-            echo "ERROR: Suite 0007 reported FAIL result(s)."
-            exit 1
-          fi
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0008_verify_security_phase_closure.sql \
-            2>&1 | tee staging-reports/06c-suite-0008.log
-          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06c-suite-0008.log; then
-            echo "ERROR: Suite 0008 reported FAIL result(s)."
-            exit 1
-          fi
+            if grep -Eq '\|\s*FAIL\s*\||\[FAIL |^ERROR:|^FATAL:' "$log_file"; then
+              echo "ERROR: ${label} reported FAIL or PostgreSQL ERROR/FATAL."
+              exit 1
+            fi
+
+            if ! grep -Eq "$pass_pattern" "$log_file"; then
+              echo "ERROR: ${label} produced no PASS rows (possible truncated/aborted run)."
+              exit 1
+            fi
+          }
+
+          run_suite "Suite 0003 (RLS & Guard 1C)" \
+            "supabase/verification/0003_remote_verification_and_rls_test_suite.sql" \
+            "staging-reports/03-suite-0003.log" \
+            '\|\s*PASS\s*\||\[PASS '
+
+          run_suite "Suite 0004 (Phase 2 Hardening)" \
+            "supabase/verification/0004_phase2_hardening_verification.sql" \
+            "staging-reports/04-suite-0004.log" \
+            '\|\s*PASS\s*\|'
+
+          run_suite "Suite 0005 (30-Case Finalization)" \
+            "supabase/verification/0005_finalization_behavioral_test_suite.sql" \
+            "staging-reports/05-suite-0005.log" \
+            '\|\s*PASS\s*\|'
+
+          run_suite "Suite 0006 (Password Audit)" \
+            "supabase/verification/0006_verify_initial_password_change_audit.sql" \
+            "staging-reports/06a-suite-0006.log" \
+            '\|\s*PASS\s*\|'
+
+          run_suite "Suite 0007 (Forced Password Change)" \
+            "supabase/verification/0007_verify_forced_password_change_security.sql" \
+            "staging-reports/06b-suite-0007.log" \
+            '\|\s*PASS\s*\|'
+
+          run_suite "Suite 0008 (Security Phase Closure)" \
+            "supabase/verification/0008_verify_security_phase_closure.sql" \
+            "staging-reports/06c-suite-0008.log" \
+            '\|\s*PASS\s*\|'
 
       - name: Post-Migration Security Inventory Snapshot (0005)
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
+          set -euo pipefail
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_security_inventory_and_preflight.sql \
-            | tee staging-reports/07-post-inventory.log
+            2>&1 | tee staging-reports/07-post-inventory.log
 
       - name: Publish Audit Summary & Upload Staging Verification Artifacts
         if: always()
         run: |
+          set -euo pipefail
           {
-            echo "## Supabase Staging Verification Results"
+            echo "## Supabase Staging Database Verification Results"
+            echo ""
+            echo "> **Scope Notice:** This workflow verifies PostgreSQL migrations (0005–0008) and transactional SQL verification suites (0003–0008) only. It does **not** deploy Edge Functions (\`auth-login\`, \`provision-instructor\`). Deploy both Edge Functions separately before executing live Staging E2E tests."
             echo ""
             for f in staging-reports/*.log; do
               [ -f "$f" ] || continue

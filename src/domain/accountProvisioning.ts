@@ -989,13 +989,48 @@ export function evaluateServerAuthorizationHelpers(state: ForcedPasswordChangeSe
 }
 
 // =============================================================================
-// SEC-004 NON-ENUMERABLE AUTH-LOGIN GATEWAY & RATE-LIMIT MODEL (Migration 0008)
+// SEC-004 / SEC-008 / SEC-009 / SEC-010 AUTH-LOGIN GATEWAY & FIXED-WINDOW MODEL
 // =============================================================================
 
 export const UNIFORM_AUTH_LOGIN_ERROR = 'Invalid credentials or account unavailable.';
+export const AUTH_SERVICE_UNAVAILABLE_ERROR =
+  'Authentication service is temporarily unavailable. Please try again shortly.';
+export const UNTRUSTED_IP_FALLBACK_KEY = 'untrusted-source';
+/** 15-minute FIXED-WINDOW counter duration (matches Migration 0008 evaluate_login_rate_limit_internal). */
 export const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 export const LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER = 10;
 export const LOGIN_RATE_LIMIT_MAX_PER_IP = 25;
+
+const IPV4_STRICT_REGEX =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const IPV6_STRICT_REGEX = /^[0-9a-f:]{2,45}$/i;
+const CONTROL_CHAR_STRICT_REGEX = /[\u0000-\u001f\u007f]/;
+
+/**
+ * SEC-009: Mirrors auth-login Edge Function IP extraction.
+ * Trusts ONLY syntactically valid `cf-connecting-ip` (set by Cloudflare edge
+ * ingress in front of hosted Supabase Edge Functions). Explicitly ignores
+ * client-spoofable `x-forwarded-for` and `x-real-ip`.
+ */
+export function extractTrustedClientIp(
+  headers: Record<string, string | null | undefined>
+): string {
+  let cfRaw = '';
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'cf-connecting-ip' && typeof v === 'string') {
+      cfRaw = v.trim().toLowerCase();
+      break;
+    }
+  }
+  if (
+    cfRaw &&
+    cfRaw.length <= 45 &&
+    (IPV4_STRICT_REGEX.test(cfRaw) || (cfRaw.includes(':') && IPV6_STRICT_REGEX.test(cfRaw)))
+  ) {
+    return cfRaw;
+  }
+  return UNTRUSTED_IP_FALLBACK_KEY;
+}
 
 export interface LoginRateLimitBucket {
   windowStartedAtMs: number;
@@ -1014,6 +1049,10 @@ export function createLoginRateLimitStore(): LoginRateLimitStore {
   };
 }
 
+/**
+ * Fixed-window rate limiter mirroring Migration 0008 evaluate_login_rate_limit_internal.
+ * Each bucket tracks window_started_at and attempt_count over a 15-minute fixed window.
+ */
 export function evaluateLoginRateLimitState(
   store: LoginRateLimitStore,
   params: {
@@ -1102,36 +1141,72 @@ export function evaluateAuthLoginGateway(params: {
   method: string;
   identifier: string;
   password: string;
-  clientIp: string;
+  /** Optional direct IP (used as cf-connecting-ip when requestHeaders omitted) */
+  clientIp?: string;
+  /** Optional raw HTTP headers to verify SEC-009 IP extraction & spoofing resistance */
+  requestHeaders?: Record<string, string | null | undefined>;
   nowMs: number;
   accounts: AuthLoginAccountRecord[];
   rateLimitStore: LoginRateLimitStore;
+  /** SEC-008 failure injection flags */
+  simulatePreRateLimitRpcError?: boolean;
+  simulatePostRateLimitRpcError?: boolean;
 }): {
-  statusCode: 200 | 204 | 400 | 401 | 403 | 405 | 429;
+  statusCode: 200 | 204 | 400 | 401 | 403 | 405 | 429 | 503;
   ok: boolean;
   error?: string;
   retryAfterSeconds?: number;
   resolvedUserId?: string;
+  trustedIpBucketKey?: string;
+  authAttempted: boolean;
   leaksEmail?: boolean;
 } {
   const cors = evaluateCorsOrigin(params.origin, params.allowedOrigins, params.method);
   if (!cors.allowed) {
-    return { statusCode: 403, ok: false, error: 'Origin not allowed.' };
+    return { statusCode: 403, ok: false, error: 'Origin not allowed.', authAttempted: false };
   }
   if (params.method.toUpperCase() === 'OPTIONS') {
-    return { statusCode: 204, ok: true };
+    return { statusCode: 204, ok: true, authAttempted: false };
   }
   if (params.method.toUpperCase() !== 'POST') {
-    return { statusCode: 405, ok: false, error: 'Method not allowed.' };
+    return { statusCode: 405, ok: false, error: 'Method not allowed.', authAttempted: false };
   }
 
-  const cleanId = params.identifier.trim().toLowerCase();
-  if (!cleanId || cleanId.length > 120 || !params.password || params.password.length > 256) {
-    return { statusCode: 400, ok: false, error: 'Username/email and password are required.' };
+  const cleanId = params.identifier.normalize('NFKC').trim().toLowerCase();
+  if (
+    !cleanId ||
+    cleanId.length > 120 ||
+    CONTROL_CHAR_STRICT_REGEX.test(cleanId) ||
+    !params.password ||
+    params.password.length > 256
+  ) {
+    return {
+      statusCode: 400,
+      ok: false,
+      error: 'Username/email and password are required.',
+      authAttempted: false,
+    };
+  }
+
+  const trustedIpKey = params.requestHeaders
+    ? extractTrustedClientIp(params.requestHeaders)
+    : extractTrustedClientIp({ 'cf-connecting-ip': params.clientIp });
+
+  // SEC-008: Pre-auth rate-limit RPC failure MUST fail closed with HTTP 503 (never authenticate)
+  if (params.simulatePreRateLimitRpcError) {
+    return {
+      statusCode: 503,
+      ok: false,
+      error: AUTH_SERVICE_UNAVAILABLE_ERROR,
+      retryAfterSeconds: 60,
+      trustedIpBucketKey: trustedIpKey,
+      authAttempted: false,
+      leaksEmail: false,
+    };
   }
 
   const preCheck = evaluateLoginRateLimitState(params.rateLimitStore, {
-    ipKey: params.clientIp,
+    ipKey: trustedIpKey,
     identifierKey: cleanId,
     nowMs: params.nowMs,
     increment: false,
@@ -1142,6 +1217,8 @@ export function evaluateAuthLoginGateway(params: {
       ok: false,
       error: 'Too many sign-in attempts. Please wait before trying again.',
       retryAfterSeconds: preCheck.retryAfterSeconds,
+      trustedIpBucketKey: trustedIpKey,
+      authAttempted: false,
     };
   }
 
@@ -1152,8 +1229,21 @@ export function evaluateAuthLoginGateway(params: {
   );
 
   if (!matched || matched.password !== params.password) {
+    // SEC-008: Failed-attempt recording RPC failure MUST fail closed with HTTP 503
+    if (params.simulatePostRateLimitRpcError) {
+      return {
+        statusCode: 503,
+        ok: false,
+        error: AUTH_SERVICE_UNAVAILABLE_ERROR,
+        retryAfterSeconds: 60,
+        trustedIpBucketKey: trustedIpKey,
+        authAttempted: Boolean(matched),
+        leaksEmail: false,
+      };
+    }
+
     const postCheck = evaluateLoginRateLimitState(params.rateLimitStore, {
-      ipKey: params.clientIp,
+      ipKey: trustedIpKey,
       identifierKey: cleanId,
       nowMs: params.nowMs,
       increment: true,
@@ -1164,12 +1254,16 @@ export function evaluateAuthLoginGateway(params: {
         ok: false,
         error: 'Too many sign-in attempts. Please wait before trying again.',
         retryAfterSeconds: postCheck.retryAfterSeconds,
+        trustedIpBucketKey: trustedIpKey,
+        authAttempted: Boolean(matched),
       };
     }
     return {
       statusCode: 401,
       ok: false,
       error: UNIFORM_AUTH_LOGIN_ERROR,
+      trustedIpBucketKey: trustedIpKey,
+      authAttempted: Boolean(matched),
       leaksEmail: false,
     };
   }
@@ -1178,6 +1272,8 @@ export function evaluateAuthLoginGateway(params: {
     statusCode: 200,
     ok: true,
     resolvedUserId: matched.userId,
+    trustedIpBucketKey: trustedIpKey,
+    authAttempted: true,
     leaksEmail: false,
   };
 }
