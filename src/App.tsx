@@ -51,6 +51,8 @@ const AppRouter: React.FC = () => {
 
   if (
     !auth.isAuthenticated ||
+    !auth.currentProfile.isActive ||
+    auth.currentProfile.mustChangePassword ||
     auth.pendingTotpProfileId ||
     auth.pendingPasswordChangeProfileId
   ) {

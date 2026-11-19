@@ -805,3 +805,176 @@ export function validateSafeRedirectUrl(
     };
   }
 }
+
+// =============================================================================
+// SERVER-SIDE FORCED PASSWORD CHANGE & OPERATIONAL ACCESS MODEL (Migration 0007)
+// =============================================================================
+
+export interface ForcedPasswordChangeServerState {
+  authUserId: string | null;
+  role: 'anon' | 'authenticated';
+  aal: 'aal1' | 'aal2' | null;
+  hasVerifiedTotpFactor: boolean;
+  profile: {
+    id: string;
+    role: 'admin' | 'instructor';
+    isActive: boolean;
+    mustChangePassword: boolean;
+  } | null;
+  hasAdminAccountSlot: boolean;
+  instructorId: string | null;
+  /** Current auth.users.encrypted_password length/fingerprint (never raw password) */
+  currentAuthCredentialLength: number;
+  currentAuthFingerprint: string;
+  baselineAuthFingerprint: string | null;
+  lastCompletedAuthFingerprint: string | null;
+}
+
+export interface CompletePasswordChangeRpcResult {
+  ok: boolean;
+  mustChangePassword: boolean;
+  alreadyCompleted?: boolean;
+  auditAction?: 'PASSWORD_CHANGE_COMPLETED';
+  auditReason?: string;
+  auditPayload?: {
+    previousValue: { initial_credential_rotation_required: boolean };
+    newValue: { initial_credential_rotation_required: boolean };
+  };
+  error?: string;
+}
+
+/**
+ * Mirrors Migration 0007 server-side complete_password_change_tx() verification.
+ * Rejects direct RPC bypasses when auth.users.encrypted_password has not rotated.
+ */
+export function evaluateCompletePasswordChangeRpc(
+  state: ForcedPasswordChangeServerState
+): CompletePasswordChangeRpcResult {
+  if (state.role !== 'authenticated' || !state.authUserId || !state.profile) {
+    return {
+      ok: false,
+      mustChangePassword: state.profile?.mustChangePassword ?? true,
+      error: 'CITS Authorization Denied: Active authenticated account required.',
+    };
+  }
+
+  if (state.profile.id !== state.authUserId || !state.profile.isActive) {
+    return {
+      ok: false,
+      mustChangePassword: state.profile.mustChangePassword,
+      error: 'CITS Authorization Denied: Active authenticated account required.',
+    };
+  }
+
+  if (state.currentAuthCredentialLength < 20) {
+    return {
+      ok: false,
+      mustChangePassword: state.profile.mustChangePassword,
+      error:
+        'CITS Security Violation: Auth credential is not set. Update your password in Auth before completing onboarding.',
+    };
+  }
+
+  if (state.profile.mustChangePassword) {
+    if (
+      !state.baselineAuthFingerprint ||
+      state.currentAuthFingerprint === state.baselineAuthFingerprint
+    ) {
+      return {
+        ok: false,
+        mustChangePassword: true,
+        error:
+          'CITS Security Violation: Credential rotation not verified in Auth. Update your password before completing mandatory onboarding.',
+      };
+    }
+
+    return {
+      ok: true,
+      mustChangePassword: false,
+      alreadyCompleted: false,
+      auditAction: 'PASSWORD_CHANGE_COMPLETED',
+      auditReason: 'User completed mandatory initial credential rotation verified against Auth state',
+      auditPayload: {
+        previousValue: { initial_credential_rotation_required: true },
+        newValue: { initial_credential_rotation_required: false },
+      },
+    };
+  }
+
+  // must_change_password is already FALSE: check if a real recovery rotation occurred
+  if (state.lastCompletedAuthFingerprint !== state.currentAuthFingerprint) {
+    return {
+      ok: true,
+      mustChangePassword: false,
+      alreadyCompleted: false,
+      auditAction: 'PASSWORD_CHANGE_COMPLETED',
+      auditReason: 'User completed account credential recovery rotation verified against Auth state',
+      auditPayload: {
+        previousValue: { initial_credential_rotation_required: false },
+        newValue: { initial_credential_rotation_required: false },
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    mustChangePassword: false,
+    alreadyCompleted: true,
+  };
+}
+
+/**
+ * Mirrors Migration 0007 server-side RLS / RPC authorization helpers:
+ * - is_active_cits_user(): onboarding bootstrap identity only
+ * - is_cits_operational_user(): active AND must_change_password = FALSE
+ * - current_instructor_id(): active instructor AND must_change_password = FALSE
+ * - is_cits_admin(): active admin + slot + AAL2 AND must_change_password = FALSE
+ * - record_admin_totp_verified_tx(): active admin + slot + AAL2 + verified TOTP (no onboarding deadlock)
+ */
+export function evaluateServerAuthorizationHelpers(state: ForcedPasswordChangeServerState): {
+  isActiveCitsUser: boolean;
+  isCitsOperationalUser: boolean;
+  currentInstructorId: string | null;
+  isCitsAdmin: boolean;
+  canReadOwnBootstrapIdentity: boolean;
+  canAccessOperationalRlsAndRpcs: boolean;
+  canRecordAdminTotpVerified: boolean;
+} {
+  const validSession =
+    state.role === 'authenticated' &&
+    Boolean(state.authUserId) &&
+    Boolean(state.profile) &&
+    state.profile!.id === state.authUserId;
+
+  const isActiveCitsUser = validSession && Boolean(state.profile?.isActive);
+  const isCitsOperationalUser = isActiveCitsUser && !state.profile!.mustChangePassword;
+
+  const currentInstructorId =
+    isCitsOperationalUser && state.profile!.role === 'instructor' && state.instructorId
+      ? state.instructorId
+      : null;
+
+  const isCitsAdmin =
+    isCitsOperationalUser &&
+    state.profile!.role === 'admin' &&
+    state.hasAdminAccountSlot &&
+    state.aal === 'aal2';
+
+  const canRecordAdminTotpVerified =
+    isActiveCitsUser &&
+    state.profile!.role === 'admin' &&
+    state.hasAdminAccountSlot &&
+    state.aal === 'aal2' &&
+    state.hasVerifiedTotpFactor;
+
+  return {
+    isActiveCitsUser,
+    isCitsOperationalUser,
+    currentInstructorId,
+    isCitsAdmin,
+    canReadOwnBootstrapIdentity: isActiveCitsUser,
+    canAccessOperationalRlsAndRpcs: Boolean(currentInstructorId || isCitsAdmin),
+    canRecordAdminTotpVerified,
+  };
+}
+

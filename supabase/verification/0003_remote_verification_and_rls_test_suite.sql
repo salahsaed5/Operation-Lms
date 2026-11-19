@@ -159,7 +159,8 @@ DECLARE
     'enforce_checkin_exception_security',
     'enforce_notification_update_security',
     'enforce_instructor_request_security',
-    'enforce_issue_security'
+    'enforce_issue_security',
+    'capture_credential_rotation_baseline'
   ];
 
   v_expected_trigger_regprocs CONSTANT TEXT[] := ARRAY[
@@ -177,13 +178,15 @@ DECLARE
     'public.enforce_checkin_exception_security()',
     'public.enforce_notification_update_security()',
     'public.enforce_instructor_request_security()',
-    'public.enforce_issue_security()'
+    'public.enforce_issue_security()',
+    'public.capture_credential_rotation_baseline()'
   ];
 
   -- Expected helper/RPC function names and exact schema-qualified signatures in public schema.
   v_allowed_cits_helper_funcs CONSTANT TEXT[] := ARRAY[
     'is_cits_admin',
     'is_active_cits_user',
+    'is_cits_operational_user',
     'current_instructor_id',
     'resolve_login_identifier',
     'append_audit_log_internal',
@@ -210,6 +213,7 @@ DECLARE
   v_expected_helper_regprocs CONSTANT TEXT[] := ARRAY[
     'public.is_cits_admin()',
     'public.is_active_cits_user()',
+    'public.is_cits_operational_user()',
     'public.current_instructor_id()',
     'public.resolve_login_identifier(text)',
     'public.append_audit_log_internal(uuid,text,text,text,jsonb,jsonb,text)',
@@ -251,6 +255,7 @@ DECLARE
     'jsonb_array_elements', 'jsonb_array_length',
     'now', 'clock_timestamp', 'transaction_timestamp', 'statement_timestamp', 'timeofday',
     'gen_random_uuid', 'uuid_generate_v4', 'hashtext', 'pg_advisory_xact_lock',
+    'encode', 'sha256', 'convert_to',
     'row_security_active', 'to_regprocedure', 'has_function_privilege',
     'set_config', 'current_setting', 'uid', 'jwt', 'role',
     'numeric', 'varchar', 'char', 'bit', 'varbit', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval'

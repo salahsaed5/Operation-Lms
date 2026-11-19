@@ -7,8 +7,11 @@ import {
   DEFAULT_PRODUCTION_ORIGINS,
   evaluateAuthenticatedSessionGate,
   evaluateCallerAuthorizationForProvisioning,
+  evaluateCompletePasswordChangeRpc,
   evaluateCorsOrigin,
+  evaluateServerAuthorizationHelpers,
   executeInstructorProvisioningWorkflow,
+  ForcedPasswordChangeServerState,
   generateSecureTemporaryPassword,
   normalizeProvisionInstructorInput,
   parseAllowedOrigins,
@@ -872,3 +875,189 @@ test('Phase 3 Security Audit: bootstrap_cits_admin_account remains revoked from 
     /REVOKE ALL ON FUNCTION bootstrap_cits_admin_account\(UUID, TEXT, TEXT, TEXT, SMALLINT\) FROM authenticated;/
   );
 });
+
+// =============================================================================
+// MIGRATION 0007 SECURITY TESTS: FORCED PASSWORD CHANGE & BYPASS PREVENTION
+// =============================================================================
+
+const BASE_PENDING_INSTRUCTOR_STATE: ForcedPasswordChangeServerState = {
+  authUserId: 'inst-uid-1',
+  role: 'authenticated',
+  aal: 'aal1',
+  hasVerifiedTotpFactor: false,
+  profile: {
+    id: 'inst-uid-1',
+    role: 'instructor',
+    isActive: true,
+    mustChangePassword: true,
+  },
+  hasAdminAccountSlot: false,
+  instructorId: 'inst-row-1',
+  currentAuthCredentialLength: 60,
+  currentAuthFingerprint: 'sha256_initial_temp_hash',
+  baselineAuthFingerprint: 'sha256_initial_temp_hash',
+  lastCompletedAuthFingerprint: null,
+};
+
+test('Migration 0007 SEC-001: Direct complete_password_change_tx() call without rotating Auth password is DENIED', () => {
+  const res = evaluateCompletePasswordChangeRpc(BASE_PENDING_INSTRUCTOR_STATE);
+  assert.equal(res.ok, false);
+  assert.equal(res.mustChangePassword, true);
+  assert.equal(res.auditAction, undefined);
+  assert.match(res.error || '', /Credential rotation not verified/i);
+});
+
+test('Migration 0007 SEC-001: Invite-flow account with unset/empty Auth password cannot bypass complete_password_change_tx()', () => {
+  const res = evaluateCompletePasswordChangeRpc({
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    currentAuthCredentialLength: 0,
+    currentAuthFingerprint: 'sha256_empty_string',
+    baselineAuthFingerprint: 'sha256_empty_string',
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.mustChangePassword, true);
+  assert.match(res.error || '', /Auth credential is not set/i);
+});
+
+test('Migration 0007 SEC-002: Instructor with must_change_password = TRUE is blocked from operational RLS/RPCs while retaining bootstrap identity read', () => {
+  const authz = evaluateServerAuthorizationHelpers(BASE_PENDING_INSTRUCTOR_STATE);
+  assert.equal(authz.isActiveCitsUser, true);
+  assert.equal(authz.canReadOwnBootstrapIdentity, true);
+  assert.equal(authz.isCitsOperationalUser, false);
+  assert.equal(authz.currentInstructorId, null);
+  assert.equal(authz.isCitsAdmin, false);
+  assert.equal(authz.canAccessOperationalRlsAndRpcs, false);
+});
+
+test('Migration 0007 Legitimate Flow: Rotating Auth password allows complete_password_change_tx(), clears flag, writes safe audit row, and unlocks operational access', () => {
+  const rotatedState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    currentAuthFingerprint: 'sha256_new_user_password_hash',
+  };
+  const rpc = evaluateCompletePasswordChangeRpc(rotatedState);
+  assert.equal(rpc.ok, true);
+  assert.equal(rpc.mustChangePassword, false);
+  assert.equal(rpc.alreadyCompleted, false);
+  assert.equal(rpc.auditAction, 'PASSWORD_CHANGE_COMPLETED');
+
+  // Verify audit payload never contains banned credential substrings
+  const auditJson = JSON.stringify(rpc.auditPayload).toLowerCase();
+  assert.equal(
+    /(password|service_role|totp_secret|mfa_secret|access_token|refresh_token|secret_key)/.test(auditJson),
+    false
+  );
+
+  // Operational access restored once profile.mustChangePassword is cleared
+  const postAuthz = evaluateServerAuthorizationHelpers({
+    ...rotatedState,
+    profile: { ...rotatedState.profile!, mustChangePassword: false },
+    lastCompletedAuthFingerprint: rotatedState.currentAuthFingerprint,
+  });
+  assert.equal(postAuthz.isCitsOperationalUser, true);
+  assert.equal(postAuthz.currentInstructorId, 'inst-row-1');
+  assert.equal(postAuthz.canAccessOperationalRlsAndRpcs, true);
+});
+
+test('Migration 0007 Idempotency & Recovery: Repeated call without new rotation is no-op; real recovery rotation logs recovery audit', () => {
+  const completedState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    profile: { ...BASE_PENDING_INSTRUCTOR_STATE.profile!, mustChangePassword: false },
+    currentAuthFingerprint: 'sha256_new_user_password_hash',
+    lastCompletedAuthFingerprint: 'sha256_new_user_password_hash',
+  };
+
+  // Repeated call without password change => idempotent no-op, zero duplicate audit row
+  const repeated = evaluateCompletePasswordChangeRpc(completedState);
+  assert.equal(repeated.ok, true);
+  assert.equal(repeated.alreadyCompleted, true);
+  assert.equal(repeated.auditAction, undefined);
+
+  // Genuine recovery password change => updates last completed fingerprint and logs recovery audit
+  const recovery = evaluateCompletePasswordChangeRpc({
+    ...completedState,
+    currentAuthFingerprint: 'sha256_recovery_password_hash',
+  });
+  assert.equal(recovery.ok, true);
+  assert.equal(recovery.alreadyCompleted, false);
+  assert.equal(recovery.auditAction, 'PASSWORD_CHANGE_COMPLETED');
+  assert.match(recovery.auditReason || '', /recovery/i);
+});
+
+test('Migration 0007 SEC-003, Inactive, Anon & Cross-User Isolation: Denied across all helpers and RPC', () => {
+  // Inactive instructor
+  const inactiveState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    profile: { ...BASE_PENDING_INSTRUCTOR_STATE.profile!, isActive: false, mustChangePassword: false },
+    currentAuthFingerprint: 'sha256_changed',
+  };
+  assert.equal(evaluateCompletePasswordChangeRpc(inactiveState).ok, false);
+  const inactiveAuthz = evaluateServerAuthorizationHelpers(inactiveState);
+  assert.equal(inactiveAuthz.isActiveCitsUser, false);
+  assert.equal(inactiveAuthz.canReadOwnBootstrapIdentity, false);
+  assert.equal(inactiveAuthz.canAccessOperationalRlsAndRpcs, false);
+
+  // Unauthenticated (anon)
+  const anonState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    authUserId: null,
+    role: 'anon',
+    profile: null,
+  };
+  assert.equal(evaluateCompletePasswordChangeRpc(anonState).ok, false);
+  assert.equal(evaluateServerAuthorizationHelpers(anonState).canAccessOperationalRlsAndRpcs, false);
+
+  // Cross-user mismatch (Caller UID != target profile ID)
+  const crossUserState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    authUserId: 'inst-uid-other',
+    currentAuthFingerprint: 'sha256_changed',
+  };
+  assert.equal(evaluateCompletePasswordChangeRpc(crossUserState).ok, false);
+  assert.equal(evaluateServerAuthorizationHelpers(crossUserState).isActiveCitsUser, false);
+});
+
+test('Migration 0007 Admin MFA + Forced Password Change: AAL2 Admin with pending password change is blocked operationally but TOTP recording does not deadlock; AAL1 always blocked', () => {
+  const adminPendingAal2: ForcedPasswordChangeServerState = {
+    authUserId: 'admin-uid-1',
+    role: 'authenticated',
+    aal: 'aal2',
+    hasVerifiedTotpFactor: true,
+    profile: {
+      id: 'admin-uid-1',
+      role: 'admin',
+      isActive: true,
+      mustChangePassword: true,
+    },
+    hasAdminAccountSlot: true,
+    instructorId: null,
+    currentAuthCredentialLength: 60,
+    currentAuthFingerprint: 'sha256_admin_initial',
+    baselineAuthFingerprint: 'sha256_admin_initial',
+    lastCompletedAuthFingerprint: null,
+  };
+
+  // Blocked from operational Admin access until password rotated
+  const aal2Pending = evaluateServerAuthorizationHelpers(adminPendingAal2);
+  assert.equal(aal2Pending.isCitsAdmin, false);
+  assert.equal(aal2Pending.canAccessOperationalRlsAndRpcs, false);
+  // TOTP recording remains unblocked (no onboarding deadlock!)
+  assert.equal(aal2Pending.canRecordAdminTotpVerified, true);
+
+  // AAL1 Admin is blocked from both operational access and TOTP recording
+  const aal1Admin = evaluateServerAuthorizationHelpers({
+    ...adminPendingAal2,
+    aal: 'aal1',
+    profile: { ...adminPendingAal2.profile!, mustChangePassword: false },
+  });
+  assert.equal(aal1Admin.isCitsAdmin, false);
+  assert.equal(aal1Admin.canRecordAdminTotpVerified, false);
+
+  // AAL2 Admin with mustChangePassword = FALSE gets full Admin access
+  const aal2Ready = evaluateServerAuthorizationHelpers({
+    ...adminPendingAal2,
+    profile: { ...adminPendingAal2.profile!, mustChangePassword: false },
+  });
+  assert.equal(aal2Ready.isCitsAdmin, true);
+  assert.equal(aal2Ready.canAccessOperationalRlsAndRpcs, true);
+});
+

@@ -1314,7 +1314,7 @@ function extractSqlArrayLiterals(sql: string, varName: string): string[] {
   return items;
 }
 
-test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0006', () => {
+test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0007', () => {
   const migFiles = [
     'supabase/migrations/0001_cits_initial_schema.sql',
     'supabase/migrations/0002_phase2_security_rls_and_validation.sql',
@@ -1322,6 +1322,7 @@ test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function d
     'supabase/migrations/0004_phase2_comprehensive_security_hardening.sql',
     'supabase/migrations/0005_phase2_finalization_hardening.sql',
     'supabase/migrations/0006_fix_initial_password_change_audit.sql',
+    'supabase/migrations/0007_enforce_forced_password_change_security.sql',
   ];
 
   // Negative synthetic tests verifying scanner catches banned lexical edge cases
@@ -1560,3 +1561,78 @@ test('26. Migration 0006: fixes complete_password_change_tx() audit payload with
     assert.ok(verify6.includes(`VALUES (${i},`), `Missing verification check #${i} in 0006 verification script`);
   }
 });
+
+test('27. Migration 0007: enforces server-side forced password change verification, operational RLS/RPC gating, and deactivated instructor isolation', () => {
+  const mig7 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/migrations/0007_enforce_forced_password_change_security.sql'),
+    'utf8'
+  );
+  const mig7Exec = mig7.split('-- ROLLBACK CONSIDERATIONS')[0];
+
+  assert.ok(mig7Exec.includes('BEGIN;'));
+  assert.ok(mig7Exec.includes('COMMIT;'));
+  assert.equal(/\bROLLBACK\s*;/i.test(mig7Exec), false);
+  assert.equal(/DROP\s+TABLE/i.test(mig7Exec), false);
+  assert.equal(/TRUNCATE\s+/i.test(mig7Exec), false);
+  assert.equal(/DELETE\s+FROM/i.test(mig7Exec), false);
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(mig7Exec), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(mig7Exec), false);
+
+  // Private internal schema & table hidden from PUBLIC, anon, authenticated
+  assert.match(mig7Exec, /CREATE\s+SCHEMA\s+IF\s+NOT\s+EXISTS\s+cits_internal;/);
+  assert.match(mig7Exec, /REVOKE\s+ALL\s+ON\s+SCHEMA\s+cits_internal\s+FROM\s+PUBLIC;/);
+  assert.match(mig7Exec, /REVOKE\s+ALL\s+ON\s+SCHEMA\s+cits_internal\s+FROM\s+anon;/);
+  assert.match(mig7Exec, /REVOKE\s+ALL\s+ON\s+SCHEMA\s+cits_internal\s+FROM\s+authenticated;/);
+  assert.match(mig7Exec, /ALTER\s+TABLE\s+cits_internal\.credential_rotation_baselines\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY;/);
+
+  // Server-side forced password change enforcement in authorization helpers
+  assert.match(mig7Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.is_cits_operational_user\(\)/);
+  assert.match(mig7Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.current_instructor_id\(\)[\s\S]*?p\.must_change_password\s*=\s*FALSE/);
+  assert.match(mig7Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.is_cits_admin\(\)[\s\S]*?p\.must_change_password\s*=\s*FALSE/);
+  assert.match(mig7Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.complete_password_change_tx\(\)[\s\S]*?v_current_fingerprint\s*=\s*v_baseline_fingerprint/);
+  assert.match(mig7Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.capture_credential_rotation_baseline\(\)/);
+
+  // SEC-003 deactivated instructor read leak closed
+  assert.match(
+    mig7Exec,
+    /CREATE\s+POLICY\s+"Instructors read own instructor record only"\s+ON\s+public\.instructors[\s\S]*?profile_id\s*=\s*auth\.uid\(\)\s*AND\s*is_active_cits_user\(\)/
+  );
+
+  // Audit JSON arguments inside complete_password_change_tx() never trigger banned credential regex
+  const bannedAuditRegex =
+    /(password|service_role|totp_secret|mfa_secret|access_token|refresh_token|secret_key)/i;
+  const auditCalls = mig7Exec.match(/PERFORM\s+append_audit_log_internal\s*\([\s\S]*?\);/g) || [];
+  assert.ok(auditCalls.length >= 3, 'Expected audit calls in record_admin_totp_verified_tx and complete_password_change_tx');
+  for (const call of auditCalls) {
+    const jsonArgs = call.match(/jsonb_build_object\s*\([^)]*\)/gi) || [];
+    for (const arg of jsonArgs) {
+      assert.equal(
+        bannedAuditRegex.test(arg),
+        false,
+        `Migration 0007 audit JSON payload must never match enforce_audit_log_integrity regex: ${arg}`
+      );
+    }
+  }
+
+  // Verify non-destructive 0007 verification SQL suite (18 checks, zero COMMIT;)
+  const verify7 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0007_verify_forced_password_change_security.sql'),
+    'utf8'
+  );
+  const verify7NoComments = verify7.replace(/--.*$/gm, '');
+  assert.ok(verify7.includes('BEGIN;'));
+  assert.ok(verify7.includes('ROLLBACK;'));
+  assert.equal(/\bCOMMIT\s*;/i.test(verify7NoComments), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(verify7NoComments), false);
+  for (let i = 1; i <= 18; i++) {
+    assert.ok(verify7.includes(`VALUES (${i},`), `Missing verification check #${i} in 0007 verification script`);
+  }
+
+  // Confirm frontend defense-in-depth guards in App.tsx and AuthView.tsx
+  const appSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const authViewSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/auth/AuthView.tsx'), 'utf8');
+  assert.ok(appSrc.includes('auth.currentProfile.mustChangePassword'));
+  assert.ok(appSrc.includes('!auth.currentProfile.isActive'));
+  assert.ok(authViewSrc.includes('isPasswordChangeRequired'));
+});
+

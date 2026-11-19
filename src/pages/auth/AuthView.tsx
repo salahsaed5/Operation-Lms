@@ -138,6 +138,12 @@ export const AuthView: React.FC = () => {
   };
 
   const displayError = errorMsg || dataError;
+  const isPasswordChangeRequired =
+    !auth.pendingTotpProfileId &&
+    Boolean(
+      auth.pendingPasswordChangeProfileId ||
+        (auth.currentProfile.isActive && auth.currentProfile.mustChangePassword)
+    );
 
   return (
     <div className="min-h-screen w-full bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 grid grid-cols-1 lg:grid-cols-12">
@@ -257,7 +263,7 @@ export const AuthView: React.FC = () => {
         {/* Centered Form Box */}
         <main className="w-full max-w-sm mx-auto my-8">
           {/* Step 1: Standard Account Sign-In */}
-          {!auth.pendingTotpProfileId && !auth.pendingPasswordChangeProfileId && (
+          {!auth.pendingTotpProfileId && !isPasswordChangeRequired && (
             <div className="space-y-6">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
@@ -541,7 +547,7 @@ export const AuthView: React.FC = () => {
           )}
 
           {/* Step 3: Mandatory First-Login Password Change */}
-          {auth.pendingPasswordChangeProfileId && (
+          {isPasswordChangeRequired && (
             <div className="space-y-5">
               <div>
                 <div className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200/80 dark:border-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3">
