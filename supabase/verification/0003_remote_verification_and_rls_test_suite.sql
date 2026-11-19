@@ -207,7 +207,8 @@ DECLARE
     'review_checkin_exception_tx',
     'archive_camp_tx',
     'complete_password_change_tx',
-    'record_admin_totp_verified_tx'
+    'record_admin_totp_verified_tx',
+    'evaluate_login_rate_limit_internal'
   ];
 
   v_expected_helper_regprocs CONSTANT TEXT[] := ARRAY[
@@ -234,7 +235,8 @@ DECLARE
     'public.review_checkin_exception_tx(uuid,public.request_status,text)',
     'public.archive_camp_tx(uuid)',
     'public.complete_password_change_tx()',
-    'public.record_admin_totp_verified_tx()'
+    'public.record_admin_totp_verified_tx()',
+    'public.evaluate_login_rate_limit_internal(text,text,boolean)'
   ];
 
   -- Safe built-in / SQL syntactic tokens that may appear followed by '(' inside PL/pgSQL bodies

@@ -8,6 +8,11 @@ on:
         required: true
         default: 'true'
         type: boolean
+      apply_0006_to_0008:
+        description: 'Apply migrations 0006, 0007, and 0008 before running verification suites'
+        required: true
+        default: 'true'
+        type: boolean
 
 jobs:
   staging-verify:
@@ -53,6 +58,18 @@ jobs:
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_phase2_finalization_hardening.sql \
             | tee staging-reports/02-migration-0005.log
 
+      - name: Apply Migrations 0006–0008 (Staging)
+        if: ${{ inputs.apply_0006_to_0008 == true }}
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_fix_initial_password_change_audit.sql \
+            | tee staging-reports/02b-migration-0006.log
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_enforce_forced_password_change_security.sql \
+            | tee staging-reports/02c-migration-0007.log
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_security_phase_closure_hardening.sql \
+            | tee staging-reports/02d-migration-0008.log
+
       - name: Run Transactional RLS & Guard 1C Suite (0003)
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
@@ -86,12 +103,35 @@ jobs:
             exit 1
           fi
 
+      - name: Run Password Audit, Forced Password Change & Security Closure Suites (0006–0008)
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0006_verify_initial_password_change_audit.sql \
+            2>&1 | tee staging-reports/06a-suite-0006.log
+          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06a-suite-0006.log; then
+            echo "ERROR: Suite 0006 reported FAIL result(s)."
+            exit 1
+          fi
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0007_verify_forced_password_change_security.sql \
+            2>&1 | tee staging-reports/06b-suite-0007.log
+          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06b-suite-0007.log; then
+            echo "ERROR: Suite 0007 reported FAIL result(s)."
+            exit 1
+          fi
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0008_verify_security_phase_closure.sql \
+            2>&1 | tee staging-reports/06c-suite-0008.log
+          if grep -Eq '\|\s*FAIL\s*\|' staging-reports/06c-suite-0008.log; then
+            echo "ERROR: Suite 0008 reported FAIL result(s)."
+            exit 1
+          fi
+
       - name: Post-Migration Security Inventory Snapshot (0005)
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_security_inventory_and_preflight.sql \
-            | tee staging-reports/06-post-inventory.log
+            | tee staging-reports/07-post-inventory.log
 
       - name: Publish Audit Summary & Upload Staging Verification Artifacts
         if: always()

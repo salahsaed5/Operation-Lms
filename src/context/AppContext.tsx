@@ -98,6 +98,7 @@ import {
   fetchOperationalSnapshot,
   loadAuthenticatedUserContext,
   markNotificationReadInDb,
+  markProfileMustChangePassword,
   overrideEntitlementInDb,
   provisionInstructorViaEdgeFunction,
   recordBackupExportInDb,
@@ -751,8 +752,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshOperationalData = useCallback(async () => {
     if (!isSupabaseMode || !supabaseCtx) return;
-    await hydrateFromSnapshot(supabaseCtx);
-  }, [isSupabaseMode, supabaseCtx, hydrateFromSnapshot]);
+    try {
+      const liveCtx = await loadAuthenticatedUserContext(supabaseCtx.userId);
+      const needsReGate =
+        liveCtx.profile.mustChangePassword ||
+        (liveCtx.profile.role === UserRole.ADMIN &&
+          (liveCtx.mfa.needsEnrollment || liveCtx.mfa.needsChallenge));
+
+      if (needsReGate) {
+        clearSupabaseOperationalState();
+        await applySupabaseAuthContext(liveCtx);
+        return;
+      }
+
+      setSupabaseCtx(liveCtx);
+      await hydrateFromSnapshot(liveCtx);
+    } catch (err) {
+      pendingRecoveryFlowRef.current = false;
+      clearSupabaseOperationalState();
+      await signOutSupabase();
+      setAuth({
+        isAuthenticated: false,
+        pendingTotpProfileId: null,
+        pendingPasswordChangeProfileId: null,
+        currentProfile: GUEST_PLACEHOLDER_PROFILE,
+        activeInstructorId: '',
+        mfaFactorId: null,
+        mfaNeedsEnrollment: false,
+        mfaEnrollment: null,
+      });
+      setDataError(
+        err instanceof Error ? err.message : 'Your session is no longer active.'
+      );
+    }
+  }, [
+    isSupabaseMode,
+    supabaseCtx,
+    hydrateFromSnapshot,
+    clearSupabaseOperationalState,
+    applySupabaseAuthContext,
+  ]);
 
   const appendSandboxAudit = (
     action: string,
@@ -1670,7 +1709,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseMode) {
       try {
+        await markProfileMustChangePassword(inst.profileId);
         await sendInstructorPasswordResetEmail(inst.email);
+        await refreshOperationalData();
         return { ok: true };
       } catch (err) {
         return {

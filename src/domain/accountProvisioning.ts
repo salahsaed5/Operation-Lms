@@ -866,6 +866,16 @@ export function evaluateCompletePasswordChangeRpc(
     };
   }
 
+  // SEC-005 (Migration 0008): Admins must complete TOTP MFA (AAL2) before clearing must_change_password
+  if (state.profile.role === 'admin' && state.aal !== 'aal2') {
+    return {
+      ok: false,
+      mustChangePassword: state.profile.mustChangePassword,
+      error:
+        'CITS Security Violation: Admin MFA (AAL2) verification is required before completing credential rotation.',
+    };
+  }
+
   if (state.currentAuthCredentialLength < 20) {
     return {
       ok: false,
@@ -924,7 +934,7 @@ export function evaluateCompletePasswordChangeRpc(
 }
 
 /**
- * Mirrors Migration 0007 server-side RLS / RPC authorization helpers:
+ * Mirrors Migration 0007 + 0008 server-side RLS / RPC authorization helpers:
  * - is_active_cits_user(): onboarding bootstrap identity only
  * - is_cits_operational_user(): active AND must_change_password = FALSE
  * - current_instructor_id(): active instructor AND must_change_password = FALSE
@@ -977,4 +987,251 @@ export function evaluateServerAuthorizationHelpers(state: ForcedPasswordChangeSe
     canRecordAdminTotpVerified,
   };
 }
+
+// =============================================================================
+// SEC-004 NON-ENUMERABLE AUTH-LOGIN GATEWAY & RATE-LIMIT MODEL (Migration 0008)
+// =============================================================================
+
+export const UNIFORM_AUTH_LOGIN_ERROR = 'Invalid credentials or account unavailable.';
+export const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+export const LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER = 10;
+export const LOGIN_RATE_LIMIT_MAX_PER_IP = 25;
+
+export interface LoginRateLimitBucket {
+  windowStartedAtMs: number;
+  attemptCount: number;
+}
+
+export interface LoginRateLimitStore {
+  byIdentifier: Map<string, LoginRateLimitBucket>;
+  byIp: Map<string, LoginRateLimitBucket>;
+}
+
+export function createLoginRateLimitStore(): LoginRateLimitStore {
+  return {
+    byIdentifier: new Map(),
+    byIp: new Map(),
+  };
+}
+
+export function evaluateLoginRateLimitState(
+  store: LoginRateLimitStore,
+  params: {
+    ipKey: string;
+    identifierKey: string;
+    nowMs: number;
+    increment: boolean;
+  }
+): {
+  allowed: boolean;
+  retryAfterSeconds: number;
+  ipAttempts: number;
+  identifierAttempts: number;
+} {
+  const readBucket = (map: Map<string, LoginRateLimitBucket>, key: string) => {
+    const existing = map.get(key);
+    if (!existing || params.nowMs - existing.windowStartedAtMs >= LOGIN_RATE_LIMIT_WINDOW_MS) {
+      return { windowStartedAtMs: params.nowMs, attemptCount: 0 };
+    }
+    return existing;
+  };
+
+  let ipBucket = readBucket(store.byIp, params.ipKey);
+  let idBucket = readBucket(store.byIdentifier, params.identifierKey);
+
+  if (params.increment) {
+    ipBucket = {
+      windowStartedAtMs: ipBucket.attemptCount === 0 ? params.nowMs : ipBucket.windowStartedAtMs,
+      attemptCount: ipBucket.attemptCount + 1,
+    };
+    idBucket = {
+      windowStartedAtMs: idBucket.attemptCount === 0 ? params.nowMs : idBucket.windowStartedAtMs,
+      attemptCount: idBucket.attemptCount + 1,
+    };
+    store.byIp.set(params.ipKey, ipBucket);
+    store.byIdentifier.set(params.identifierKey, idBucket);
+  }
+
+  const ipBlocked = ipBucket.attemptCount >= LOGIN_RATE_LIMIT_MAX_PER_IP;
+  const idBlocked = idBucket.attemptCount >= LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER;
+
+  if (ipBlocked || idBlocked) {
+    const ipRem = ipBlocked
+      ? Math.max(
+          1,
+          Math.ceil(
+            (ipBucket.windowStartedAtMs + LOGIN_RATE_LIMIT_WINDOW_MS - params.nowMs) / 1000
+          )
+        )
+      : 0;
+    const idRem = idBlocked
+      ? Math.max(
+          1,
+          Math.ceil(
+            (idBucket.windowStartedAtMs + LOGIN_RATE_LIMIT_WINDOW_MS - params.nowMs) / 1000
+          )
+        )
+      : 0;
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(60, ipRem, idRem),
+      ipAttempts: ipBucket.attemptCount,
+      identifierAttempts: idBucket.attemptCount,
+    };
+  }
+
+  return {
+    allowed: true,
+    retryAfterSeconds: 0,
+    ipAttempts: ipBucket.attemptCount,
+    identifierAttempts: idBucket.attemptCount,
+  };
+}
+
+export interface AuthLoginAccountRecord {
+  userId: string;
+  username: string;
+  email: string;
+  isActive: boolean;
+  password: string;
+}
+
+export function evaluateAuthLoginGateway(params: {
+  origin: string | null;
+  allowedOrigins: string[];
+  method: string;
+  identifier: string;
+  password: string;
+  clientIp: string;
+  nowMs: number;
+  accounts: AuthLoginAccountRecord[];
+  rateLimitStore: LoginRateLimitStore;
+}): {
+  statusCode: 200 | 204 | 400 | 401 | 403 | 405 | 429;
+  ok: boolean;
+  error?: string;
+  retryAfterSeconds?: number;
+  resolvedUserId?: string;
+  leaksEmail?: boolean;
+} {
+  const cors = evaluateCorsOrigin(params.origin, params.allowedOrigins, params.method);
+  if (!cors.allowed) {
+    return { statusCode: 403, ok: false, error: 'Origin not allowed.' };
+  }
+  if (params.method.toUpperCase() === 'OPTIONS') {
+    return { statusCode: 204, ok: true };
+  }
+  if (params.method.toUpperCase() !== 'POST') {
+    return { statusCode: 405, ok: false, error: 'Method not allowed.' };
+  }
+
+  const cleanId = params.identifier.trim().toLowerCase();
+  if (!cleanId || cleanId.length > 120 || !params.password || params.password.length > 256) {
+    return { statusCode: 400, ok: false, error: 'Username/email and password are required.' };
+  }
+
+  const preCheck = evaluateLoginRateLimitState(params.rateLimitStore, {
+    ipKey: params.clientIp,
+    identifierKey: cleanId,
+    nowMs: params.nowMs,
+    increment: false,
+  });
+  if (!preCheck.allowed) {
+    return {
+      statusCode: 429,
+      ok: false,
+      error: 'Too many sign-in attempts. Please wait before trying again.',
+      retryAfterSeconds: preCheck.retryAfterSeconds,
+    };
+  }
+
+  const matched = params.accounts.find(
+    (a) =>
+      a.isActive &&
+      (a.username.toLowerCase() === cleanId || a.email.toLowerCase() === cleanId)
+  );
+
+  if (!matched || matched.password !== params.password) {
+    const postCheck = evaluateLoginRateLimitState(params.rateLimitStore, {
+      ipKey: params.clientIp,
+      identifierKey: cleanId,
+      nowMs: params.nowMs,
+      increment: true,
+    });
+    if (!postCheck.allowed) {
+      return {
+        statusCode: 429,
+        ok: false,
+        error: 'Too many sign-in attempts. Please wait before trying again.',
+        retryAfterSeconds: postCheck.retryAfterSeconds,
+      };
+    }
+    return {
+      statusCode: 401,
+      ok: false,
+      error: UNIFORM_AUTH_LOGIN_ERROR,
+      leaksEmail: false,
+    };
+  }
+
+  return {
+    statusCode: 200,
+    ok: true,
+    resolvedUserId: matched.userId,
+    leaksEmail: false,
+  };
+}
+
+// =============================================================================
+// STORAGE ACCESS POLICY MODEL (storage.objects checkin-selfies — 0002/0005/0007)
+// =============================================================================
+
+export function evaluateStorageSelfieAccess(params: {
+  state: ForcedPasswordChangeServerState;
+  bucketId: string;
+  objectPath: string;
+  operation: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+}): { allowed: boolean; reason: string } {
+  if (params.bucketId !== 'checkin-selfies') {
+    return { allowed: false, reason: 'Unauthorized storage bucket.' };
+  }
+
+  const authz = evaluateServerAuthorizationHelpers(params.state);
+
+  // Operational AAL2 Admins have full access to checkin-selfies
+  if (authz.isCitsAdmin) {
+    return { allowed: true, reason: 'Operational AAL2 Admin access permitted.' };
+  }
+
+  // Operational Instructors may only INSERT/SELECT under their own auth.uid() prefix
+  if (!authz.currentInstructorId || !params.state.authUserId) {
+    return {
+      allowed: false,
+      reason:
+        'Denied: Caller must be an operational active user with completed credential rotation (or AAL2 Admin).',
+    };
+  }
+
+  if (params.operation === 'UPDATE' || params.operation === 'DELETE') {
+    return {
+      allowed: false,
+      reason: 'Denied: Instructors cannot update or delete check-in selfies.',
+    };
+  }
+
+  const firstSegment = params.objectPath.split('/')[0] || '';
+  if (
+    firstSegment !== params.state.authUserId ||
+    params.objectPath.includes('..') ||
+    /[^0-9a-zA-Z/_.-]/.test(params.objectPath)
+  ) {
+    return {
+      allowed: false,
+      reason: 'Denied: Instructors may only access valid selfie paths within their own UID folder.',
+    };
+  }
+
+  return { allowed: true, reason: 'Operational Instructor own-folder access permitted.' };
+}
+
 

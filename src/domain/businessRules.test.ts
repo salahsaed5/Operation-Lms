@@ -1314,7 +1314,7 @@ function extractSqlArrayLiterals(sql: string, varName: string): string[] {
   return items;
 }
 
-test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0007', () => {
+test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function definition across migrations 0001..0008', () => {
   const migFiles = [
     'supabase/migrations/0001_cits_initial_schema.sql',
     'supabase/migrations/0002_phase2_security_rls_and_validation.sql',
@@ -1323,6 +1323,7 @@ test('23. Local PL/pgSQL Guard 1C lexical scanner passes every active function d
     'supabase/migrations/0005_phase2_finalization_hardening.sql',
     'supabase/migrations/0006_fix_initial_password_change_audit.sql',
     'supabase/migrations/0007_enforce_forced_password_change_security.sql',
+    'supabase/migrations/0008_security_phase_closure_hardening.sql',
   ];
 
   // Negative synthetic tests verifying scanner catches banned lexical edge cases
@@ -1635,4 +1636,96 @@ test('27. Migration 0007: enforces server-side forced password change verificati
   assert.ok(appSrc.includes('!auth.currentProfile.isActive'));
   assert.ok(authViewSrc.includes('isPasswordChangeRequired'));
 });
+
+test('28. Migration 0008 & Security Phase Closure: closes SEC-004 enumeration, SEC-005 Admin AAL2 RPC bypass, SEC-006 baseline reset, SEC-007 privilege tightening, and frontend session re-verification', () => {
+  const mig8 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/migrations/0008_security_phase_closure_hardening.sql'),
+    'utf8'
+  );
+  const mig8Exec = mig8.split('-- ROLLBACK CONSIDERATIONS')[0];
+
+  assert.ok(mig8Exec.includes('BEGIN;'));
+  assert.ok(mig8Exec.includes('COMMIT;'));
+  assert.equal(/\bROLLBACK\s*;/i.test(mig8Exec), false);
+  assert.equal(/DROP\s+TABLE/i.test(mig8Exec), false);
+  assert.equal(/TRUNCATE\s+/i.test(mig8Exec), false);
+  assert.equal(/DELETE\s+FROM/i.test(mig8Exec), false);
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(mig8Exec), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(mig8Exec), false);
+
+  // SEC-004: Revoke resolve_login_identifier from PUBLIC, anon, authenticated; grant only to service_role
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.resolve_login_identifier\(TEXT\)\s+FROM\s+PUBLIC;/);
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.resolve_login_identifier\(TEXT\)\s+FROM\s+anon;/);
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.resolve_login_identifier\(TEXT\)\s+FROM\s+authenticated;/);
+  assert.match(mig8Exec, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.resolve_login_identifier\(TEXT\)\s+TO\s+service_role;/);
+
+  // SEC-004: Private rate limit table & server-only helper
+  assert.match(mig8Exec, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+cits_internal\.auth_login_rate_limits/);
+  assert.match(mig8Exec, /ALTER\s+TABLE\s+cits_internal\.auth_login_rate_limits\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY;/);
+  assert.match(mig8Exec, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.evaluate_login_rate_limit_internal\(/);
+  assert.match(
+    mig8Exec,
+    /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.evaluate_login_rate_limit_internal\(TEXT,\s*TEXT,\s*BOOLEAN\)\s+TO\s+service_role;/
+  );
+
+  // SEC-005: Admin AAL2 gate inside complete_password_change_tx()
+  assert.match(
+    mig8Exec,
+    /IF\s+v_role\s*=\s*'admin'\s+AND\s+COALESCE\(auth\.jwt\(\)\s*->>\s*'aal',\s*''\)\s*!=\s*'aal2'\s+THEN/
+  );
+
+  // SEC-006: Re-forcing must_change_password resets last_completed_auth_fingerprint
+  assert.match(mig8Exec, /last_completed_auth_fingerprint\s*=\s*NULL/);
+  assert.match(mig8Exec, /last_completed_at\s*=\s*NULL/);
+
+  // SEC-007: Explicit PUBLIC/anon privilege revocations on helper functions
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.assert_camp_not_archived\(UUID\)\s+FROM\s+PUBLIC;/);
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.assert_camp_not_archived\(UUID\)\s+FROM\s+anon;/);
+  assert.match(mig8Exec, /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.is_active_cits_user\(\)\s+FROM\s+anon;/);
+
+  // Audit payloads in migration 0008 never match banned credential regex
+  const bannedAuditRegex =
+    /(password|service_role|totp_secret|mfa_secret|access_token|refresh_token|secret_key)/i;
+  const auditCalls = mig8Exec.match(/PERFORM\s+append_audit_log_internal\s*\([\s\S]*?\);/g) || [];
+  assert.ok(auditCalls.length >= 2, 'Expected audit calls in complete_password_change_tx inside migration 0008');
+  for (const call of auditCalls) {
+    const jsonArgs = call.match(/jsonb_build_object\s*\([^)]*\)/gi) || [];
+    for (const arg of jsonArgs) {
+      assert.equal(
+        bannedAuditRegex.test(arg),
+        false,
+        `Migration 0008 audit JSON payload must never match enforce_audit_log_integrity regex: ${arg}`
+      );
+    }
+  }
+
+  // Verify non-destructive 0008 verification SQL suite (14 checks, zero COMMIT;)
+  const verify8 = fs.readFileSync(
+    path.resolve(process.cwd(), 'supabase/verification/0008_verify_security_phase_closure.sql'),
+    'utf8'
+  );
+  const verify8NoComments = verify8.replace(/--.*$/gm, '');
+  assert.ok(verify8.includes('BEGIN;'));
+  assert.ok(verify8.includes('ROLLBACK;'));
+  assert.equal(/\bCOMMIT\s*;/i.test(verify8NoComments), false);
+  assert.equal(/WHEN\s+OTHERS\s+THEN\s+NULL/i.test(verify8NoComments), false);
+  for (let i = 1; i <= 14; i++) {
+    assert.ok(verify8.includes(`VALUES (${i},`), `Missing verification check #${i} in 0008 verification script`);
+  }
+
+  // Verify citsRepository calls auth-login Edge Function and NEVER calls resolve_login_identifier from client
+  const repoSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/services/citsRepository.ts'), 'utf8');
+  assert.match(repoSrc, /functions\.invoke\('auth-login'/);
+  assert.equal(
+    /\.rpc\(\s*['"]resolve_login_identifier['"]/.test(repoSrc),
+    false,
+    'Browser repository must never call resolve_login_identifier directly'
+  );
+
+  // Verify AppContext re-verifies live auth status on refresh and enforces must_change_password on Admin reset
+  const ctxSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/context/AppContext.tsx'), 'utf8');
+  assert.match(ctxSrc, /const liveCtx = await loadAuthenticatedUserContext\(supabaseCtx\.userId\)/);
+  assert.match(ctxSrc, /await markProfileMustChangePassword\(inst\.profileId\)/);
+});
+
 

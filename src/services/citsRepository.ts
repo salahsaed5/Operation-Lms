@@ -138,29 +138,65 @@ export async function resolveAndSignInWithSupabase(
     throw new Error('Username/email and password are required.');
   }
 
-  const { data: resolvedEmail, error: resolveErr } = await client.rpc(
-    'resolve_login_identifier',
-    { p_identifier: cleanId }
-  );
-
-  if (resolveErr) {
-    throw new Error(`Unable to verify account identifier: ${resolveErr.message}`);
-  }
-
-  if (!resolvedEmail) {
-    throw new Error('Invalid credentials or account is inactive.');
-  }
-
-  const { data: signInData, error: signInErr } = await client.auth.signInWithPassword({
-    email: resolvedEmail,
-    password,
+  // SEC-004: Authenticate via server-side rate-limited, non-enumerable auth-login
+  // Edge Function instead of exposing resolve_login_identifier() to anon callers.
+  const { data, error } = await client.functions.invoke('auth-login', {
+    body: {
+      identifier: cleanId,
+      password,
+    },
   });
 
-  if (signInErr || !signInData.user) {
-    throw new Error(signInErr?.message || 'Sign-in failed.');
+  if (error) {
+    let parsedErr: { error?: string } | null = null;
+    try {
+      const ctx = (error as unknown as { context?: Response }).context;
+      if (ctx && typeof ctx.json === 'function') {
+        parsedErr = (await ctx.json()) as { error?: string };
+      }
+    } catch {
+      parsedErr = null;
+    }
+
+    const status = (error as unknown as { context?: Response }).context?.status;
+    if (status === 429) {
+      throw new Error(
+        parsedErr?.error || 'Too many sign-in attempts. Please wait before trying again.'
+      );
+    }
+    if (status === 401) {
+      throw new Error(parsedErr?.error || 'Invalid credentials or account unavailable.');
+    }
+    throw new Error(parsedErr?.error || error.message || 'Sign-in failed.');
   }
 
-  return loadAuthenticatedUserContext(signInData.user.id);
+  const payload = data as
+    | {
+        ok?: boolean;
+        error?: string;
+        session?: { access_token?: string; refresh_token?: string };
+      }
+    | null;
+
+  if (
+    !payload ||
+    !payload.ok ||
+    !payload.session?.access_token ||
+    !payload.session?.refresh_token
+  ) {
+    throw new Error(payload?.error || 'Invalid credentials or account unavailable.');
+  }
+
+  const { data: sessionData, error: setSessionErr } = await client.auth.setSession({
+    access_token: payload.session.access_token,
+    refresh_token: payload.session.refresh_token,
+  });
+
+  if (setSessionErr || !sessionData.user) {
+    throw new Error(setSessionErr?.message || 'Unable to establish authenticated session.');
+  }
+
+  return loadAuthenticatedUserContext(sessionData.user.id);
 }
 
 export async function loadAuthenticatedUserContext(
@@ -1298,6 +1334,17 @@ export async function provisionInstructorViaEdgeFunction(
   }
 
   return data as ProvisionInstructorOutcome;
+}
+
+export async function markProfileMustChangePassword(profileId: string): Promise<void> {
+  const client = getClient();
+  const { error } = await client
+    .from('profiles')
+    .update({ must_change_password: true })
+    .eq('id', profileId);
+  if (error) {
+    throw new Error(error.message || 'Unable to enforce mandatory password rotation.');
+  }
 }
 
 export async function sendInstructorPasswordResetEmail(email: string): Promise<void> {

@@ -3,20 +3,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  AuthLoginAccountRecord,
   CallerAuthContext,
+  createLoginRateLimitStore,
   DEFAULT_PRODUCTION_ORIGINS,
   evaluateAuthenticatedSessionGate,
+  evaluateAuthLoginGateway,
   evaluateCallerAuthorizationForProvisioning,
   evaluateCompletePasswordChangeRpc,
   evaluateCorsOrigin,
   evaluateServerAuthorizationHelpers,
+  evaluateStorageSelfieAccess,
   executeInstructorProvisioningWorkflow,
   ForcedPasswordChangeServerState,
   generateSecureTemporaryPassword,
+  LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER,
+  LOGIN_RATE_LIMIT_MAX_PER_IP,
+  LOGIN_RATE_LIMIT_WINDOW_MS,
   normalizeProvisionInstructorInput,
   parseAllowedOrigins,
   ProvisioningRepositoryDeps,
   ProvisionInstructorInput,
+  UNIFORM_AUTH_LOGIN_ERROR,
   validateInitialPasswordStrength,
   validateProvisionInstructorInput,
   validateSafeRedirectUrl,
@@ -1060,4 +1068,504 @@ test('Migration 0007 Admin MFA + Forced Password Change: AAL2 Admin with pending
   assert.equal(aal2Ready.isCitsAdmin, true);
   assert.equal(aal2Ready.canAccessOperationalRlsAndRpcs, true);
 });
+
+// =============================================================================
+// MIGRATION 0008 SECURITY PHASE CLOSURE TESTS (SEC-004, SEC-005, SEC-006, STORAGE)
+// =============================================================================
+
+test('Migration 0008 SEC-005: Admin at AAL1 is DENIED from complete_password_change_tx() even after rotating Auth password; Admin at AAL2 succeeds', () => {
+  const adminAal1Rotated: ForcedPasswordChangeServerState = {
+    authUserId: 'admin-uid-1',
+    role: 'authenticated',
+    aal: 'aal1',
+    hasVerifiedTotpFactor: true,
+    profile: {
+      id: 'admin-uid-1',
+      role: 'admin',
+      isActive: true,
+      mustChangePassword: true,
+    },
+    hasAdminAccountSlot: true,
+    instructorId: null,
+    currentAuthCredentialLength: 60,
+    currentAuthFingerprint: 'sha256_admin_new_rotated_hash',
+    baselineAuthFingerprint: 'sha256_admin_initial_hash',
+    lastCompletedAuthFingerprint: null,
+  };
+
+  // SEC-005: AAL1 Admin MUST be rejected before clearing must_change_password
+  const deniedAal1 = evaluateCompletePasswordChangeRpc(adminAal1Rotated);
+  assert.equal(deniedAal1.ok, false);
+  assert.equal(deniedAal1.mustChangePassword, true);
+  assert.equal(deniedAal1.auditAction, undefined);
+  assert.match(deniedAal1.error || '', /AAL2|MFA/i);
+
+  // Once Admin completes TOTP challenge (AAL2), complete_password_change_tx() succeeds
+  const allowedAal2 = evaluateCompletePasswordChangeRpc({
+    ...adminAal1Rotated,
+    aal: 'aal2',
+  });
+  assert.equal(allowedAal2.ok, true);
+  assert.equal(allowedAal2.mustChangePassword, false);
+  assert.equal(allowedAal2.auditAction, 'PASSWORD_CHANGE_COMPLETED');
+});
+
+test('Migration 0008 SEC-006: Missing baseline row fails closed and re-forcing must_change_password blocks bypass until re-rotated', () => {
+  // Missing baseline row (null) MUST fail closed even if auth hash exists
+  const missingBaseline = evaluateCompletePasswordChangeRpc({
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    baselineAuthFingerprint: null,
+  });
+  assert.equal(missingBaseline.ok, false);
+  assert.equal(missingBaseline.mustChangePassword, true);
+  assert.match(missingBaseline.error || '', /Credential rotation not verified/i);
+
+  // Admin re-forces must_change_password = TRUE: baseline captured at current hash, lastCompleted reset to null
+  const reForcedState: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    profile: { ...BASE_PENDING_INSTRUCTOR_STATE.profile!, mustChangePassword: true },
+    currentAuthFingerprint: 'sha256_second_password',
+    baselineAuthFingerprint: 'sha256_second_password',
+    lastCompletedAuthFingerprint: null,
+  };
+
+  // Direct bypass before re-rotation is blocked
+  assert.equal(evaluateCompletePasswordChangeRpc(reForcedState).ok, false);
+
+  // After rotating to a third password, RPC succeeds
+  const reRotated = evaluateCompletePasswordChangeRpc({
+    ...reForcedState,
+    currentAuthFingerprint: 'sha256_third_password',
+  });
+  assert.equal(reRotated.ok, true);
+  assert.equal(reRotated.mustChangePassword, false);
+  assert.equal(reRotated.auditAction, 'PASSWORD_CHANGE_COMPLETED');
+});
+
+test('Migration 0008 Invite vs Temporary Credential Full Lifecycle: invite onboarding sets password then completes; temp password must rotate first', () => {
+  // 1. Invite flow: auth credential initially empty (length 0), baseline = sha256('')
+  const inviteInitial: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    currentAuthCredentialLength: 0,
+    currentAuthFingerprint: 'sha256_empty',
+    baselineAuthFingerprint: 'sha256_empty',
+  };
+  assert.equal(evaluateCompletePasswordChangeRpc(inviteInitial).ok, false);
+  assert.equal(evaluateServerAuthorizationHelpers(inviteInitial).canAccessOperationalRlsAndRpcs, false);
+
+  // User accepts invite and sets a strong password
+  const inviteAfterSet: ForcedPasswordChangeServerState = {
+    ...inviteInitial,
+    currentAuthCredentialLength: 60,
+    currentAuthFingerprint: 'sha256_user_chosen_invite_pass',
+  };
+  const inviteDone = evaluateCompletePasswordChangeRpc(inviteAfterSet);
+  assert.equal(inviteDone.ok, true);
+  assert.equal(inviteDone.mustChangePassword, false);
+
+  // 2. Temporary password flow: auth credential already 60-char bcrypt hash matching baseline
+  const tempInitial: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    currentAuthCredentialLength: 60,
+    currentAuthFingerprint: 'sha256_temp_pass',
+    baselineAuthFingerprint: 'sha256_temp_pass',
+  };
+  assert.equal(evaluateCompletePasswordChangeRpc(tempInitial).ok, false);
+  assert.equal(evaluateServerAuthorizationHelpers(tempInitial).canAccessOperationalRlsAndRpcs, false);
+
+  const tempRotated = evaluateCompletePasswordChangeRpc({
+    ...tempInitial,
+    currentAuthFingerprint: 'sha256_rotated_from_temp',
+  });
+  assert.equal(tempRotated.ok, true);
+  assert.equal(tempRotated.mustChangePassword, false);
+});
+
+test('Migration 0008 SEC-004: auth-login gateway prevents username/email enumeration, enforces CORS, and rate-limits by identifier (10) and IP (25)', () => {
+  const accounts: AuthLoginAccountRecord[] = [
+    {
+      userId: 'uid-active-1',
+      username: 'ahmed.khalil',
+      email: 'ahmed.khalil@cits.edu.eg',
+      isActive: true,
+      password: 'ValidStrongPassword!99',
+    },
+    {
+      userId: 'uid-inactive-1',
+      username: 'deactivated.inst',
+      email: 'deactivated.inst@cits.edu.eg',
+      isActive: false,
+      password: 'ValidStrongPassword!99',
+    },
+  ];
+  const allowedOrigins = [...DEFAULT_PRODUCTION_ORIGINS];
+  const origin = 'https://operation-lms.vercel.app';
+  const baseTime = 1_700_000_000_000;
+
+  // 1. CORS & HTTP method enforcement
+  const badOrigin = evaluateAuthLoginGateway({
+    origin: 'https://attacker.example.com',
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'ValidStrongPassword!99',
+    clientIp: '198.51.100.10',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: createLoginRateLimitStore(),
+  });
+  assert.equal(badOrigin.statusCode, 403);
+  assert.equal(badOrigin.ok, false);
+
+  const okPreflight = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'OPTIONS',
+    identifier: '',
+    password: '',
+    clientIp: '198.51.100.10',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: createLoginRateLimitStore(),
+  });
+  assert.equal(okPreflight.statusCode, 204);
+
+  // 2. Non-enumerability: unknown username, unknown email, inactive account, and wrong password
+  //    MUST all produce the exact same HTTP 401 status and identical error message.
+  const storeEnum = createLoginRateLimitStore();
+  const unknownUser = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ghost.user',
+    password: 'WrongPassword1!',
+    clientIp: '198.51.100.11',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+  const unknownEmail = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ghost@cits.edu.eg',
+    password: 'WrongPassword1!',
+    clientIp: '198.51.100.12',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+  const inactiveAccount = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'deactivated.inst',
+    password: 'ValidStrongPassword!99',
+    clientIp: '198.51.100.13',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+  const wrongPassword = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'WrongPassword1!',
+    clientIp: '198.51.100.14',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+
+  for (const r of [unknownUser, unknownEmail, inactiveAccount, wrongPassword]) {
+    assert.equal(r.statusCode, 401);
+    assert.equal(r.ok, false);
+    assert.equal(r.error, UNIFORM_AUTH_LOGIN_ERROR);
+    assert.equal(r.leaksEmail, false);
+  }
+
+  // 3. Valid login by both username and email succeeds
+  const byUsername = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'AHMED.KHALIL',
+    password: 'ValidStrongPassword!99',
+    clientIp: '198.51.100.15',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+  assert.equal(byUsername.statusCode, 200);
+  assert.equal(byUsername.resolvedUserId, 'uid-active-1');
+
+  const byEmail = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil@cits.edu.eg',
+    password: 'ValidStrongPassword!99',
+    clientIp: '198.51.100.16',
+    nowMs: baseTime,
+    accounts,
+    rateLimitStore: storeEnum,
+  });
+  assert.equal(byEmail.statusCode, 200);
+  assert.equal(byEmail.resolvedUserId, 'uid-active-1');
+
+  // 4. Per-identifier rate limiting triggers HTTP 429 on 10th failed attempt
+  const idRateStore = createLoginRateLimitStore();
+  for (let i = 1; i < LOGIN_RATE_LIMIT_MAX_PER_IDENTIFIER; i++) {
+    const attempt = evaluateAuthLoginGateway({
+      origin,
+      allowedOrigins,
+      method: 'POST',
+      identifier: 'ahmed.khalil',
+      password: `BadPass!${i}`,
+      clientIp: `198.51.100.${i}`,
+      nowMs: baseTime + i * 1000,
+      accounts,
+      rateLimitStore: idRateStore,
+    });
+    assert.equal(attempt.statusCode, 401);
+  }
+  const blockedId = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'BadPass!Final',
+    clientIp: '198.51.100.99',
+    nowMs: baseTime + 20_000,
+    accounts,
+    rateLimitStore: idRateStore,
+  });
+  assert.equal(blockedId.statusCode, 429);
+  assert.ok((blockedId.retryAfterSeconds || 0) >= 60);
+
+  // After 15-minute window elapses, identifier bucket resets cleanly
+  const afterWindow = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'ahmed.khalil',
+    password: 'ValidStrongPassword!99',
+    clientIp: '198.51.100.99',
+    nowMs: baseTime + LOGIN_RATE_LIMIT_WINDOW_MS + 5_000,
+    accounts,
+    rateLimitStore: idRateStore,
+  });
+  assert.equal(afterWindow.statusCode, 200);
+
+  // 5. Per-IP rate limiting triggers HTTP 429 on 25th failed attempt across distinct usernames
+  const ipRateStore = createLoginRateLimitStore();
+  for (let i = 1; i < LOGIN_RATE_LIMIT_MAX_PER_IP; i++) {
+    const attempt = evaluateAuthLoginGateway({
+      origin,
+      allowedOrigins,
+      method: 'POST',
+      identifier: `enum-probe-${i}`,
+      password: 'WrongPassword1!',
+      clientIp: '203.0.113.55',
+      nowMs: baseTime + i * 100,
+      accounts,
+      rateLimitStore: ipRateStore,
+    });
+    assert.equal(attempt.statusCode, 401);
+  }
+  const blockedIp = evaluateAuthLoginGateway({
+    origin,
+    allowedOrigins,
+    method: 'POST',
+    identifier: 'enum-probe-25',
+    password: 'WrongPassword1!',
+    clientIp: '203.0.113.55',
+    nowMs: baseTime + 5000,
+    accounts,
+    rateLimitStore: ipRateStore,
+  });
+  assert.equal(blockedIp.statusCode, 429);
+  assert.ok((blockedIp.retryAfterSeconds || 0) >= 60);
+});
+
+test('Migration 0008 SEC-004 Static Audit: auth-login Edge Function enforces explicit CORS, SHA-256 rate limiting, uniform 401, timing floor, no-store, and zero secret logging', () => {
+  const fnPath = path.resolve(process.cwd(), 'supabase/functions/auth-login/index.ts');
+  const code = fs.readFileSync(fnPath, 'utf8');
+
+  assert.match(code, /DEFAULT_PRODUCTION_ORIGINS\s*=\s*\['https:\/\/operation-lms\.vercel\.app'\]/);
+  assert.equal(/Access-Control-Allow-Origin':\s*'\*'/.test(code), false);
+  assert.match(code, /Origin not allowed\./);
+  assert.match(code, /evaluate_login_rate_limit_internal/);
+  assert.match(code, /resolve_login_identifier/);
+  assert.match(code, /sha256Hex/);
+  assert.match(code, /UNIFORM_AUTH_ERROR\s*=\s*'Invalid credentials or account unavailable\.'/);
+  assert.match(code, /MIN_AUTH_RESPONSE_MS/);
+  assert.match(code, /'Retry-After':/);
+  assert.match(code, /'Cache-Control': 'no-store/);
+  assert.equal(/console\.log\(.*password/i.test(code), false);
+  assert.equal(/console\.log\(.*access_token/i.test(code), false);
+});
+
+test('Storage Access Policy (checkin-selfies): blocks must_change_password, inactive, anon, cross-user paths, path traversal, instructor delete, and AAL1 admin', () => {
+  const ownPath = 'inst-uid-1/camp-1/day-1.jpg';
+  const otherPath = 'inst-uid-2/camp-1/day-1.jpg';
+  const traversalPath = 'inst-uid-1/../inst-uid-2/day-1.jpg';
+
+  // 1. Instructor with must_change_password = TRUE is blocked from both INSERT and SELECT
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: BASE_PENDING_INSTRUCTOR_STATE,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'INSERT',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: BASE_PENDING_INSTRUCTOR_STATE,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'SELECT',
+    }).allowed,
+    false
+  );
+
+  // 2. Operational active instructor (mustChangePassword = FALSE)
+  const operationalInstructor: ForcedPasswordChangeServerState = {
+    ...BASE_PENDING_INSTRUCTOR_STATE,
+    profile: { ...BASE_PENDING_INSTRUCTOR_STATE.profile!, mustChangePassword: false },
+  };
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'INSERT',
+    }).allowed,
+    true
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'SELECT',
+    }).allowed,
+    true
+  );
+  // Cross-user path, path traversal, UPDATE, DELETE all denied for instructor
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: otherPath,
+      operation: 'SELECT',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: traversalPath,
+      operation: 'INSERT',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'DELETE',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: operationalInstructor,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'UPDATE',
+    }).allowed,
+    false
+  );
+
+  // 3. Deactivated instructor and anon denied
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: {
+        ...operationalInstructor,
+        profile: { ...operationalInstructor.profile!, isActive: false },
+      },
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'SELECT',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: {
+        ...operationalInstructor,
+        authUserId: null,
+        role: 'anon',
+        profile: null,
+      },
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'SELECT',
+    }).allowed,
+    false
+  );
+
+  // 4. Admin AAL1 denied; Admin AAL2 with pending password change denied; operational AAL2 Admin allowed
+  const baseAdmin: ForcedPasswordChangeServerState = {
+    authUserId: 'admin-uid-1',
+    role: 'authenticated',
+    aal: 'aal1',
+    hasVerifiedTotpFactor: true,
+    profile: { id: 'admin-uid-1', role: 'admin', isActive: true, mustChangePassword: false },
+    hasAdminAccountSlot: true,
+    instructorId: null,
+    currentAuthCredentialLength: 60,
+    currentAuthFingerprint: 'sha256_admin',
+    baselineAuthFingerprint: 'sha256_admin_old',
+    lastCompletedAuthFingerprint: 'sha256_admin',
+  };
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: baseAdmin,
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'SELECT',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: {
+        ...baseAdmin,
+        aal: 'aal2',
+        profile: { ...baseAdmin.profile!, mustChangePassword: true },
+      },
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'DELETE',
+    }).allowed,
+    false
+  );
+  assert.equal(
+    evaluateStorageSelfieAccess({
+      state: { ...baseAdmin, aal: 'aal2' },
+      bucketId: 'checkin-selfies',
+      objectPath: ownPath,
+      operation: 'DELETE',
+    }).allowed,
+    true
+  );
+});
+
 
