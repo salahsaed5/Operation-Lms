@@ -443,10 +443,21 @@ Deno.serve(async (req: Request) => {
   let currentStep = 'auth_user_creation';
   try {
     if (deliveryMode === 'invite_email') {
-      const safeRedirectTo =
-        typeof body.redirectTo === 'string' && /^https?:\/\//i.test(body.redirectTo.trim())
-          ? body.redirectTo.trim()
-          : undefined;
+      const allowedOrigins = (Deno.env.get('ALLOWED_ORIGINS') || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      let safeRedirectTo: string | undefined;
+      if (typeof body.redirectTo === 'string' && /^https?:\/\//i.test(body.redirectTo.trim())) {
+        try {
+          const parsedRedirect = new URL(body.redirectTo.trim());
+          if (allowedOrigins.length === 0 || allowedOrigins.includes(parsedRedirect.origin)) {
+            safeRedirectTo = parsedRedirect.toString();
+          }
+        } catch {
+          safeRedirectTo = undefined;
+        }
+      }
       const { data: invited, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
         email,
         {
@@ -542,7 +553,8 @@ Deno.serve(async (req: Request) => {
         username,
         email,
         is_active: isActive,
-        delivery_mode: deliveryMode,
+        onboarding_mode:
+          deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential',
         onboarding_rotation_required: true,
         assigned_camp_id: assignToCampId,
       },

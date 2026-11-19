@@ -362,6 +362,17 @@ test('Phase 3.2: Provisioning succeeds in temporary_password mode returning one-
     auditLogs: state.auditLogs,
   });
   assert.equal(persistedDump.includes(outcome.initialTemporaryPassword), false);
+
+  // Audit log integrity check: temporary_password mode must also NEVER trip migration 0005 regex
+  assert.equal(state.auditLogs.length, 1);
+  const serializedAudit = JSON.stringify(state.auditLogs[0]).toLowerCase();
+  assert.equal(
+    /(password|service_role|totp_secret|mfa_secret|access_token|refresh_token|secret_key)/.test(
+      serializedAudit
+    ),
+    false,
+    'temporary_password audit log entry must never include banned credential substrings'
+  );
 });
 
 test('Phase 3.2: Provisioning rejects duplicate email/username/code and archived camp before creating Auth user', async () => {
@@ -671,6 +682,12 @@ test('Phase 3 Security Audit: Edge Function enforces JWT auth, AAL2, admin_accou
   assert.match(code, /must_change_password:\s*true/);
   assert.match(code, /auth\.admin\.deleteUser\(createdAuthUserId\)/);
   assert.match(code, /'Cache-Control': 'no-store/);
+  assert.match(code, /onboarding_mode:/);
+  assert.equal(
+    /delivery_mode:\s*deliveryMode/.test(code),
+    false,
+    'Edge Function audit_logs payload must not write raw delivery_mode containing "temporary_password"'
+  );
   assert.equal(
     /console\.log\(.*temporaryPassword/i.test(code),
     false,

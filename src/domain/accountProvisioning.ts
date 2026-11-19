@@ -567,7 +567,8 @@ export async function executeInstructorProvisioningWorkflow(
           username: input.username,
           email: input.email,
           is_active: input.isActive,
-          delivery_mode: input.deliveryMode,
+          onboarding_mode:
+            input.deliveryMode === 'invite_email' ? 'invite_email' : 'one_time_temp_credential',
           onboarding_rotation_required: true,
           assigned_camp_id: input.assignToCampId,
         },
