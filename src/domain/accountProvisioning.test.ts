@@ -861,11 +861,11 @@ test('Phase 3 Security Audit: AppContext handles PASSWORD_RECOVERY, guards USER_
   );
 });
 
-test('Phase 3 Security Audit: Dev sandbox selector in AuthView is strictly gated by import.meta.env.DEV && !isSupabaseMode', () => {
+test('Phase 3 Security Audit: Dev sandbox selector in AuthView requires explicit local sandbox mode', () => {
   const authViewPath = path.resolve(process.cwd(), 'src/pages/auth/AuthView.tsx');
   const code = fs.readFileSync(authViewPath, 'utf8');
 
-  assert.match(code, /\{import\.meta\.env\.DEV && !isSupabaseMode && \(/);
+  assert.match(code, /\{isSandboxMode && \(/);
 });
 
 test('Phase 3 Security Audit: bootstrap_cits_admin_account remains revoked from PUBLIC, anon, and authenticated', () => {
