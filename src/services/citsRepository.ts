@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { assertOperationalSnapshotQueriesSucceeded } from './operationalSnapshotReadGuard';
 import {
   calculateCampDayDate,
   resolveStudentOriginGroupForDay,
@@ -471,28 +472,35 @@ export async function fetchOperationalSnapshot(
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const errors = [
-    profilesRes.error,
-    instructorsRes.error,
-    venuesRes.error,
-    roomsRes.error,
-    campsRes.error,
-    settingsRes.error,
-    groupsRes.error,
-    studentsRes.error,
-    lecturesRes.error,
-    checkinsRes.error,
-    sheetsRes.error,
-    recordsRes.error,
-    entitlementsRes.error,
-    requestsRes.error,
-    notificationsRes.error,
-    issuesRes.error,
-  ].filter(Boolean);
-
-  if (errors.length > 0) {
-    throw new Error(`Database query failed: ${errors[0]!.message}`);
-  }
+  // Fail closed on every requested table, including the ancillary datasets.
+  // A failed query must never be mistaken for an empty successful result.
+  assertOperationalSnapshotQueriesSucceeded([
+    ['profiles', profilesRes.error],
+    ['admin_accounts', adminRes.error],
+    ['instructors', instructorsRes.error],
+    ['venues', venuesRes.error],
+    ['rooms', roomsRes.error],
+    ['camps', campsRes.error],
+    ['camp_settings', settingsRes.error],
+    ['camp_instructors', campInstructorsRes.error],
+    ['groups', groupsRes.error],
+    ['group_instructors', groupInstructorsRes.error],
+    ['students', studentsRes.error],
+    ['student_transfers', transfersRes.error],
+    ['lectures', lecturesRes.error],
+    ['daily_checkins', checkinsRes.error],
+    ['checkin_exceptions', exceptionsRes.error],
+    ['attendance_sheets', sheetsRes.error],
+    ['attendance_records', recordsRes.error],
+    ['lecture_entitlements', entitlementsRes.error],
+    ['instructor_requests', requestsRes.error],
+    ['notifications', notificationsRes.error],
+    ['issues', issuesRes.error],
+    ['daily_checklists', checklistsRes.error],
+    ['survey_links', surveyLinksRes.error],
+    ['survey_results', surveyResultsRes.error],
+    ['audit_logs', auditLogsRes.error],
+  ]);
 
   const profiles = (profilesRes.data || []).map(mapProfileRow);
   const profileById = new Map(profiles.map((p) => [p.id, p]));
