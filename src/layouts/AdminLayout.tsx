@@ -183,6 +183,12 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
       {/* Main White Workspace Card (Slim Top Bar + Page Body) */}
       <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 lg:rounded-xl lg:border border-slate-200/80 dark:border-slate-800 lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
+        {!isSupabaseMode && (
+          <div role="status" aria-live="polite" className="px-4 py-2 bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200">
+            <strong>{t('LOCAL SANDBOX PREVIEW', 'معاينة محلية تجريبية')}</strong>
+            <span className="ms-2">{t('Not connected to Supabase. Changes are demo-only and are not saved to the remote database.', 'لا يوجد اتصال بـ Supabase. التغييرات تجريبية فقط ولا تُحفظ في قاعدة البيانات البعيدة.')}</span>
+          </div>
+        )}
         {/* Single Slim White Top Bar (Restrained Translucent Glass on Sticky Scroll) */}
         <header className="sticky top-0 z-30 h-14 px-4 sm:px-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0 relative">
           {/* Left Zone: Sidebar Toggle + Concise Camp Context */}
