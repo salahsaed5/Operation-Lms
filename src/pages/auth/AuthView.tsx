@@ -18,6 +18,7 @@ export const AuthView: React.FC = () => {
   const {
     auth,
     isSupabaseMode,
+    isSandboxMode,
     dataError,
     loginWithCredentials,
     setupAdminTotpEnrollment,
@@ -276,6 +277,13 @@ export const AuthView: React.FC = () => {
                   )}
                 </p>
               </div>
+
+              {isSandboxMode && (
+                <div role="status" aria-live="polite" className="p-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-xs text-amber-900 dark:text-amber-200">
+                  <strong>{t('LOCAL SANDBOX PREVIEW', 'معاينة محلية تجريبية')}</strong>
+                  <p className="mt-1">{t('This is demo data only. Supabase is not connected and changes are not saved to the remote database.', 'هذه بيانات تجريبية فقط. لا يوجد اتصال بـ Supabase ولن تُحفظ التغييرات في قاعدة البيانات البعيدة.')}</p>
+                </div>
+              )}
 
               {displayError && (
                 <div
