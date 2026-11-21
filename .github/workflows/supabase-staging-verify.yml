@@ -2,8 +2,8 @@
 # Supabase Staging Database Migration & SQL Security Verification Workflow
 #
 # SCOPE NOTICE:
-#   This workflow applies ordered PostgreSQL migrations (0005 -> 0008) and runs
-#   all 6 non-destructive transactional SQL verification suites (0003 -> 0008)
+#   This workflow applies ordered PostgreSQL migrations (0005 -> 0009) and runs
+#   all 7 non-destructive transactional SQL verification suites (0003 -> 0009)
 #   strictly against a STAGING database.
 #   It does NOT deploy Supabase Edge Functions (auth-login, provision-instructor)
 #   and does NOT deploy the frontend. Edge Functions MUST be deployed separately
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       apply_migrations:
-        description: 'Set true only to apply migrations 0005 -> 0008. False verifies an already-migrated Staging database without writes.'
+        description: 'Set true only to apply migrations 0005 -> 0009. False verifies an already-migrated Staging database without writes.'
         required: true
         default: false
         type: boolean
@@ -125,6 +125,11 @@ jobs:
               echo "ERROR: apply_migrations=false was selected, but Migration 0008 artifacts are missing from Staging DB. Re-run with apply_migrations=true."
               exit 1
             fi
+            HAS_0009="$(psql "$PGURL" -v ON_ERROR_STOP=1 -Atc "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='students' AND policyname='Instructors read permitted student rosters' AND qual LIKE '%is_instructor_assigned_to_group%' AND qual NOT LIKE '%is_instructor_assigned_to_camp%') THEN 'ok' ELSE 'missing' END;")"
+            if [ "$HAS_0009" != "ok" ]; then
+              echo "ERROR: apply_migrations=false was selected but Migration 0009 instructor roster isolation is missing from Staging."
+              exit 1
+            fi
           fi
 
       - name: Run Read-Only Preflight Inventory (0005)
@@ -135,7 +140,7 @@ jobs:
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/verification/0005_security_inventory_and_preflight.sql \
             2>&1 | tee staging-reports/01-preflight-inventory.log
 
-      - name: Apply Ordered Forward-Only Migrations 0005 -> 0006 -> 0007 -> 0008 (Staging)
+      - name: Apply Ordered Forward-Only Migrations 0005 -> 0006 -> 0007 -> 0008 -> 0009 (Staging)
         if: ${{ inputs.apply_migrations == true }}
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
@@ -149,8 +154,10 @@ jobs:
             2>&1 | tee staging-reports/02c-migration-0007.log
           psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_security_phase_closure_hardening.sql \
             2>&1 | tee staging-reports/02d-migration-0008.log
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/migrations/0009_instructor_group_roster_isolation.sql \
+            2>&1 | tee staging-reports/02e-migration-0009.log
 
-      - name: Run All 6 Transactional Verification Suites (0003–0008) with Strict Pass/Fail Enforcement
+      - name: Run All 7 Transactional Verification Suites (0003–0009) with Strict Pass/Fail Enforcement
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
@@ -206,6 +213,11 @@ jobs:
             "staging-reports/06c-suite-0008.log" \
             '\|\s*PASS\s*\|'
 
+          run_suite "Suite 0009 (Instructor Group Roster Isolation)" \
+            "supabase/verification/0009_verify_instructor_group_roster_isolation.sql" \
+            "staging-reports/06d-suite-0009.log" \
+            '\\[PASS 0009\\]'
+
       - name: Post-Migration Security Inventory Snapshot (0005)
         env:
           PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
@@ -221,7 +233,7 @@ jobs:
           {
             echo "## Supabase Staging Database Verification Results"
             echo ""
-            echo "> **Scope Notice:** This workflow verifies PostgreSQL migrations (0005–0008) and transactional SQL verification suites (0003–0008) only. It does **not** deploy Edge Functions (\`auth-login\`, \`provision-instructor\`). Deploy both Edge Functions separately before executing live Staging E2E tests."
+            echo "> **Scope Notice:** This workflow verifies PostgreSQL migrations (0005–0009) and transactional SQL verification suites (0003–0009) only. It does **not** deploy Edge Functions (\`auth-login\`, \`provision-instructor\`). Deploy both Edge Functions separately before executing live Staging E2E tests."
             echo ""
             for f in staging-reports/*.log; do
               [ -f "$f" ] || continue
