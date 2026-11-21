@@ -777,19 +777,26 @@ Deno.serve(async (req: Request) => {
     const rolledBack = createdAuthUserId ? await performCompensatingRollback() : true;
     const rawMsg = err instanceof Error ? err.message : 'Provisioning error';
     const isConflict = /already registered|already exists|duplicate key|23505/i.test(rawMsg);
+    const isInviteEmailLimit =
+      currentStep === 'auth_user_creation' &&
+      deliveryMode === 'invite_email' &&
+      /over_email_send_rate_limit|email rate limit exceeded|email send rate limit/i.test(rawMsg);
 
     // Safe diagnostic log only — never log passwords, tokens, or request headers
     console.error('[provision-instructor] Provisioning failed', {
       step: currentStep,
       isConflict,
+      isInviteEmailLimit,
       rolledBack,
     });
 
-    return jsonResponse(originPolicy.corsHeaders, isConflict ? 409 : 500, {
+    return jsonResponse(originPolicy.corsHeaders, isInviteEmailLimit ? 429 : isConflict ? 409 : 500, {
       ok: false,
-      error: isConflict
-        ? 'An account with this email, username, or instructor code already exists.'
-        : 'Unable to complete instructor provisioning. Any partial account records were rolled back.',
+      error: isInviteEmailLimit
+        ? 'Supabase invitation email limit reached. For Staging tests, choose One-Time Temporary Password instead; configure production SMTP before using invitation emails.'
+        : isConflict
+          ? 'An account with this email, username, or instructor code already exists.'
+          : 'Unable to complete instructor provisioning. Any partial account records were rolled back.',
       rolledBack,
     });
   }
