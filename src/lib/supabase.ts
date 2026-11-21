@@ -100,7 +100,7 @@ export const supabase: SupabaseClient<Database> | null = isSupabaseConfigured
   : null;
 
 export function getSupabaseStatusSummary() {
-  let urlHost = `${CITS_SUPABASE_PROJECT_URL} (Local Sandbox Fallback — Public Anon Key Pending)`;
+  let urlHost = 'No remote Supabase connection is configured.';
   if (isSupabaseConfigured) {
     try {
       urlHost = new URL(supabaseUrl).host;
