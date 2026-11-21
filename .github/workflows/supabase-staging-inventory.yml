@@ -1,0 +1,101 @@
+# Staging baseline inventory ONLY. Never writes to the database.
+# To run this dispatch workflow after merge, the repo must have the
+# environment-scoped secret SUPABASE_STAGING_DB_URL under environment staging.
+# This workflow deliberately does NOT bootstrap/migrate, deploy Edge Functions,
+# copy Production data, or create users.
+name: Supabase Staging Read-Only Inventory
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-schema-inventory:
+    name: Read-only Staging schema audit
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Require exact Staging identity before any database connection
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          EXPECTED_STAGING_REF: uewhudbufykfkhimvqjj
+          PRODUCTION_REF: wdmlxsgbjkboadkeekdq
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import unquote, urlsplit
+
+          raw = (os.environ.get("SUPABASE_STAGING_DB_URL") or "").strip()
+          staging = os.environ["EXPECTED_STAGING_REF"]
+          production = os.environ["PRODUCTION_REF"]
+          if not raw:
+              sys.exit("ERROR: Staging database secret is missing; no connection attempted.")
+          try:
+              parsed = urlsplit(raw)
+              host = (parsed.hostname or "").lower()
+              username = unquote(parsed.username or "")
+              db = unquote(parsed.path.lstrip("/"))
+              port = parsed.port
+          except Exception:
+              sys.exit("ERROR: Invalid Staging connection URI; no connection attempted.")
+
+          if parsed.scheme not in ("postgres", "postgresql"):
+              sys.exit("ERROR: Staging connection must use a PostgreSQL URI.")
+          if production in raw.lower():
+              sys.exit("ERROR: Production project identity detected; no connection attempted.")
+
+          direct = host == f"db.{staging}.supabase.co" and username == "postgres"
+          session_pooler = (
+              host.endswith(".pooler.supabase.com")
+              and username == f"postgres.{staging}"
+          )
+          if db != "postgres" or port not in (None, 5432) or not (direct or session_pooler):
+              sys.exit("ERROR: Target is not the approved Staging direct/session-pooler endpoint.")
+          print("PASS: Database target URI identifies the approved Staging project.")
+          PY
+
+      - name: Inventory public schema using read-only transactions
+        env:
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGOPTIONS: -c default_transaction_read_only=on
+        run: |
+          set -euo pipefail
+          # No SQL write command is executed. PGOPTIONS applies read-only mode
+          # even to interactive/default PostgreSQL transactions.
+          table_count="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public';")"
+          rls_count="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND rowsecurity;")"
+          mig8="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc "SELECT CASE WHEN to_regclass('cits_internal.auth_login_rate_limits') IS NOT NULL AND to_regprocedure('public.evaluate_login_rate_limit_internal(text,text,boolean)') IS NOT NULL THEN 'present' ELSE 'missing' END;")"
+          mig9="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='students' AND policyname='Instructors read permitted student rosters' AND qual LIKE '%is_instructor_assigned_to_group%' AND qual NOT LIKE '%is_instructor_assigned_to_camp%') THEN 'policy-present' ELSE 'missing' END;")"
+          {
+            echo "## Staging schema inventory (read-only)"
+            echo ""
+            echo "- Approved Supabase Staging ref: \`uewhudbufykfkhimvqjj\`"
+            echo "- Public table count: \`$table_count\` (baseline expectation: 29)"
+            echo "- Public tables with RLS enabled: \`$rls_count\`"
+            echo "- Migration 0008 markers: \`$mig8\`"
+            echo "- Migration 0009 roster-policy marker: \`$mig9\`"
+            echo ""
+            echo "### Public table names / RLS settings"
+            echo '~~~'
+            psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc "SELECT tablename || ' | RLS=' || rowsecurity::text FROM pg_tables WHERE schemaname='public' ORDER BY tablename;"
+            echo '~~~'
+            echo ""
+            echo "No user rows, emails, access keys, or database secrets are emitted."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$table_count" -ne 29 ]; then
+            echo "NOT READY: Public schema has $table_count tables, expected 29 baseline tables. No migration was applied."
+            exit 1
+          fi
+          echo "PASS: Baseline table count matches (still requires RLS and live auth/E2E verification)."
