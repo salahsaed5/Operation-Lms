@@ -73,6 +73,7 @@ jobs:
               host = (parsed.hostname or "").lower()
               username = unquote(parsed.username or "")
               database = unquote(parsed.path.lstrip("/"))
+              port = parsed.port
           except Exception:
               print("ERROR: SUPABASE_STAGING_DB_URL is not a valid PostgreSQL URI.")
               sys.exit(1)
@@ -94,7 +95,7 @@ jobs:
               and username == f"postgres.{staging_ref}"
           )
 
-          if database != "postgres" or not (direct_target or session_pooler_target):
+          if database != "postgres" or port not in (None, 5432) or not (direct_target or session_pooler_target):
               print(
                   "ERROR: Connection does not identify the approved Supabase Staging project. "
                   "Use its direct host with user 'postgres', or its session pooler with "
