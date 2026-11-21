@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       apply_migrations:
-        description: 'Apply ordered forward-only migrations 0005 -> 0006 -> 0007 -> 0008 before running verification suites'
+        description: 'Set true only to apply migrations 0005 -> 0008. False verifies an already-migrated Staging database without writes.'
         required: true
-        default: 'true'
+        default: false
         type: boolean
 
 jobs:
