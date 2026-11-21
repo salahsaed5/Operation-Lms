@@ -216,7 +216,7 @@ jobs:
           run_suite "Suite 0009 (Instructor Group Roster Isolation)" \
             "supabase/verification/0009_verify_instructor_group_roster_isolation.sql" \
             "staging-reports/06d-suite-0009.log" \
-            '\\[PASS 0009\\]'
+            'PASS 0009'
 
       - name: Post-Migration Security Inventory Snapshot (0005)
         env:
