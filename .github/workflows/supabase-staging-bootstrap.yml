@@ -1,0 +1,201 @@
+# This workflow is the ONLY approved path proposed for an EMPTY staging schema.
+# It never runs on push/PR. It defaults to inventory only. No Production access.
+name: Supabase Staging Baseline Bootstrap (Approval Required)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "inventory only (default), or bootstrap empty Staging using migrations 0001-0008"
+        type: choice
+        required: true
+        default: inventory
+        options:
+          - inventory
+          - bootstrap
+      confirmation:
+        description: "For bootstrap only: type BOOTSTRAP-STAGING-uewhudbufykfkhimvqjj"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  stage-bootstrap:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+    steps:
+      - name: Validate operator intent (deny writes by default)
+        env:
+          OPERATION: \${{ inputs.operation }}
+          CONFIRMATION: \${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          case "$OPERATION" in
+            inventory)
+              echo "Inventory-only mode. No migration will be executed."
+              ;;
+            bootstrap)
+              if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                echo "ERROR: Bootstrap dispatch must target main after workflow review and merge."
+                exit 1
+              fi
+              if [ "$CONFIRMATION" != "BOOTSTRAP-STAGING-uewhudbufykfkhimvqjj" ]; then
+                echo "ERROR: Exact Staging bootstrap confirmation is required. No SQL executed."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "ERROR: Unsupported operation."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout approved repository migrations
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Validate exact Staging URI before opening any connection
+        env:
+          SUPABASE_STAGING_DB_URL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          STAGING_PROJECT_REF: uewhudbufykfkhimvqjj
+          PRODUCTION_PROJECT_REF: wdmlxsgbjkboadkeekdq
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import parse_qs, unquote, urlsplit
+
+          raw = (os.environ.get("SUPABASE_STAGING_DB_URL") or "").strip()
+          staging = os.environ["STAGING_PROJECT_REF"]
+          production = os.environ["PRODUCTION_PROJECT_REF"]
+          if not raw:
+              sys.exit("ERROR: Staging secret is absent. No database connection attempted.")
+          try:
+              parsed = urlsplit(raw)
+              hostname = (parsed.hostname or "").lower()
+              username = unquote(parsed.username or "")
+              database = unquote(parsed.path.lstrip("/"))
+              port = parsed.port
+              params = parse_qs(parsed.query, keep_blank_values=True)
+          except Exception:
+              sys.exit("ERROR: Invalid PostgreSQL URI. No database connection attempted.")
+
+          if production in raw.lower():
+              sys.exit("ERROR: Production reference found in connection target. Aborting.")
+          if parsed.scheme not in ("postgres", "postgresql") or parsed.fragment:
+              sys.exit("ERROR: Invalid PostgreSQL connection URI.")
+          direct = hostname == f"db.{staging}.supabase.co" and username == "postgres"
+          session_pooler = (
+              hostname.endswith(".pooler.supabase.com")
+              and username == f"postgres.{staging}"
+          )
+          if database != "postgres" or port not in (None, 5432) or not (direct or session_pooler):
+              sys.exit("ERROR: URI is NOT the allowed Staging direct/session-pooler target.")
+          # Disallow hostaddr or other libpq URI keys that could override validated host.
+          allowed_params = {"sslmode", "connect_timeout", "application_name"}
+          if set(params) - allowed_params:
+              sys.exit("ERROR: Unsupported connection URI parameters; refusing connection.")
+          if "sslmode" in params and (
+              len(params["sslmode"]) != 1
+              or params["sslmode"][0] not in ("require", "verify-ca", "verify-full")
+          ):
+              sys.exit("ERROR: TLS must be required for Staging connection.")
+          print("PASS: Exact Staging-only target validated. No Production target allowed.")
+          PY
+
+      - name: Read-only baseline inventory
+        id: inventory
+        env:
+          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGOPTIONS: -c default_transaction_read_only=on
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          count="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc \
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';")"
+          rls_count="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc \
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity;")"
+          printf 'public_table_count=%s\n' "$count" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Supabase Staging baseline preflight"
+            echo ""
+            echo "Target project: approved Staging only."
+            echo ""
+            echo "Public tables: $count (expected 0 before bootstrap, 29 afterward)"
+            echo "Tables with RLS enabled: $rls_count"
+            echo ""
+            echo "No user data or secrets were queried."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed if Staging is not completely empty
+        if: \${{ inputs.operation == 'bootstrap' }}
+        env:
+          ACTUAL_TABLE_COUNT: \${{ steps.inventory.outputs.public_table_count }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTUAL_TABLE_COUNT" != "0" ]; then
+            echo "ERROR: Staging has $ACTUAL_TABLE_COUNT public tables. No migration was run."
+            echo "Never bootstrap over an existing or partially migrated database."
+            exit 1
+          fi
+
+      - name: Apply baseline migrations 0001-0008 to empty Staging ONLY
+        if: \${{ inputs.operation == 'bootstrap' }}
+        env:
+          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          # Each script is executed sequentially with ON_ERROR_STOP. Stop on ANY
+          # failure. Scripts 0002 onward manage their own SQL transactions.
+          # This is NOT one all-or-nothing transaction across all eight files.
+          # An interrupted run requires a manual review; NEVER force rerun.
+          for migration in \
+            supabase/migrations/0001_cits_initial_schema.sql \
+            supabase/migrations/0002_phase2_security_rls_and_validation.sql \
+            supabase/migrations/0003_fix_archived_camp_child_trigger.sql \
+            supabase/migrations/0004_phase2_comprehensive_security_hardening.sql \
+            supabase/migrations/0005_phase2_finalization_hardening.sql \
+            supabase/migrations/0006_fix_initial_password_change_audit.sql \
+            supabase/migrations/0007_enforce_forced_password_change_security.sql \
+            supabase/migrations/0008_security_phase_closure_hardening.sql; do
+            echo "Applying $(basename "$migration") to approved empty Staging..."
+            psql "$PGURL" -X -q -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Verify schema after explicit bootstrap
+        if: \${{ inputs.operation == 'bootstrap' }}
+        env:
+          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGSSLMODE: require
+          PGOPTIONS: -c default_transaction_read_only=on
+        run: |
+          set -euo pipefail
+          count="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc \
+            "SELECT count(*) FROM pg_tables WHERE schemaname='public';")"
+          no_rls="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc \
+            "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND NOT rowsecurity;")"
+          security_0008="$(psql "$PGURL" -X -v ON_ERROR_STOP=1 -Atc \
+            "SELECT CASE WHEN to_regclass('cits_internal.auth_login_rate_limits') IS NOT NULL AND to_regprocedure('public.evaluate_login_rate_limit_internal(text,text,boolean)') IS NOT NULL THEN 'ok' ELSE 'missing' END;")"
+          {
+            echo "## Bootstrap schema result"
+            echo "Public tables: $count / 29"
+            echo "Public tables missing RLS: $no_rls"
+            echo "0008 security markers: $security_0008"
+            echo "This is NOT a live authentication or attendance E2E result."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" != "29" ] || [ "$no_rls" != "0" ] || [ "$security_0008" != "ok" ]; then
+            echo "ERROR: Staging bootstrap schema verification failed."
+            exit 1
+          fi
+          echo "PASS: Staging baseline schema installed. Live tests remain required."
