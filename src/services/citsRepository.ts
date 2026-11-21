@@ -960,6 +960,34 @@ export async function deleteCheckinSelfiePath(path: string): Promise<void> {
 // REPOSITORY MUTATIONS
 // =============================================================================
 
+/**
+ * Add an Admin-configured training location for Camps and GPS geofencing.
+ * The logged-in caller must satisfy the existing MFA-gated Admin RLS policy.
+ * Coordinates are supplied by the operator; never derive placeholder (0,0).
+ */
+export async function createVenueInDb(input: {
+  nameEn: string;
+  nameAr: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters: number;
+}): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.from('venues').insert({
+    name_en: input.nameEn.trim(),
+    name_ar: input.nameAr.trim(),
+    address: input.address.trim(),
+    latitude: input.latitude,
+    longitude: input.longitude,
+    geofence_radius_meters: input.geofenceRadiusMeters,
+  }).select('id').single();
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to create training venue.');
+  }
+  return data.id;
+}
+
 export async function createDraftCampInDb(input: {
   code: string;
   nameEn: string;
