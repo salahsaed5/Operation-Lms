@@ -380,7 +380,7 @@ export const AuthView: React.FC = () => {
                 )}
               </p>
 
-              {import.meta.env.DEV && !isSupabaseMode && (
+              {isSandboxMode && (
                 <section
                   aria-label={t('Local sandbox account selector', 'اختيار حساب بيئة المعاينة المحلية')}
                   className="pt-5 border-t border-slate-200/80 dark:border-slate-800 space-y-2.5"
