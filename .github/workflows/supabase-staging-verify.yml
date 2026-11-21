@@ -38,9 +38,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Validate Staging DB Secret & Block Production Target
+      - name: Validate Staging DB Secret & Require Exact Staging Project
         env:
           SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          STAGING_PROJECT_REF: uewhudbufykfkhimvqjj
+          PRODUCTION_PROJECT_REF: wdmlxsgbjkboadkeekdq
         run: |
           set -euo pipefail
           if [ -z "$SUPABASE_STAGING_DB_URL" ]; then
@@ -54,6 +56,55 @@ jobs:
               exit 1
               ;;
           esac
+
+          # Parse the connection URI without printing it. Accept only the exact
+          # Staging project's direct endpoint or Supabase session pooler identity.
+          python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import unquote, urlsplit
+
+          raw_url = (os.environ.get("SUPABASE_STAGING_DB_URL") or "").strip()
+          staging_ref = os.environ["STAGING_PROJECT_REF"]
+          production_ref = os.environ["PRODUCTION_PROJECT_REF"]
+
+          try:
+              parsed = urlsplit(raw_url)
+              host = (parsed.hostname or "").lower()
+              username = unquote(parsed.username or "")
+              database = unquote(parsed.path.lstrip("/"))
+          except Exception:
+              print("ERROR: SUPABASE_STAGING_DB_URL is not a valid PostgreSQL URI.")
+              sys.exit(1)
+
+          if parsed.scheme not in ("postgres", "postgresql"):
+              print("ERROR: Staging connection must use a postgres:// or postgresql:// URI.")
+              sys.exit(1)
+
+          if production_ref in host or production_ref in username:
+              print("ERROR: Production project identity detected. No database command was run.")
+              sys.exit(1)
+
+          direct_target = (
+              host == f"db.{staging_ref}.supabase.co"
+              and username == "postgres"
+          )
+          session_pooler_target = (
+              host.endswith(".pooler.supabase.com")
+              and username == f"postgres.{staging_ref}"
+          )
+
+          if database != "postgres" or not (direct_target or session_pooler_target):
+              print(
+                  "ERROR: Connection does not identify the approved Supabase Staging project. "
+                  "Use its direct host with user 'postgres', or its session pooler with "
+                  "user 'postgres.<staging-project-ref>'."
+              )
+              sys.exit(1)
+
+          print("Validated database target: approved Supabase Staging project.")
+          PY
+
           mkdir -p staging-reports
 
       - name: Schema Readiness Preflight Gate (Require Baseline 0001–0004)
