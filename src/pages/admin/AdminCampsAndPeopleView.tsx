@@ -335,7 +335,6 @@ export const AdminCampsView: React.FC = () => {
                 setShowRoomForm(prev => !prev);
                 setShowNewCampForm(false);
                 setShowVenueForm(false);
-                setShowRoomForm(false);
                 setEditingCamp(null);
                 setFeedback(null);
               }}
