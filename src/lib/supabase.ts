@@ -7,9 +7,8 @@ export const CITS_SUPABASE_PROJECT_URL = 'https://wdmlxsgbjkboadkeekdq.supabase.
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
 const isDevelopmentBuild = import.meta.env.DEV;
-// Never infer a production project's URL. Production and preview deployments must
-// explicitly provide their target URL and public key through environment config.
-const supabaseUrl = (metaEnv.VITE_SUPABASE_URL || (isDevelopmentBuild ? CITS_SUPABASE_PROJECT_URL : '')).trim();
+// Never infer or default to Production. Every connected environment must name its target.
+const supabaseUrl = (metaEnv.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (metaEnv.VITE_SUPABASE_ANON_KEY || '').trim();
 
 function containsServiceRoleJwtPayload(key: string): boolean {
@@ -37,25 +36,18 @@ export function validateSupabaseEnvConfig(url: string, key: string, allowLocalSa
   setupError: string | null;
 } {
   const invalidConfigurationMode = allowLocalSandbox ? 'local_sandbox_mode' : 'security_error';
-  const missingConfigurationMessage = allowLocalSandbox
-    ? 'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are not set. Running in Local Operational Sandbox mode (remote Supabase database is NOT connected).'
-    : 'Deployment blocked: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be explicitly configured. Local Sandbox access is disabled outside development builds.';
+  const missingVariables = [
+    ...(url ? [] : ['VITE_SUPABASE_URL']),
+    ...(key ? [] : ['VITE_SUPABASE_ANON_KEY']),
+  ];
 
-  if (!url && !key) {
-    return {
-      isConfigured: false,
-      mode: invalidConfigurationMode,
-      setupError: missingConfigurationMessage,
-    };
-  }
-
-  if (!url || !key) {
+  if (missingVariables.length > 0) {
     return {
       isConfigured: false,
       mode: invalidConfigurationMode,
       setupError: allowLocalSandbox
-        ? `Target project ${CITS_SUPABASE_PROJECT_NAME} (${CITS_SUPABASE_PROJECT_URL}) is configured, but VITE_SUPABASE_ANON_KEY is not set in environment variables. Running in Local Operational Sandbox mode until the public anon/publishable key is provided.`
-        : 'Deployment blocked: both VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required. Local Sandbox access is disabled outside development builds.',
+        ? `Missing ${missingVariables.join(' and ')}. Running in Local Operational Sandbox mode; remote Supabase is NOT connected.`
+        : `Deployment blocked: ${missingVariables.join(' and ')} must be explicitly configured. Local Sandbox access is disabled outside development builds.`,
     };
   }
 
