@@ -408,48 +408,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [supabaseCtx, setSupabaseCtx] = useState<SupabaseAuthContext | null>(null);
 
-  const [profiles, setProfiles] = useState<Profile[]>(isSandboxMode ? INITIAL_ : []PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>(isSandboxMode ? INITIAL_PROFILES : []);
   const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>(
-    isSandboxMode ? INITIAL_ : []ADMIN_ACCOUNTS
+    isSandboxMode ? INITIAL_ADMIN_ACCOUNTS : []
   );
   const [instructors, setInstructors] = useState<Instructor[]>(
-    isSandboxMode ? INITIAL_ : []INSTRUCTORS
+    isSandboxMode ? INITIAL_INSTRUCTORS : []
   );
-  const [venues, setVenues] = useState<Venue[]>(isSandboxMode ? INITIAL_ : []VENUES);
-  const [rooms, setRooms] = useState<Room[]>(isSandboxMode ? INITIAL_ : []ROOMS);
-  const [camps, setCamps] = useState<Camp[]>(isSandboxMode ? INITIAL_ : []CAMPS);
+  const [venues, setVenues] = useState<Venue[]>(isSandboxMode ? INITIAL_VENUES : []);
+  const [rooms, setRooms] = useState<Room[]>(isSandboxMode ? INITIAL_ROOMS : []);
+  const [camps, setCamps] = useState<Camp[]>(isSandboxMode ? INITIAL_CAMPS : []);
   const [campInstructorIds, setCampInstructorIds] = useState<Record<string, string[]>>(
     isSandboxMode
       ? { 'camp-2026-spring': INITIAL_INSTRUCTORS.map((i) => i.id) }
       : {}
   );
-  const [groups, setGroups] = useState<Group[]>(isSandboxMode ? INITIAL_ : []GROUPS);
-  const [students, setStudents] = useState<Student[]>(isSandboxMode ? INITIAL_ : []STUDENTS);
+  const [groups, setGroups] = useState<Group[]>(isSandboxMode ? INITIAL_GROUPS : []);
+  const [students, setStudents] = useState<Student[]>(isSandboxMode ? INITIAL_STUDENTS : []);
   const [studentTransfers, setStudentTransfers] = useState<StudentTransfer[]>([]);
-  const [lectures, setLectures] = useState<Lecture[]>(isSandboxMode ? INITIAL_ : []LECTURES);
-  const [checkins, setCheckins] = useState<DailyCheckin[]>(isSandboxMode ? INITIAL_ : []CHECKINS);
+  const [lectures, setLectures] = useState<Lecture[]>(isSandboxMode ? INITIAL_LECTURES : []);
+  const [checkins, setCheckins] = useState<DailyCheckin[]>(isSandboxMode ? INITIAL_CHECKINS : []);
   const [checkinExceptions, setCheckinExceptions] = useState<CheckinExceptionItem[]>([]);
   const [attendanceSheets, setAttendanceSheets] = useState<AttendanceSheet[]>(
-    isSandboxMode ? INITIAL_ : []ATTENDANCE_SHEETS
+    isSandboxMode ? INITIAL_ATTENDANCE_SHEETS : []
   );
   const [entitlements, setEntitlements] = useState<LectureEntitlement[]>(
-    isSandboxMode ? INITIAL_ : []ENTITLEMENTS
+    isSandboxMode ? INITIAL_ENTITLEMENTS : []
   );
   const [requests, setRequests] = useState<InstructorRequestItem[]>(
-    isSandboxMode ? INITIAL_ : []REQUESTS
+    isSandboxMode ? INITIAL_REQUESTS : []
   );
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [issues, setIssues] = useState<OperationalIssue[]>(
-    isSandboxMode ? INITIAL_ : []ISSUES
+    isSandboxMode ? INITIAL_ISSUES : []
   );
   const [checklists, setChecklists] = useState<DailyChecklistItem[]>(
-    isSandboxMode ? INITIAL_ : []CHECKLISTS
+    isSandboxMode ? INITIAL_CHECKLISTS : []
   );
   const [surveys, setSurveys] = useState<SurveyLinkItem[]>(
-    isSandboxMode ? INITIAL_ : []SURVEYS
+    isSandboxMode ? INITIAL_SURVEYS : []
   );
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(
-    isSandboxMode ? INITIAL_ : []AUDIT_LOGS
+    isSandboxMode ? INITIAL_AUDIT_LOGS : []
   );
 
   const [auth, setAuth] = useState<AuthFlowState>({
