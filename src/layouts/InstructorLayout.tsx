@@ -36,6 +36,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
     activeCamp,
     auth,
     isSupabaseMode,
+    isSandboxMode,
     isLoadingData,
     dataError,
     refreshOperationalData,
@@ -62,7 +63,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col pb-20 md:pb-8">
-      {!isSupabaseMode && (
+      {isSandboxMode && (
         <div role="status" aria-live="polite" className="px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200">
           <strong>{t('LOCAL SANDBOX PREVIEW', 'معاينة محلية تجريبية')}</strong>
           <span className="ms-2">{t('Not connected to Supabase. Changes are demo-only and are not saved to the remote database.', 'لا يوجد اتصال بـ Supabase. التغييرات تجريبية فقط ولا تُحفظ في قاعدة البيانات البعيدة.')}</span>
