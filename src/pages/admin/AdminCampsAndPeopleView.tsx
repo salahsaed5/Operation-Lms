@@ -52,6 +52,7 @@ export const AdminCampsView: React.FC = () => {
   const {
     camps,
     venues,
+    createVenue,
     createDraftCamp,
     updateCampAndSettings,
     activateCamp,
@@ -60,6 +61,13 @@ export const AdminCampsView: React.FC = () => {
   } = useApp();
 
   const [showNewCampForm, setShowNewCampForm] = useState(false);
+  const [showVenueForm, setShowVenueForm] = useState(false);
+  const [venueNameEn, setVenueNameEn] = useState('');
+  const [venueNameAr, setVenueNameAr] = useState('');
+  const [venueAddress, setVenueAddress] = useState('');
+  const [venueLatitude, setVenueLatitude] = useState('');
+  const [venueLongitude, setVenueLongitude] = useState('');
+  const [venueGeofence, setVenueGeofence] = useState(100);
   const [editingCamp, setEditingCamp] = useState<Camp | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Camp | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,6 +124,40 @@ export const AdminCampsView: React.FC = () => {
     setEditRateEgp(camp.settings.defaultLectureRateEgp);
     setEditMaxGroups(camp.settings.maxInstructorGroupsPerDay);
     setFeedback(null);
+  };
+
+  const handleCreateVenue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!venueLatitude.trim() || !venueLongitude.trim()) {
+      setFeedback({ type: 'err', text: t('Enter actual GPS coordinates for the training venue.', 'ادخل إحداثيات المقر الفعلية.') });
+      return;
+    }
+    setIsBusy(true);
+    setFeedback(null);
+    try {
+      const res = await createVenue({
+        nameEn: venueNameEn.trim(),
+        nameAr: venueNameAr.trim(),
+        address: venueAddress.trim(),
+        latitude: Number(venueLatitude),
+        longitude: Number(venueLongitude),
+        geofenceRadiusMeters: venueGeofence,
+      });
+      if (!res.ok) {
+        setFeedback({ type: 'err', text: res.error || t('Failed to save training venue.', 'فشل حفظ المقر التدريبي.') });
+      } else {
+        setFeedback({ type: 'ok', text: t('Training venue saved. You can now create a Camp.', 'تم حفظ المقر ويمكنك الآن إنشاء معسكر.') });
+        setVenueNameEn('');
+        setVenueNameAr('');
+        setVenueAddress('');
+        setVenueLatitude('');
+        setVenueLongitude('');
+        setVenueGeofence(100);
+        setShowVenueForm(false);
+      }
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleCreateCamp = async (e: React.FormEvent) => {
@@ -235,18 +277,36 @@ export const AdminCampsView: React.FC = () => {
           'يُسمح بمعسكر نشط واحد فقط في نفس الوقت. المدة الافتراضية 10 أيام والمعسكرات المؤرشفة للقراءة فقط.'
         )}
         actions={
-          <button
-            type="button"
-            onClick={() => {
-              setShowNewCampForm((prev) => !prev);
-              setEditingCamp(null);
-              setFeedback(null);
-            }}
-            className={BTN_PRIMARY}
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('New Camp', 'إنشاء معسكر جديد')}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowVenueForm(prev => !prev);
+                setShowNewCampForm(false);
+                setEditingCamp(null);
+                setFeedback(null);
+              }}
+              className={BTN_SECONDARY}
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('New Venue', 'إضافة مقر تدريبي')}</span>
+            </button>
+            <button
+              type="button"
+              disabled={venues.length === 0}
+              title={venues.length === 0 ? t('Add a training venue first.', 'أضف مقرًا تدريبيًا أولاً.') : undefined}
+              onClick={() => {
+                setShowNewCampForm(prev => !prev);
+                setShowVenueForm(false);
+                setEditingCamp(null);
+                setFeedback(null);
+              }}
+              className={`${BTN_PRIMARY} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('New Camp', 'إنشاء معسكر جديد')}</span>
+            </button>
+          </div>
         }
       />
 
@@ -256,6 +316,54 @@ export const AdminCampsView: React.FC = () => {
           message={feedback.text}
           onDismiss={() => setFeedback(null)}
         />
+      )}
+
+      {venues.length === 0 && !showVenueForm && (
+        <InlineBanner type="error" message={t(
+          'No training venue configured. Add a venue with its real GPS coordinates before creating a Camp.',
+          'لا يوجد مقر تدريبي. أضف المقر وإحداثيات GPS الفعلية قبل إنشاء المعسكر.'
+        )} />
+      )}
+
+      {showVenueForm && (
+        <form onSubmit={handleCreateVenue} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            {t('New Training Venue', 'إضافة مقر تدريبي جديد')}
+          </h2>
+          <p className="text-xs text-slate-500">
+            {t('Use the exact physical location; GPS check-ins use these coordinates. Never use placeholder (0,0).', 'استخدم الموقع الفعلي للمقر لأن الحضور بالـ GPS يعتمد على هذه الإحداثيات.')}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="venue-name-en" className={LABEL_CLASS}>{t('Venue name (English) *', 'اسم المقر بالإنجليزية *')}</label>
+              <input id="venue-name-en" className={INPUT_CLASS} required maxLength={150} value={venueNameEn} onChange={e=>setVenueNameEn(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="venue-name-ar" className={LABEL_CLASS}>{t('Venue name (Arabic) *', 'اسم المقر بالعربية *')}</label>
+              <input id="venue-name-ar" className={INPUT_CLASS} required maxLength={150} value={venueNameAr} onChange={e=>setVenueNameAr(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="venue-address" className={LABEL_CLASS}>{t('Physical address *', 'العنوان الفعلي *')}</label>
+              <input id="venue-address" className={INPUT_CLASS} required maxLength={400} value={venueAddress} onChange={e=>setVenueAddress(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="venue-lat" className={LABEL_CLASS}>{t('Latitude (GPS) *', 'خط العرض Latitude *')}</label>
+              <input id="venue-lat" className={INPUT_CLASS} type="number" step="any" min={-90} max={90} required placeholder="30.000000" value={venueLatitude} onChange={e=>setVenueLatitude(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="venue-long" className={LABEL_CLASS}>{t('Longitude (GPS) *', 'خط الطول Longitude *')}</label>
+              <input id="venue-long" className={INPUT_CLASS} type="number" step="any" min={-180} max={180} required placeholder="31.000000" value={venueLongitude} onChange={e=>setVenueLongitude(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="venue-radius" className={LABEL_CLASS}>{t('GPS geofence radius (meters)', 'نطاق GPS بالمتر')}</label>
+              <input id="venue-radius" className={INPUT_CLASS} type="number" min={25} max={1000} required value={venueGeofence} onChange={e=>setVenueGeofence(Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className={BTN_SECONDARY} onClick={() => setShowVenueForm(false)}>{t('Cancel','إلغاء')}</button>
+            <button type="submit" className={BTN_PRIMARY} disabled={isBusy}>{isBusy ? t('Saving...','جاري الحفظ...') : t('Save Venue','حفظ المقر')}</button>
+          </div>
+        </form>
       )}
 
       {/* Search & Status Filter Strip */}
