@@ -6,7 +6,7 @@ test('local sandbox is permitted only when the caller explicitly allows developm
   const result = validateSupabaseEnvConfig('', '', true);
   assert.equal(result.isConfigured, false);
   assert.equal(result.mode, 'local_sandbox_mode');
-  assert.match(result.setupError || '', /remote Supabase database is NOT connected/i);
+  assert.match(result.setupError || '', /remote Supabase is NOT connected/i);
 });
 
 test('missing Supabase configuration fails closed outside development', () => {
