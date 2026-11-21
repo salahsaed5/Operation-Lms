@@ -90,6 +90,7 @@ import {
   batchImportStudentsInDb,
   completeUserPasswordChange,
   createDraftCampInDb,
+  createVenueInDb,
   createIssueInDb,
   createLectureInDb,
   createStudentInDb,
@@ -208,6 +209,14 @@ interface AppContextValue {
   auditLogs: AuditLogEntry[];
 
   // Actions (All async-ready for real PostgreSQL/RPC persistence)
+  createVenue: (input: {
+    nameEn: string;
+    nameAr: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    geofenceRadiusMeters: number;
+  }) => Promise<ActionResult>;
   createDraftCamp: (input: {
     code: string;
     nameEn: string;
@@ -1163,6 +1172,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ===========================================================================
   // CAMP & ENTITY MUTATIONS
   // ===========================================================================
+
+  const createVenue = async (input: {
+    nameEn: string;
+    nameAr: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    geofenceRadiusMeters: number;
+  }): Promise<ActionResult> => {
+    if (!input.nameEn.trim() || !input.nameAr.trim() || !input.address.trim()) {
+      return { ok: false, error: 'Venue names and physical address are required.' };
+    }
+    if (!Number.isFinite(input.latitude) || input.latitude < -90 ||
+        input.latitude > 90 || !Number.isFinite(input.longitude) ||
+        input.longitude < -180 || input.longitude > 180) {
+      return { ok: false, error: 'Enter valid GPS coordinates for the real venue.' };
+    }
+    if (!Number.isInteger(input.geofenceRadiusMeters) ||
+        input.geofenceRadiusMeters < 25 || input.geofenceRadiusMeters > 1000) {
+      return { ok: false, error: 'Geofence radius must be 25–1000 meters.' };
+    }
+
+    if (isSupabaseMode) {
+      try {
+        await createVenueInDb(input);
+        await refreshOperationalData();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Failed adding venue.' };
+      }
+    }
+
+    // Non-production local sandbox only: never seed real backend coordinates.
+    if (!import.meta.env.DEV) {
+      return { ok: false, error: 'A real Supabase connection is required to add venues.' };
+    }
+    setVenues(prev => [...prev, { id: crypto.randomUUID(), ...input }]);
+    return { ok: true };
+  };
 
   const createDraftCamp = async (input: {
     code: string;
@@ -3265,6 +3313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checklists,
         surveys,
         auditLogs,
+        createVenue,
         createDraftCamp,
         updateCampAndSettings,
         activateCamp,
