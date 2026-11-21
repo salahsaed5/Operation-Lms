@@ -23,7 +23,7 @@ jobs:
         run: bun run lint
 
       - name: Run domain, account provisioning, security policy, and Guard 1C lexical tests
-        run: bun test src/domain/businessRules.test.ts src/domain/accountProvisioning.test.ts
+        run: bun test src/domain/businessRules.test.ts src/domain/accountProvisioning.test.ts src/lib/supabase.test.ts
 
       - name: Build production bundle
         run: bun run build
