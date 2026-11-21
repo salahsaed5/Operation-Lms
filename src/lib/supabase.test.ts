@@ -20,7 +20,7 @@ test('partial Supabase configuration fails closed outside development', () => {
   const result = validateSupabaseEnvConfig('https://staging-ref.supabase.co', '', false);
   assert.equal(result.isConfigured, false);
   assert.equal(result.mode, 'security_error');
-  assert.match(result.setupError || '', /both VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required/i);
+  assert.match(result.setupError || '', /VITE_SUPABASE_ANON_KEY must be explicitly configured/i);
 });
 
 test('valid public Supabase credentials are accepted', () => {
