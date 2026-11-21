@@ -91,6 +91,7 @@ import {
   completeUserPasswordChange,
   createDraftCampInDb,
   createVenueInDb,
+  createRoomInDb,
   createIssueInDb,
   createLectureInDb,
   createStudentInDb,
@@ -209,6 +210,12 @@ interface AppContextValue {
   auditLogs: AuditLogEntry[];
 
   // Actions (All async-ready for real PostgreSQL/RPC persistence)
+  createRoom: (input: {
+    venueId: string;
+    code: string;
+    name: string;
+    capacity: number;
+  }) => Promise<ActionResult>;
   createVenue: (input: {
     nameEn: string;
     nameAr: string;
@@ -1172,6 +1179,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ===========================================================================
   // CAMP & ENTITY MUTATIONS
   // ===========================================================================
+
+  const createRoom = async (input: {
+    venueId: string;
+    code: string;
+    name: string;
+    capacity: number;
+  }): Promise<ActionResult> => {
+    if (!venues.some(v => v.id === input.venueId)) {
+      return { ok: false, error: 'Choose a configured training venue first.' };
+    }
+    if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(input.code.trim().toUpperCase())) {
+      return { ok: false, error: 'Room code must be 1–32 letters, digits, underscores or hyphens.' };
+    }
+    if (!input.name.trim() || input.name.trim().length > 150) {
+      return { ok: false, error: 'Enter a room name (max 150 characters).' };
+    }
+    if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 1000) {
+      return { ok: false, error: 'Room capacity must be 1–1000.' };
+    }
+
+    if (isSupabaseMode) {
+      try {
+        await createRoomInDb(input);
+        await refreshOperationalData();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Failed creating room.' };
+      }
+    }
+    if (!import.meta.env.DEV) {
+      return { ok: false, error: 'A real Supabase connection is required to add rooms.' };
+    }
+    setRooms(prev => [...prev, { id: crypto.randomUUID(), venueId: input.venueId,
+      code: input.code.trim().toUpperCase(), name: input.name.trim(), capacity: input.capacity }]);
+    return { ok: true };
+  };
 
   const createVenue = async (input: {
     nameEn: string;
@@ -3314,6 +3357,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         surveys,
         auditLogs,
         createVenue,
+        createRoom,
         createDraftCamp,
         updateCampAndSettings,
         activateCamp,

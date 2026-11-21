@@ -988,6 +988,30 @@ export async function createVenueInDb(input: {
   return data.id;
 }
 
+/**
+ * Register a physical training room in an existing training Venue.
+ * Authenticated Admin MFA/RLS policy on rooms enforces authorization.
+ */
+export async function createRoomInDb(input: {
+  venueId: string;
+  code: string;
+  name: string;
+  capacity: number;
+}): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.from('rooms').insert({
+    venue_id: input.venueId,
+    code: input.code.trim().toUpperCase(),
+    name: input.name.trim(),
+    capacity: input.capacity,
+    is_active: true,
+  }).select('id').single();
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to create training room.');
+  }
+  return data.id;
+}
+
 export async function createDraftCampInDb(input: {
   code: string;
   nameEn: string;

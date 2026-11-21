@@ -53,6 +53,7 @@ export const AdminCampsView: React.FC = () => {
     camps,
     venues,
     createVenue,
+    createRoom,
     createDraftCamp,
     updateCampAndSettings,
     activateCamp,
@@ -62,6 +63,11 @@ export const AdminCampsView: React.FC = () => {
 
   const [showNewCampForm, setShowNewCampForm] = useState(false);
   const [showVenueForm, setShowVenueForm] = useState(false);
+  const [showRoomForm, setShowRoomForm] = useState(false);
+  const [roomVenueId, setRoomVenueId] = useState(venues[0]?.id || '');
+  const [roomCode, setRoomCode] = useState('');
+  const [roomName, setRoomName] = useState('');
+  const [roomCapacity, setRoomCapacity] = useState(30);
   const [venueNameEn, setVenueNameEn] = useState('');
   const [venueNameAr, setVenueNameAr] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
@@ -98,6 +104,10 @@ export const AdminCampsView: React.FC = () => {
   useEffect(() => {
     if (!venueId && venues[0]?.id) setVenueId(venues[0].id);
   }, [venues, venueId]);
+
+  useEffect(() => {
+    if (!roomVenueId && venues[0]?.id) setRoomVenueId(venues[0].id);
+  }, [venues, roomVenueId]);
 
   const filteredCamps = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -154,6 +164,31 @@ export const AdminCampsView: React.FC = () => {
         setVenueLongitude('');
         setVenueGeofence(100);
         setShowVenueForm(false);
+      }
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsBusy(true);
+    setFeedback(null);
+    try {
+      const res = await createRoom({
+        venueId: roomVenueId || venues[0]?.id || '',
+        code: roomCode.trim(),
+        name: roomName.trim(),
+        capacity: roomCapacity,
+      });
+      if (!res.ok) {
+        setFeedback({ type: 'err', text: res.error || t('Unable to save training room.', 'تعذر حفظ القاعة التدريبية.') });
+      } else {
+        setFeedback({ type: 'ok', text: t('Room saved. You can now assign it to a group.', 'تم حفظ القاعة ويمكن الآن ربطها بمجموعة.') });
+        setRoomCode('');
+        setRoomName('');
+        setRoomCapacity(30);
+        setShowRoomForm(false);
       }
     } finally {
       setIsBusy(false);
@@ -283,6 +318,7 @@ export const AdminCampsView: React.FC = () => {
               onClick={() => {
                 setShowVenueForm(prev => !prev);
                 setShowNewCampForm(false);
+                setShowRoomForm(false);
                 setEditingCamp(null);
                 setFeedback(null);
               }}
@@ -296,8 +332,25 @@ export const AdminCampsView: React.FC = () => {
               disabled={venues.length === 0}
               title={venues.length === 0 ? t('Add a training venue first.', 'أضف مقرًا تدريبيًا أولاً.') : undefined}
               onClick={() => {
+                setShowRoomForm(prev => !prev);
+                setShowNewCampForm(false);
+                setShowVenueForm(false);
+                setEditingCamp(null);
+                setFeedback(null);
+              }}
+              className={`${BTN_SECONDARY} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('New Room', 'إضافة قاعة')}</span>
+            </button>
+            <button
+              type="button"
+              disabled={venues.length === 0}
+              title={venues.length === 0 ? t('Add a training venue first.', 'أضف مقرًا تدريبيًا أولاً.') : undefined}
+              onClick={() => {
                 setShowNewCampForm(prev => !prev);
                 setShowVenueForm(false);
+                setShowRoomForm(false);
                 setEditingCamp(null);
                 setFeedback(null);
               }}
@@ -323,6 +376,41 @@ export const AdminCampsView: React.FC = () => {
           'No training venue configured. Add a venue with its real GPS coordinates before creating a Camp.',
           'لا يوجد مقر تدريبي. أضف المقر وإحداثيات GPS الفعلية قبل إنشاء المعسكر.'
         )} />
+      )}
+
+      {showRoomForm && (
+        <form onSubmit={handleCreateRoom} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+            {t('New Training Room', 'إضافة قاعة تدريبية')}
+          </h2>
+          <p className="text-xs text-slate-500">
+            {t('Use a real room name, code and seating capacity at the selected venue.', 'سجّل اسم القاعة الحقيقي وكودها وسعتها في المقر المختار.')}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label htmlFor="room-venue" className={LABEL_CLASS}>{t('Training Venue *', 'المقر التدريبي *')}</label>
+              <select id="room-venue" className={SELECT_CLASS} required value={roomVenueId || venues[0]?.id || ''} onChange={e => setRoomVenueId(e.target.value)}>
+                {venues.map(v => <option key={v.id} value={v.id}>{t(v.nameEn, v.nameAr)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="room-code" className={LABEL_CLASS}>{t('Room code *', 'كود القاعة *')}</label>
+              <input id="room-code" className={INPUT_CLASS} required maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="R-01" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="room-name" className={LABEL_CLASS}>{t('Room name *', 'اسم القاعة *')}</label>
+              <input id="room-name" className={INPUT_CLASS} required maxLength={150} value={roomName} onChange={e => setRoomName(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="room-capacity" className={LABEL_CLASS}>{t('Capacity (seats) *', 'السعة (عدد المقاعد) *')}</label>
+              <input id="room-capacity" className={INPUT_CLASS} required type="number" step="1" min={1} max={1000} value={roomCapacity} onChange={e => setRoomCapacity(Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className={BTN_SECONDARY} onClick={() => setShowRoomForm(false)}>{t('Cancel', 'إلغاء')}</button>
+            <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>{isBusy ? t('Saving...', 'جاري الحفظ...') : t('Save Room', 'حفظ القاعة')}</button>
+          </div>
+        </form>
       )}
 
       {showVenueForm && (
