@@ -30,8 +30,8 @@ jobs:
     steps:
       - name: Validate operator intent (deny writes by default)
         env:
-          OPERATION: \${{ inputs.operation }}
-          CONFIRMATION: \${{ inputs.confirmation }}
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
           case "$OPERATION" in
@@ -65,7 +65,7 @@ jobs:
 
       - name: Validate exact Staging URI before opening any connection
         env:
-          SUPABASE_STAGING_DB_URL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
           STAGING_PROJECT_REF: uewhudbufykfkhimvqjj
           PRODUCTION_PROJECT_REF: wdmlxsgbjkboadkeekdq
         run: |
@@ -116,7 +116,7 @@ jobs:
       - name: Read-only baseline inventory
         id: inventory
         env:
-          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
           PGOPTIONS: -c default_transaction_read_only=on
           PGSSLMODE: require
         run: |
@@ -138,9 +138,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail closed if Staging is not completely empty
-        if: \${{ inputs.operation == 'bootstrap' }}
+        if: ${{ inputs.operation == 'bootstrap' }}
         env:
-          ACTUAL_TABLE_COUNT: \${{ steps.inventory.outputs.public_table_count }}
+          ACTUAL_TABLE_COUNT: ${{ steps.inventory.outputs.public_table_count }}
         run: |
           set -euo pipefail
           if [ "$ACTUAL_TABLE_COUNT" != "0" ]; then
@@ -150,9 +150,9 @@ jobs:
           fi
 
       - name: Apply baseline migrations 0001-0008 to empty Staging ONLY
-        if: \${{ inputs.operation == 'bootstrap' }}
+        if: ${{ inputs.operation == 'bootstrap' }}
         env:
-          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
           PGSSLMODE: require
         run: |
           set -euo pipefail
@@ -174,9 +174,9 @@ jobs:
           done
 
       - name: Verify schema after explicit bootstrap
-        if: \${{ inputs.operation == 'bootstrap' }}
+        if: ${{ inputs.operation == 'bootstrap' }}
         env:
-          PGURL: \${{ secrets.SUPABASE_STAGING_DB_URL }}
+          PGURL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
           PGSSLMODE: require
           PGOPTIONS: -c default_transaction_read_only=on
         run: |
