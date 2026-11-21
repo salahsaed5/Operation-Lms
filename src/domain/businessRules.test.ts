@@ -1485,7 +1485,7 @@ test('25. Dev-only sandbox selector: strictly gated to DEV + !isSupabaseMode wit
 
   // Strict build-time + Supabase guards
   assert.ok(authViewSrc.includes('import.meta.env.DEV && !isSupabaseMode'));
-  assert.ok(appCtxSrc.includes('if (!import.meta.env.DEV || isSupabaseMode) return;'));
+  assert.ok(appCtxSrc.includes('if (!isSandboxMode) return;'));
 
   // Zero credential or TOTP hints exposed in login UI
   assert.equal(authViewSrc.includes('482910'), false);
