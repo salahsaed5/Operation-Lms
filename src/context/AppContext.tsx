@@ -81,7 +81,7 @@ import {
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   acknowledgeLectureInDb,
   adminCorrectAttendanceRecordInDb,
@@ -393,65 +393,70 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isSupabaseMode = isSupabaseConfigured;
+  const supabaseStatus = getSupabaseStatusSummary();
+  const isSandboxMode = import.meta.env.DEV && supabaseStatus.mode === 'local_sandbox_mode';
+  const deploymentConfigError = !isSupabaseMode && !isSandboxMode
+    ? supabaseStatus.setupError || 'Supabase configuration is required outside development builds.'
+    : null;
 
   const [lang, setLangState] = useState<Language>('en');
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [isInitializingSession, setIsInitializingSession] = useState<boolean>(isSupabaseMode);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
-  const [dataError, setDataError] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<string | null>(deploymentConfigError);
 
   const [supabaseCtx, setSupabaseCtx] = useState<SupabaseAuthContext | null>(null);
 
-  const [profiles, setProfiles] = useState<Profile[]>(isSupabaseMode ? [] : INITIAL_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>(isSandboxMode ? INITIAL_ : []PROFILES);
   const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>(
-    isSupabaseMode ? [] : INITIAL_ADMIN_ACCOUNTS
+    isSandboxMode ? INITIAL_ : []ADMIN_ACCOUNTS
   );
   const [instructors, setInstructors] = useState<Instructor[]>(
-    isSupabaseMode ? [] : INITIAL_INSTRUCTORS
+    isSandboxMode ? INITIAL_ : []INSTRUCTORS
   );
-  const [venues, setVenues] = useState<Venue[]>(isSupabaseMode ? [] : INITIAL_VENUES);
-  const [rooms, setRooms] = useState<Room[]>(isSupabaseMode ? [] : INITIAL_ROOMS);
-  const [camps, setCamps] = useState<Camp[]>(isSupabaseMode ? [] : INITIAL_CAMPS);
+  const [venues, setVenues] = useState<Venue[]>(isSandboxMode ? INITIAL_ : []VENUES);
+  const [rooms, setRooms] = useState<Room[]>(isSandboxMode ? INITIAL_ : []ROOMS);
+  const [camps, setCamps] = useState<Camp[]>(isSandboxMode ? INITIAL_ : []CAMPS);
   const [campInstructorIds, setCampInstructorIds] = useState<Record<string, string[]>>(
-    isSupabaseMode
-      ? {}
-      : { 'camp-2026-spring': INITIAL_INSTRUCTORS.map((i) => i.id) }
+    isSandboxMode
+      ? { 'camp-2026-spring': INITIAL_INSTRUCTORS.map((i) => i.id) }
+      : {}
   );
-  const [groups, setGroups] = useState<Group[]>(isSupabaseMode ? [] : INITIAL_GROUPS);
-  const [students, setStudents] = useState<Student[]>(isSupabaseMode ? [] : INITIAL_STUDENTS);
+  const [groups, setGroups] = useState<Group[]>(isSandboxMode ? INITIAL_ : []GROUPS);
+  const [students, setStudents] = useState<Student[]>(isSandboxMode ? INITIAL_ : []STUDENTS);
   const [studentTransfers, setStudentTransfers] = useState<StudentTransfer[]>([]);
-  const [lectures, setLectures] = useState<Lecture[]>(isSupabaseMode ? [] : INITIAL_LECTURES);
-  const [checkins, setCheckins] = useState<DailyCheckin[]>(isSupabaseMode ? [] : INITIAL_CHECKINS);
+  const [lectures, setLectures] = useState<Lecture[]>(isSandboxMode ? INITIAL_ : []LECTURES);
+  const [checkins, setCheckins] = useState<DailyCheckin[]>(isSandboxMode ? INITIAL_ : []CHECKINS);
   const [checkinExceptions, setCheckinExceptions] = useState<CheckinExceptionItem[]>([]);
   const [attendanceSheets, setAttendanceSheets] = useState<AttendanceSheet[]>(
-    isSupabaseMode ? [] : INITIAL_ATTENDANCE_SHEETS
+    isSandboxMode ? INITIAL_ : []ATTENDANCE_SHEETS
   );
   const [entitlements, setEntitlements] = useState<LectureEntitlement[]>(
-    isSupabaseMode ? [] : INITIAL_ENTITLEMENTS
+    isSandboxMode ? INITIAL_ : []ENTITLEMENTS
   );
   const [requests, setRequests] = useState<InstructorRequestItem[]>(
-    isSupabaseMode ? [] : INITIAL_REQUESTS
+    isSandboxMode ? INITIAL_ : []REQUESTS
   );
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [issues, setIssues] = useState<OperationalIssue[]>(
-    isSupabaseMode ? [] : INITIAL_ISSUES
+    isSandboxMode ? INITIAL_ : []ISSUES
   );
   const [checklists, setChecklists] = useState<DailyChecklistItem[]>(
-    isSupabaseMode ? [] : INITIAL_CHECKLISTS
+    isSandboxMode ? INITIAL_ : []CHECKLISTS
   );
   const [surveys, setSurveys] = useState<SurveyLinkItem[]>(
-    isSupabaseMode ? [] : INITIAL_SURVEYS
+    isSandboxMode ? INITIAL_ : []SURVEYS
   );
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(
-    isSupabaseMode ? [] : INITIAL_AUDIT_LOGS
+    isSandboxMode ? INITIAL_ : []AUDIT_LOGS
   );
 
   const [auth, setAuth] = useState<AuthFlowState>({
-    isAuthenticated: !isSupabaseMode,
+    isAuthenticated: isSandboxMode,
     pendingTotpProfileId: null,
     pendingPasswordChangeProfileId: null,
-    currentProfile: isSupabaseMode ? GUEST_PLACEHOLDER_PROFILE : INITIAL_PROFILES[0],
-    activeInstructorId: isSupabaseMode ? '' : 'inst-1',
+    currentProfile: isSandboxMode ? INITIAL_PROFILES[0] : GUEST_PLACEHOLDER_PROFILE,
+    activeInstructorId: isSandboxMode ? 'inst-1' : '',
     mfaFactorId: null,
     mfaNeedsEnrollment: false,
     mfaEnrollment: null,
@@ -842,6 +847,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    if (!isSandboxMode) {
+      return {
+        ok: false,
+        error: deploymentConfigError || 'Local Sandbox sign-in is disabled outside development builds.',
+      };
+    }
+
     // Local Sandbox Auth
     const cleanId = identifier.trim().toLowerCase();
     if (!cleanId || !password.trim()) {
@@ -921,7 +933,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const setupAdminTotpEnrollment = async (): Promise<{ ok: boolean; error?: string }> => {
-    if (!isSupabaseMode) return { ok: true };
+    if (!isSupabaseMode) {
+      return isSandboxMode
+        ? { ok: true }
+        : { ok: false, error: deploymentConfigError || 'Local Sandbox is disabled outside development builds.' };
+    }
     try {
       const enrollData = await enrollAdminTotpFactor();
       setAuth((prev) => ({
@@ -964,6 +980,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           error: err instanceof Error ? err.message : 'TOTP verification failed.',
         };
       }
+    }
+
+    if (!isSandboxMode) {
+      return { ok: false, error: deploymentConfigError || 'Local Sandbox is disabled outside development builds.' };
     }
 
     // Local Sandbox TOTP verification
@@ -1046,6 +1066,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    if (!isSandboxMode) {
+      return { ok: false, error: deploymentConfigError || 'Local Sandbox is disabled outside development builds.' };
+    }
+
     const targetId = auth.pendingPasswordChangeProfileId || auth.currentProfile.id;
     setProfiles((prev) =>
       prev.map((p) => (p.id === targetId ? { ...p, mustChangePassword: false } : p))
@@ -1070,7 +1094,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const signOut = async () => {
     pendingRecoveryFlowRef.current = false;
-    setDataError(null);
+    setDataError(deploymentConfigError);
     if (isSupabaseMode) {
       await signOutSupabase();
       clearSupabaseOperationalState();
@@ -1079,7 +1103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isAuthenticated: false,
       pendingTotpProfileId: null,
       pendingPasswordChangeProfileId: null,
-      currentProfile: isSupabaseMode ? GUEST_PLACEHOLDER_PROFILE : auth.currentProfile,
+      currentProfile: isSandboxMode ? auth.currentProfile : GUEST_PLACEHOLDER_PROFILE,
       activeInstructorId: '',
       mfaFactorId: null,
       mfaNeedsEnrollment: false,
@@ -1088,8 +1112,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const switchDemoIdentity = (role: UserRole, instructorId?: string, profileId?: string) => {
-    // Strictly disabled in production builds and connected Supabase mode (real RBAC + RLS active)
-    if (!import.meta.env.DEV || isSupabaseMode) return;
+    // Demo identity switching is available only in a local development sandbox.
+    if (!isSandboxMode) return;
 
     if (role === UserRole.ADMIN) {
       const adminProf =
