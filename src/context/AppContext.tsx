@@ -158,6 +158,7 @@ interface AppContextValue {
 
   // Connection & Loading Status
   isSupabaseMode: boolean;
+  isSandboxMode: boolean;
   isInitializingSession: boolean;
   isLoadingData: boolean;
   dataError: string | null;
@@ -3224,6 +3225,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleTheme,
         t,
         isSupabaseMode,
+        isSandboxMode,
         isInitializingSession,
         isLoadingData,
         dataError,
