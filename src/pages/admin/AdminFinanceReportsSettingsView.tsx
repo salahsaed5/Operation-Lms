@@ -858,7 +858,7 @@ export const AdminReportsView: React.FC = () => {
               onClick={() => { void handleDownloadAttendanceWorkbook(); }}>
               <Download className="w-4 h-4" />
               <span>{exportBusy ? t('Preparing Excel...', 'جاري تجهيز الإكسيل...') :
-                t('Download 10-Day Attendance Excel', 'تحميل شيت حضور 10 أيام')}</span>
+                t(`Download ${activeCamp?.durationDays || 10}-Day Attendance Excel`, `تحميل شيت حضور ${activeCamp?.durationDays || 10} يوم`)}</span>
             </button>
             <div className="relative sm:w-56">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
