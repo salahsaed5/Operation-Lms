@@ -586,6 +586,7 @@ export const InstructorCheckinView: React.FC = () => {
     latitude: number; longitude: number; accuracy: number; distance: number; at: number;
   } | null>(null);
   const [gpsMessage, setGpsMessage] = useState<string | null>(null);
+  const [gpsExpired, setGpsExpired] = useState(false);
   const [checkinTime, setCheckinTime] = useState<string>('08:45');
   const [selfieSizeKb, setSelfieSizeKb] = useState<number>(0);
   const [selfieBlob, setSelfieBlob] = useState<Blob | undefined>(undefined);
@@ -628,6 +629,19 @@ export const InstructorCheckinView: React.FC = () => {
     };
   }, [existingCheckin?.selfieStoragePath, isSupabaseMode]);
 
+  // GPS verification expires visibly as well as at submission, so an old GOOD
+  // badge cannot remain on-screen when the underlying device fix is stale.
+  useEffect(() => {
+    if (!gpsSnapshot) {
+      setGpsExpired(false);
+      return;
+    }
+    setGpsExpired(false);
+    const remaining = Math.max(0, 30_000 - (Date.now() - gpsSnapshot.at));
+    const timer = window.setTimeout(() => setGpsExpired(true), remaining);
+    return () => window.clearTimeout(timer);
+  }, [gpsSnapshot]);
+
   if (!activeCamp || !currentInstructor || !venue) {
     return (
       <EmptyState
@@ -662,8 +676,10 @@ export const InstructorCheckinView: React.FC = () => {
     )), { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 });
   });
   const quality = classifyGpsVerification(gpsSnapshot, activeCamp.settings.geofenceRadiusMeters);
-  const maySubmitGps = quality === 'good' ||
-    (quality === 'outside' && exceptionReason.trim().length > 0);
+  const displayQuality = gpsSnapshot && gpsExpired ? 'expired' : quality;
+  // Explicitly require a positive location verification; exceptions do not
+  // silently turn an outside or inaccurate device reading into attendance.
+  const maySubmitGps = quality === 'good' && !gpsExpired;
 
   const releaseCamera = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -699,6 +715,7 @@ export const InstructorCheckinView: React.FC = () => {
     setSelfieSizeKb(0);
     setGpsSnapshot(null);
     setGpsMessage(null);
+    setGpsExpired(false);
     setCameraOpen(true);
     setCameraLoading(true);
     setResultMsg(null);
@@ -848,7 +865,14 @@ export const InstructorCheckinView: React.FC = () => {
         checkinTimeHHMM: checkinTime,
         exceptionReason: exceptionReason.trim() || undefined,
       });
-      setResultMsg({ ok: res.ok, text: res.message });
+      // Do not leak raw location metrics in the instructor success receipt.
+      setResultMsg({
+        ok: res.ok,
+        text: res.ok
+          ? t('Check-in recorded. Your verification status is shown in your receipt.',
+              'تم تسجيل الوصول. حالة التحقق ظاهرة في إيصال الحضور.')
+          : res.message,
+      });
     } finally {
       setIsBusy(false);
     }
@@ -885,9 +909,9 @@ export const InstructorCheckinView: React.FC = () => {
               </span>
               <StatusBadge tone={existingDisplay.tone}>{existingDisplay.label}</StatusBadge>
             </div>
-            <p className="font-mono text-slate-600 dark:text-slate-300">
-              {existingCheckin.distanceFromVenueMeters}m · {existingCheckin.selfieSizeKb}KB ·{' '}
-              {new Date(existingCheckin.serverTimestamp).toISOString().slice(11, 16)} UTC
+            <p className="text-slate-600 dark:text-slate-300">
+              {t('Recorded at', 'تم التسجيل الساعة')}{' '}
+              {new Date(existingCheckin.serverTimestamp).toLocaleTimeString()}
             </p>
           </div>
           {signedReceiptUrl && (
@@ -901,56 +925,94 @@ export const InstructorCheckinView: React.FC = () => {
       )}
 
       <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
-        <section className={`${SURFACE_SUBTLE} p-4 text-xs space-y-3`}>
-          <p className="font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
-          <p className="text-slate-600 dark:text-slate-300">
-            {t('Venue geofence:', 'نطاق المقر:')} {activeCamp.settings.geofenceRadiusMeters}m
-            {' · '}{t('Required GPS precision:', 'دقة GPS المطلوبة:')} ±{gpsLimit}m
+
+        <section className={`${SURFACE_SUBTLE} p-4 space-y-2`}>
+          <p className="text-sm font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {t('Open the camera, allow precise location access, and take a fresh selfie. Location verification happens automatically.',
+                'افتح الكاميرا، واسمح للموقع الدقيق، واتصور صورة جديدة. التحقق من الموقع بيتم تلقائيًا.')}
           </p>
-          <p className="text-blue-700 dark:text-blue-300">
-            {t('Opening the camera will request precise location access. GPS is captured automatically with the selfie; no manual edits.', 'فتح الكاميرا هيطلب إذن الموقع الدقيق. GPS بيتلقط تلقائيًا مع الصورة ومفيش تعديل يدوي.')}
-          </p>
-          {gpsMessage && <p className="font-medium">{gpsMessage}</p>}
+          {gpsMessage && <p className="text-xs text-slate-500 dark:text-slate-400">{gpsMessage}</p>}
         </section>
 
-        <section className={`${SURFACE_SUBTLE} p-4 space-y-3 text-xs`} aria-live="polite">
-          <div className="flex flex-wrap justify-between gap-2 items-center">
-            <p className="font-bold text-slate-900 dark:text-white">{t('Location Verification', 'التحقق من الموقع')}</p>
-            <span className={`px-3 py-1 rounded-full font-bold ${
-              quality === 'good' ? 'bg-emerald-100 text-emerald-800' :
-              quality === 'missing' ? 'bg-slate-100 text-slate-700' :
-              'bg-amber-100 text-amber-900'
+        <section aria-live="polite" aria-label={t('Location verification result','نتيجة التحقق من الموقع')}
+          className={`rounded-xl border p-4 sm:p-5 space-y-3 ${
+            displayQuality === 'good'
+              ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30'
+              : displayQuality === 'outside'
+                ? 'border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20'
+                : displayQuality === 'missing'
+                  ? 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/40'
+                  : 'border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'
+          }`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {displayQuality === 'good' ? <CheckCircle2 className="w-5 h-5 text-emerald-700" /> :
+                displayQuality === 'missing' ? <MapPinCheck className="w-5 h-5 text-slate-500" /> :
+                <MapPinCheck className="w-5 h-5 text-amber-700" />}
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('Location Verification','التحقق من الموقع')}
+              </h3>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+              displayQuality === 'good' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' :
+              displayQuality === 'outside' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200' :
+              displayQuality === 'missing' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200' :
+              'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
             }`}>
-              {quality === 'good' ? t('GOOD — Inside Geofence', 'جيد — داخل نطاق المقر') :
-               quality === 'poor' ? t('UNVERIFIED — Low Accuracy', 'غير موثق — دقة الموقع ضعيفة') :
-               quality === 'outside' ? t('OUTSIDE — Admin Review', 'خارج النطاق — يحتاج مراجعة') :
-               quality === 'uncertain' ? t('UNVERIFIED — Boundary Uncertain', 'غير موثق — قرب حدود النطاق') :
-               t('Waiting for live capture', 'بانتظار التصوير المباشر')}
+              {displayQuality === 'good' ? t('VERIFIED','تم التحقق') :
+               displayQuality === 'outside' ? t('OUTSIDE VENUE','خارج المقر') :
+               displayQuality === 'missing' ? t('AWAITING CAPTURE','بانتظار التصوير') :
+               t('NEEDS RETAKE','يحتاج إعادة التصوير')}
             </span>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div><label htmlFor="chk-lat" className={LABEL_CLASS}>{t('Latitude', 'خط العرض')}</label>
-              <input id="chk-lat" type="text" readOnly value={gpsSnapshot?.latitude.toFixed(6) ?? '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
-            <div><label htmlFor="chk-lng" className={LABEL_CLASS}>{t('Longitude', 'خط الطول')}</label>
-              <input id="chk-lng" type="text" readOnly value={gpsSnapshot?.longitude.toFixed(6) ?? '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
-            <div><label htmlFor="chk-acc" className={LABEL_CLASS}>{t('Accuracy', 'دقة GPS')}</label>
-              <input id="chk-acc" type="text" readOnly value={gpsSnapshot ? `±${gpsSnapshot.accuracy}m` : '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
-            <div><p className={LABEL_CLASS}>{t('Distance to venue', 'المسافة للمقر')}</p>
-              <p className="py-2 font-bold text-slate-800 dark:text-slate-100">{gpsSnapshot ? `${gpsSnapshot.distance}m` : '—'}</p></div>
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold text-slate-900 dark:text-white">
+              {displayQuality === 'good'
+                ? t('Your location has been verified within the training venue.',
+                    'تم التحقق من وجودك داخل نطاق موقع التدريب.')
+                : displayQuality === 'poor'
+                  ? t('We could not verify your location accurately enough.',
+                      'تعذر التحقق من موقعك بدقة كافية.')
+                  : displayQuality === 'uncertain'
+                    ? t('Your location could not be confirmed within the venue.',
+                        'تعذر التأكد من وجودك داخل نطاق موقع التدريب.')
+                    : displayQuality === 'outside'
+                      ? t('Your location is outside the training venue.',
+                          'موقعك الحالي خارج نطاق مقر التدريب.')
+                      : displayQuality === 'expired'
+                        ? t('Your location verification has expired.',
+                            'انتهت صلاحية التحقق من موقعك.')
+                        : t('Take a live selfie to begin location verification.',
+                            'التقط صورة مباشرة عشان يبدأ التحقق من موقعك.')}
+            </p>
+            <p className="text-slate-600 dark:text-slate-300">
+              {displayQuality === 'good'
+                ? t('You can continue once the camp is active.',
+                    'تقدر تكمل تسجيل الوصول بعد تفعيل المعسكر.')
+                : displayQuality === 'poor'
+                  ? t('Move to an open area near the training venue, enable Precise Location, and retake your selfie. A GPS-enabled phone may help.',
+                      'من فضلك روح لمكان مفتوح قريب من مقر التدريب، وفعّل Precise Location، ثم أعد التقاط الصورة. الموبايل المزود بـ GPS ممكن يساعد.')
+                  : displayQuality === 'uncertain'
+                    ? t('Move closer to the training venue, enable Precise Location, and retake your selfie.',
+                        'من فضلك اقترب من موقع التدريب، وفعّل Precise Location، ثم أعد التقاط الصورة.')
+                    : displayQuality === 'outside'
+                      ? t('Please go to the training venue and retake your selfie. An inaccurate reading never counts as verified attendance.',
+                          'من فضلك اتجه لمقر التدريب وأعد التصوير. القراءة غير المؤكدة مش بتتحسب حضور موثق.')
+                      : displayQuality === 'expired'
+                        ? t('Retake your selfie to capture a fresh location verification.',
+                            'أعد التقاط الصورة للحصول على تحقق جديد من الموقع.')
+                        : t('Camera access and precise device location are required. No location coordinates will be displayed.',
+                            'مطلوب السماح للكاميرا والموقع الدقيق. مش هنعرض إحداثيات الموقع.')}
+            </p>
           </div>
-          {gpsSnapshot && <p className="text-slate-600 dark:text-slate-300">
-            {t('Captured:', 'وقت الالتقاط:')} {new Date(gpsSnapshot.at).toLocaleTimeString()}
-            {' · '}{t('Retake after 30s for a fresh GPS check.', 'أعد التصوير لو عدى 30 ثانية عشان GPS يكون حديث.')}
-          </p>}
-          {quality === 'poor' && <p className="text-amber-800 dark:text-amber-300">{t(
-            'Accuracy is too low. Use precise location on a GPS-enabled phone and retake.',
-            'الدقة ضعيفة. فعّل Precise Location على موبايل فيه GPS وأعد التصوير.')}</p>}
-          {quality === 'uncertain' && <p className="text-amber-800 dark:text-amber-300">{t(
-            'Accuracy overlaps the geofence boundary. Move closer to the center and retake.',
-            'قراءة الموقع قريبة من حدود النطاق. قرّب من المركز وأعد التصوير.')}</p>}
-          {quality === 'outside' && <p className="text-amber-800 dark:text-amber-300">{t(
-            'Outside the venue. A written exception goes to Admin review, not verified attendance.',
-            'خارج المقر. الاستثناء بسبب مكتوب يحتاج موافقة الإدارة ومش حضور موثق.')}</p>}
+          {displayQuality !== 'good' && displayQuality !== 'missing' && !cameraOpen && (
+            <button type="button" onClick={() => { void openCamera(); }}
+              disabled={isBusy || cameraCapturing} className={BTN_SECONDARY}>
+              <RefreshCw className="w-4 h-4" />
+              <span>{t('Retake Selfie & Verify Location', 'إعادة التصوير والتحقق من الموقع')}</span>
+            </button>
+          )}
         </section>
 
         {/* Live camera capture ONLY: no file/gallery upload control. */}
@@ -974,7 +1036,7 @@ export const InstructorCheckinView: React.FC = () => {
                 </p>
                 <p className="text-slate-500 mt-0.5">
                   {selfieBlob
-                    ? `${selfieExt.toUpperCase()}: ${selfieSizeKb} KB / ${activeCamp.settings.maxSelfieKb} KB max`
+                    ? t('Camera photo captured successfully', 'تم التقاط الصورة بالكاميرا بنجاح')
                     : t(
                       'Take a fresh selfie using the camera. Choosing an existing photo is disabled.',
                       'التقط صورة جديدة باستخدام الكاميرا. اختيار صورة قديمة من الجهاز غير متاح.'
@@ -1030,8 +1092,8 @@ export const InstructorCheckinView: React.FC = () => {
         <div>
           <label htmlFor="chk-exception" className={LABEL_CLASS}>
             {t(
-              'Exception Note (Optional — if outside geofence or >=60m late)',
-              'سبب طلب الاستثناء (اختياري — في حال التواجد خارج النطاق أو التأخر)'
+              'Late Arrival Note (Optional)',
+              'ملاحظة التأخر (اختياري)'
             )}
           </label>
           <input
