@@ -21,6 +21,7 @@ CREATE TABLE public.camp_backup_sessions (
   lecture_id uuid NOT NULL REFERENCES public.lectures(id) ON DELETE RESTRICT,
   instructor_id uuid NOT NULL REFERENCES public.instructors(id) ON DELETE RESTRICT,
   camp_day integer NOT NULL CHECK (camp_day BETWEEN 1 AND 365),
+  period_number smallint NOT NULL CHECK (period_number BETWEEN 1 AND 8),
   frozen_rate_egp integer NOT NULL CHECK (frozen_rate_egp BETWEEN 0 AND 1000000),
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','approved','excluded')),
@@ -30,7 +31,11 @@ CREATE TABLE public.camp_backup_sessions (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(lecture_id,instructor_id)
 );
-CREATE INDEX idx_backup_session_instructor_camp ON public.camp_backup_sessions(instructor_id,camp_id, camp_day);
+CREATE INDEX idx_backup_session_instructor_camp ON public.camp_backup_sessions(instructor_id,camp_id,camp_day);
+-- A backup cannot receive two simultaneous supporting assignments.
+CREATE UNIQUE INDEX uq_backup_instructor_period
+  ON public.camp_backup_sessions(camp_id,instructor_id,camp_day,period_number)
+  WHERE status <> 'excluded';
 
 CREATE TABLE public.camp_finance_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,14 +67,14 @@ CREATE POLICY finance_policies_instructor_read ON public.camp_finance_rate_polic
   FOR SELECT TO authenticated
   USING (EXISTS (
     SELECT 1 FROM public.camp_instructors ci
-    WHERE ci.camp_id = camp_id AND ci.instructor_id = public.current_instructor_id()
+    WHERE ci.camp_id = public.camp_finance_rate_policies.camp_id AND ci.instructor_id = public.current_instructor_id()
       AND ci.is_active
   ) OR EXISTS (
     SELECT 1 FROM public.lecture_entitlements le
-    WHERE le.camp_id = camp_id AND le.instructor_id = public.current_instructor_id()
+    WHERE le.camp_id = public.camp_finance_rate_policies.camp_id AND le.instructor_id = public.current_instructor_id()
   ) OR EXISTS (
     SELECT 1 FROM public.camp_backup_sessions bs
-    WHERE bs.camp_id = camp_id AND bs.instructor_id = public.current_instructor_id()
+    WHERE bs.camp_id = public.camp_finance_rate_policies.camp_id AND bs.instructor_id = public.current_instructor_id()
   ));
 CREATE POLICY backup_sessions_admin_read ON public.camp_backup_sessions
   FOR SELECT TO authenticated
@@ -163,8 +168,8 @@ BEGIN
     ORDER BY effective_from_day DESC LIMIT 1;
   IF v_rate IS NULL THEN RAISE EXCEPTION 'Set finance rates before registering a backup'; END IF;
   INSERT INTO public.camp_backup_sessions
-    (camp_id,lecture_id,instructor_id,camp_day,frozen_rate_egp,reason,created_by)
-  VALUES (v_lec.camp_id,v_lec.id,p_instructor_id,v_lec.camp_day,v_rate,trim(p_reason),auth.uid())
+    (camp_id,lecture_id,instructor_id,camp_day,period_number,frozen_rate_egp,reason,created_by)
+  VALUES (v_lec.camp_id,v_lec.id,p_instructor_id,v_lec.camp_day,v_lec.period_number,v_rate,trim(p_reason),auth.uid())
   RETURNING id INTO v_id;
   PERFORM public.append_audit_log_internal(v_lec.camp_id,'FINANCE_BACKUP_RECORDED',
     'camp_backup_sessions',v_id::text,NULL,
@@ -188,6 +193,15 @@ BEGIN
   IF v_lecture_status = 'cancelled' AND p_decision='approved' THEN
     RAISE EXCEPTION 'Cannot pay backup for a cancelled lecture'; END IF;
   IF p_decision='approved' THEN
+    -- Re-check concurrent primary and already registered backup assignments.
+    IF EXISTS (
+      SELECT 1 FROM public.lectures l
+      WHERE l.camp_id=v_row.camp_id AND l.camp_day=v_row.camp_day
+        AND l.period_number=v_row.period_number AND l.status <> 'cancelled'
+        AND coalesce(l.substitute_instructor_id,l.instructor_id)=v_row.instructor_id
+    ) THEN
+      RAISE EXCEPTION 'Cannot approve backup: instructor has a primary lecture in this period';
+    END IF;
     SELECT status::text INTO v_sheet_status FROM public.attendance_sheets WHERE lecture_id=v_row.lecture_id;
     IF v_sheet_status IS NULL OR v_sheet_status NOT IN ('submitted','locked') THEN
       RAISE EXCEPTION 'Finalize the lecture attendance before approving backup'; END IF;
