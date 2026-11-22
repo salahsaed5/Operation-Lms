@@ -1255,7 +1255,7 @@ export const InstructorAttendanceView: React.FC = () => {
     if (match) return match.homeGroupCode;
     if (visitingSourceGroupCodes[studentId]) return visitingSourceGroupCodes[studentId];
     const rec = baseRecords.find(r => r.studentId === studentId);
-    return groups.find(g => g.id === rec?.originGroupId)?.code ||
+    return rec?.originGroupCode || groups.find(g => g.id === rec?.originGroupId)?.code ||
       t('another group', 'مجموعة أخرى');
   };
 
@@ -1318,6 +1318,7 @@ export const InstructorAttendanceView: React.FC = () => {
       studentId: stu.studentId,
       studentCode: stu.studentCode,
       studentName: stu.fullName,
+      originGroupCode: stu.homeGroupCode,
       originGroupId,
       attendedGroupId: selectedLecture.groupId,
       isCrossGroup: true,
