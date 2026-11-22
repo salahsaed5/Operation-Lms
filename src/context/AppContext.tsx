@@ -2557,10 +2557,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseMode && !simulateOffline && (typeof navigator === 'undefined' || navigator.onLine)) {
       try {
+        if (!supabaseCtx) throw new Error('Authenticated connection is unavailable.');
+        // Check against fresh authorized server state BEFORE ANY DB upsert.
+        // Never overwrite a newer/other-Instructor saved draft silently.
+        const latest = await fetchOperationalSnapshot(supabaseCtx);
+        const remote = latest.attendanceSheets.find(sheet =>
+          sheet.lectureId === lectureId && sheet.campId === activeCamp.id);
+        if (!remote || remote.status !== AttendanceSheetStatus.DRAFT) {
+          throw new Error('Server draft missing or already finalized. Refresh and review before syncing.');
+        }
+        const conflicts = compareAttendanceDraftRows(records, remote.records);
+        if (conflicts.length) {
+          throw new Error(
+            `Draft conflict for ${conflicts.length} student(s): no server changes were made. ` +
+            'Review local and server marks before syncing.'
+          );
+        }
         await saveAttendanceRecordsDraftToDb({
           campId: activeCamp.id,
           lecture: lec,
-          sheetId: existingSheet?.id,
+          sheetId: remote.id,
           records,
           updatedBy: auth.currentProfile.id,
         });
