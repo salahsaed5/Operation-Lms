@@ -1,0 +1,39 @@
+name: CITS Browser E2E Smoke
+
+on:
+  push:
+    branches:
+      - fix/atomic-attendance-sync-20261122
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-guest-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install app dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build test target (production bundle)
+        run: bun run build
+
+      # Install only in the ephemeral runner; Playwright is not shipped in app bundle.
+      - name: Install pinned browser test tooling
+        run: npm install --no-save --package-lock=false @playwright/test@1.55.1
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify sign-in, RTL and mobile UI in real Chromium
+        run: npx playwright test --config playwright.config.ts --reporter=line
