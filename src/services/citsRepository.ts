@@ -627,6 +627,11 @@ export async function fetchOperationalSnapshot(
     fullName: s.full_name,
     university: s.university || '',
     isActive: s.is_active,
+    joinedCampDay: s.joined_camp_day ?? 1,
+    enrolledAt: s.enrolled_at || s.created_at,
+    enrolledByProfileId: s.enrolled_by_profile_id ?? null,
+    enrollmentOrigin: s.enrollment_origin || 'admin_import',
+    enrollmentReason: s.enrollment_reason ?? null,
   }));
   const studentById = new Map(students.map((s) => [s.id, s]));
 
@@ -1458,6 +1463,29 @@ export async function searchVisitingStudentsInDb(input: {
     homeGroupId: row.home_group_id,
     homeGroupCode: row.home_group_code,
   }));
+}
+
+/** Instructor-only audited creation of a new student for an assigned group.
+ *  Group, join day, timestamp and actor are verified/derived by the DB RPC.
+ */
+export async function instructorEnrollMidcampStudentInDb(input: {
+  groupId: string;
+  studentCode: string;
+  fullName: string;
+  university: string;
+  reason: string;
+}): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.rpc('instructor_enroll_midcamp_student_tx', {
+    p_group_id: input.groupId,
+    p_student_code: input.studentCode.trim(),
+    p_full_name: input.fullName.trim(),
+    p_university: input.university.trim(),
+    p_reason: input.reason.trim(),
+  });
+  if (error) throw new Error(error.message);
+  if (typeof data !== 'string' || !data) throw new Error('Student enrollment returned no student ID.');
+  return data;
 }
 
 export async function createStudentInDb(input: {

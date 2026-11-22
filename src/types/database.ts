@@ -431,6 +431,11 @@ export interface Database {
           university: string | null;
           phone: string | null;
           is_active: boolean;
+          joined_camp_day: number;
+          enrolled_at: string;
+          enrolled_by_profile_id: string | null;
+          enrollment_origin: string;
+          enrollment_reason: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -443,6 +448,11 @@ export interface Database {
           university?: string | null;
           phone?: string | null;
           is_active?: boolean;
+          joined_camp_day?: number;
+          enrolled_at?: string;
+          enrolled_by_profile_id?: string | null;
+          enrollment_origin?: string;
+          enrollment_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -453,6 +463,11 @@ export interface Database {
           university?: string | null;
           phone?: string | null;
           is_active?: boolean;
+          joined_camp_day?: number;
+          enrolled_at?: string;
+          enrolled_by_profile_id?: string | null;
+          enrollment_origin?: string;
+          enrollment_reason?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -1060,6 +1075,26 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      search_visiting_students_for_lecture: {
+        Args: { p_lecture_id: string; p_query: string };
+        Returns: {
+          student_id: string;
+          student_code: string;
+          full_name: string;
+          home_group_id: string;
+          home_group_code: string;
+        }[];
+      };
+      instructor_enroll_midcamp_student_tx: {
+        Args: {
+          p_group_id: string;
+          p_student_code: string;
+          p_full_name: string;
+          p_university: string;
+          p_reason: string;
+        };
+        Returns: string;
+      };
       is_cits_admin: {
         Args: Record<string, never>;
         Returns: boolean;
@@ -1396,6 +1431,12 @@ export interface Student {
   fullName: string;
   university: string;
   isActive: boolean;
+  /** Day 1 for initial roster; 2+ for approved mid-camp enrollment. */
+  joinedCampDay?: number;
+  enrolledAt?: string;
+  enrolledByProfileId?: string | null;
+  enrollmentOrigin?: string;
+  enrollmentReason?: string | null;
 }
 
 export interface Lecture {

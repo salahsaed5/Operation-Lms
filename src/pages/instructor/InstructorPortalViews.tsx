@@ -16,6 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
+import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
 import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
@@ -1064,6 +1065,7 @@ export const InstructorAttendanceView: React.FC = () => {
     attendanceSheets,
     isSupabaseMode,
     saveAttendanceDraft,
+    enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
     t,
   } = useApp();
@@ -1089,6 +1091,11 @@ export const InstructorAttendanceView: React.FC = () => {
   const [visitingLookupError, setVisitingLookupError] = useState<string | null>(null);
   const [visitingSearchBusy, setVisitingSearchBusy] = useState(false);
   const [visitingSourceGroupCodes, setVisitingSourceGroupCodes] = useState<Record<string,string>>({});
+  const [showMidcampEnrollForm, setShowMidcampEnrollForm] = useState(false);
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentCode, setNewStudentCode] = useState('');
+  const [newStudentUniversity, setNewStudentUniversity] = useState('');
+  const [newStudentReason, setNewStudentReason] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -1148,6 +1155,7 @@ export const InstructorAttendanceView: React.FC = () => {
       (s) =>
         s.campId === activeCamp.id &&
         s.isActive &&
+        studentEligibleForCampDay(s, selectedLecture.campDay) &&
         resolveStudentOriginGroupForDay({
           student: s,
           transfers: studentTransfers,
@@ -1208,6 +1216,7 @@ export const InstructorAttendanceView: React.FC = () => {
         (s) =>
           s.campId === activeCamp.id &&
           s.isActive &&
+          studentEligibleForCampDay(s, selectedLecture.campDay) &&
           !rosterStudentIds.has(s.id) &&
           resolveStudentOriginGroupForDay({
             student: s,
@@ -1335,6 +1344,44 @@ export const InstructorAttendanceView: React.FC = () => {
       });
     } else if (res.error) {
       setFeedback({ ok: false, text: res.error });
+    }
+  };
+
+  const handleEnrollMidcampStudent = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedLecture || !activeCamp || isBusy || isLockedOrSubmitted) return;
+    if (activeCamp.status !== CampStatus.ACTIVE) {
+      setFeedback({ ok: false, text: t(
+        'New student enrollment opens once the camp is active.',
+        'إضافة الطلاب الجدد متاحة بعد تفعيل المعسكر فقط.'
+      )});
+      return;
+    }
+    setIsBusy(true);
+    setFeedback(null);
+    try {
+      const res = await enrollMidcampStudent({
+        groupId: selectedLecture.groupId,
+        studentCode: newStudentCode.trim(),
+        fullName: newStudentName.trim(),
+        university: newStudentUniversity.trim(),
+        reason: newStudentReason.trim(),
+      });
+      if (!res.ok) {
+        setFeedback({ ok: false, text: res.error || t('Unable to enroll student.', 'تعذر إضافة الطالب.') });
+      } else {
+        setFeedback({ ok: true, text: t(
+          'Student enrolled in this group. Camp join day, server time and your identity were saved in the audit log.',
+          'تم تسجيل الطالب في المجموعة. السيرفر سجل يوم الانضمام ووقت الإضافة وهوية المحاضر في سجل المراجعة.'
+        )});
+        setNewStudentName('');
+        setNewStudentCode('');
+        setNewStudentUniversity('');
+        setNewStudentReason('');
+        setShowMidcampEnrollForm(false);
+      }
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -1517,6 +1564,76 @@ export const InstructorAttendanceView: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
+          {!isLockedOrSubmitted && (
+            <section className={`${SURFACE_SUBTLE} rounded-lg p-3.5 space-y-3 text-xs`}>
+              <div className="flex flex-wrap justify-between items-center gap-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white">
+                    {t('New Student Joining Mid-Camp', 'طالب جديد انضم أثناء المعسكر')}
+                  </h3>
+                  <p className="text-slate-500 mt-1">
+                    {t('Use only if the student does not already exist in another group. Group and join day are recorded by the server.',
+                        'استخدمها لو الطالب مش موجود أصلًا في أي مجموعة. السيرفر بيسجل المجموعة ويوم الانضمام تلقائيًا.')}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowMidcampEnrollForm(v => !v)}
+                  className={BTN_SECONDARY}>
+                  <UserPlus className="w-4 h-4" />
+                  <span>{showMidcampEnrollForm ? t('Cancel', 'إلغاء') : t('Enroll New Student', 'إضافة طالب جديد')}</span>
+                </button>
+              </div>
+              {showMidcampEnrollForm && (
+                <form onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3">
+                  <p className="text-blue-700 dark:text-blue-300">
+                    {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
+                    {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="midcamp-name" className={LABEL_CLASS}>{t('Full Name', 'الاسم بالكامل')} *</label>
+                      <input id="midcamp-name" required minLength={3} maxLength={150}
+                        value={newStudentName} onChange={e => setNewStudentName(e.target.value)}
+                        className={INPUT_CLASS} autoComplete="off" />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-code" className={LABEL_CLASS}>{t('Unique Student Code', 'كود الطالب الفريد')} *</label>
+                      <input id="midcamp-code" required minLength={3} maxLength={32}
+                        value={newStudentCode} onChange={e => setNewStudentCode(e.target.value)}
+                        className={INPUT_CLASS} autoComplete="off" />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-university" className={LABEL_CLASS}>{t('University (Optional)', 'الجامعة (اختياري)')}</label>
+                      <input id="midcamp-university" maxLength={150}
+                        value={newStudentUniversity} onChange={e => setNewStudentUniversity(e.target.value)}
+                        className={INPUT_CLASS} />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-reason" className={LABEL_CLASS}>{t('Enrollment Reason', 'سبب الإضافة')} *</label>
+                      <input id="midcamp-reason" required minLength={5} maxLength={400}
+                        placeholder={t('e.g. Joined on Day 4', 'مثال: انضم للمعسكر يوم 4')}
+                        value={newStudentReason} onChange={e => setNewStudentReason(e.target.value)}
+                        className={INPUT_CLASS} />
+                    </div>
+                  </div>
+                  {activeCamp.status !== CampStatus.ACTIVE && (
+                    <p role="status" className="text-amber-800 dark:text-amber-300">
+                      {t('This camp is still Draft. Enrollment is disabled until activation.',
+                          'المعسكر لسه Draft. إضافة طالب جديد مش متاحة قبل التفعيل.')}
+                    </p>
+                  )}
+                  <div className="flex justify-end">
+                    <button type="submit" disabled={isBusy || activeCamp.status !== CampStatus.ACTIVE}
+                      className={BTN_PRIMARY}>
+                      <UserPlus className="w-4 h-4" />
+                      <span>{t('Save Student to This Group', 'حفظ الطالب في المجموعة')}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
 
           {/* Student Touch Rows */}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">

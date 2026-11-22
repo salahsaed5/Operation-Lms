@@ -96,6 +96,7 @@ import {
   createIssueInDb,
   createLectureInDb,
   createStudentInDb,
+  instructorEnrollMidcampStudentInDb,
   deleteCheckinSelfiePath,
   enrollAdminTotpFactor,
   fetchOperationalSnapshot,
@@ -288,6 +289,14 @@ interface AppContextValue {
     studentId: string;
     toGroupId: string;
     effectiveCampDay: number;
+    reason: string;
+  }) => Promise<ActionResult>;
+
+  enrollMidcampStudent: (input: {
+    groupId: string;
+    studentCode: string;
+    fullName: string;
+    university: string;
     reason: string;
   }) => Promise<ActionResult>;
 
@@ -1891,6 +1900,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const enrollMidcampStudent = async (input: {
+    groupId: string;
+    studentCode: string;
+    fullName: string;
+    university: string;
+    reason: string;
+  }): Promise<ActionResult> => {
+    if (!activeCamp || activeCamp.status !== CampStatus.ACTIVE) {
+      return { ok: false, error: 'Student enrollment is available only during an ACTIVE camp.' };
+    }
+    if (!auth.isAuthenticated || auth.currentProfile.role !== UserRole.INSTRUCTOR) {
+      return { ok: false, error: 'Only an assigned Instructor can enroll a new student.' };
+    }
+    if (!isSupabaseMode) {
+      return { ok: false, error: 'Secure mid-camp enrollment requires the server.' };
+    }
+    if (!input.reason.trim() || !input.fullName.trim() || !input.studentCode.trim()) {
+      return { ok: false, error: 'Name, unique student code and enrollment reason are required.' };
+    }
+    const assigned = lectures.some(l =>
+      l.campId === activeCamp.id && l.groupId === input.groupId &&
+      (l.substituteInstructorId || l.instructorId) === auth.activeInstructorId
+    ) || groups.some(g =>
+      g.campId === activeCamp.id && g.id === input.groupId &&
+      g.primaryInstructorId === auth.activeInstructorId
+    );
+    if (!assigned) {
+      return { ok: false, error: 'You can only enroll students into a group assigned to you.' };
+    }
+    try {
+      // Server RPC enforces current assignment, capacity, uniqueness,
+      // server-derived join day/timestamp and audit. No client-supplied day.
+      await instructorEnrollMidcampStudentInDb(input);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Student enrollment failed.' };
+    }
+    await refreshOperationalData();
+    return { ok: true };
+  };
+
   const transferStudent = async (input: {
     studentId: string;
     toGroupId: string;
@@ -3408,6 +3457,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateInstructorAccount,
         triggerInstructorPasswordReset,
         createSingleStudent,
+        enrollMidcampStudent,
         transferStudent,
         addScheduleLecture,
         updateScheduleLecture,
