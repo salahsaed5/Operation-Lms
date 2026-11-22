@@ -13,6 +13,7 @@ import {
   Database,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { buildCampToDateReport, type CampToDateCategory } from '../../domain/campCumulativeAttendance';
 import {
   EntitlementStatus,
   IssueSeverity,
@@ -439,8 +440,35 @@ export const AdminFinanceView: React.FC = () => {
 };
 
 export const AdminReportsView: React.FC = () => {
-  const { activeCamp, groups, students, surveys, instructors, t } = useApp();
+  const { activeCamp, groups, students, studentTransfers, lectures, attendanceSheets, surveys, instructors, t } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
+  const [asOfDay, setAsOfDay] = useState(1);
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [attendanceCategory, setAttendanceCategory] = useState<'all' | CampToDateCategory>('all');
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+
+  const reportDay = Math.min(Math.max(asOfDay, 1), activeCamp?.durationDays || 10);
+  const attendanceReport = useMemo(() => buildCampToDateReport({
+    campId: activeCamp?.id || '',
+    asOfDay: reportDay,
+    students,
+    lectures,
+    attendanceSheets,
+    studentTransfers,
+  }), [activeCamp?.id, reportDay, students, lectures, attendanceSheets, studentTransfers]);
+  const selectedGroupStudents = attendanceReport.students.filter(row =>
+    groupFilter === 'all' || row.homeGroupId === groupFilter
+  );
+  const totalRegistered = selectedGroupStudents.length;
+  const totalAttended = selectedGroupStudents.filter(row => row.category === 'attended').length;
+  const totalNeverAttended = selectedGroupStudents.filter(row => row.category === 'never_attended').length;
+  const totalPending = selectedGroupStudents.filter(row => row.category === 'pending').length;
+  const attendanceQuery = attendanceSearch.trim().toLocaleLowerCase();
+  const drilldownStudents = selectedGroupStudents.filter(row =>
+    (attendanceCategory === 'all' || row.category === attendanceCategory) &&
+    (!attendanceQuery || row.fullName.toLocaleLowerCase().includes(attendanceQuery) ||
+      row.studentCode.toLocaleLowerCase().includes(attendanceQuery))
+  );
 
   const campGroups = activeCamp ? groups.filter((g) => g.campId === activeCamp.id) : groups;
   const campSurveys = activeCamp ? surveys.filter((s) => s.campId === activeCamp.id) : surveys;
@@ -468,8 +496,8 @@ export const AdminReportsView: React.FC = () => {
       <PageHeader
         title={t('Reports & Evaluations', 'التقارير وتقييمات المحاضرين')}
         subtitle={t(
-          'Group capacity utilization and post-lecture student evaluation scores.',
-          'نسب إشغال المجموعات ونتائج استبيانات تقييم الطلاب للمحاضرين.'
+          'Cumulative attendance, camp student details, group capacity and evaluations.',
+          'الحضور التراكمي وكشوف الطلاب وإشغال المجموعات وتقييمات المحاضرين.'
         )}
         actions={
           <div className="relative sm:w-64">
@@ -485,6 +513,121 @@ export const AdminReportsView: React.FC = () => {
           </div>
         }
       />
+
+      {activeCamp && (
+        <section className={`${SURFACE_CARD} p-5 space-y-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('Camp-to-Date Student Attendance', 'ملخص حضور الطلاب حتى اليوم المختار')}
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {t('Finalized server sheets only — local drafts are not official attendance.',
+                   'الإحصائيات من كشوف السيرفر المعتمدة فقط، مش مسودات الأجهزة.')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <label className="text-xs font-semibold" htmlFor="report-as-of-day">
+                {t('Through Camp Day', 'حتى اليوم')}
+              </label>
+              <select id="report-as-of-day" value={reportDay}
+                onChange={e => { setAsOfDay(Number(e.target.value)); setAttendanceCategory('all'); }}
+                className={SELECT_CLASS}>
+                {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day}>{t('Day', 'اليوم')} {day}</option>
+                ))}
+              </select>
+              <select aria-label={t('Filter cumulative attendance by group','تصفية الحضور حسب المجموعة')}
+                className={SELECT_CLASS} value={groupFilter}
+                onChange={e => { setGroupFilter(e.target.value); setAttendanceCategory('all'); }}>
+                <option value="all">{t('All Groups', 'كل المجموعات')}</option>
+                {campGroups.map(grp => <option key={grp.id} value={grp.id}>{grp.code}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {attendanceReport.pendingLectureCount > 0 && (
+            <p role="status" className="rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900 p-3 text-xs text-amber-900 dark:text-amber-200">
+              {t(
+                `${attendanceReport.pendingLectureCount} scheduled lecture(s) through Day ${reportDay} are not finalized; attendance counts are incomplete, not proof of absence.`,
+                `فيه ${attendanceReport.pendingLectureCount} محاضرة حتى اليوم ${reportDay} لسه ما اتعتمدتش. الأرقام الحالية غير مكتملة، وده مش معناه إن الطلاب غابوا.`
+              )}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {([
+              { id: 'all', en: 'Registered', ar: 'إجمالي المسجلين', count: totalRegistered },
+              { id: 'attended', en: 'Attended at Least Once', ar: 'حضروا مرة على الأقل', count: totalAttended },
+              { id: 'never_attended', en: 'Never Attended (Finalized)', ar: 'لم يحضروا أي محاضرة معتمدة', count: totalNeverAttended },
+              { id: 'pending', en: 'Awaiting Finalized Lecture', ar: 'لسه مفيش محاضرة معتمدة لهم', count: totalPending },
+            ] as const).map(metric => (
+              <button type="button" key={metric.id}
+                aria-pressed={attendanceCategory === metric.id}
+                onClick={() => setAttendanceCategory(metric.id)}
+                className={`text-start rounded-lg border p-3 cursor-pointer transition-colors ${
+                  attendanceCategory === metric.id
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-blue-300'
+                }`}>
+                <span className="block text-xl font-bold tabular-nums text-slate-900 dark:text-white">{metric.count}</span>
+                <span className="block text-xs text-slate-600 dark:text-slate-300 mt-1">{t(metric.en,metric.ar)}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+              {t('Student List', 'سجل الطلاب')} · {drilldownStudents.length}
+            </h3>
+            <div className="relative min-w-40 sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input type="search" className={`${INPUT_CLASS} ps-9`}
+                value={attendanceSearch} onChange={e => setAttendanceSearch(e.target.value)}
+                placeholder={t('Search name or code...', 'ابحث بالاسم أو الكود...')}
+                aria-label={t('Search camp attendance student list', 'البحث في قائمة حضور الطلاب')} />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-start">
+              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                <tr>
+                  <th className="p-2.5 text-start">{t('Student / Code', 'الطالب / الكود')}</th>
+                  <th className="p-2.5 text-start">{t('Home Group', 'المجموعة الأصلية')}</th>
+                  <th className="p-2.5 text-start">{t('Join Day', 'يوم الانضمام')}</th>
+                  <th className="p-2.5 text-start">{t('Days Present', 'أيام الحضور')}</th>
+                  <th className="p-2.5 text-start">{t('Days Absent', 'أيام الغياب')}</th>
+                  <th className="p-2.5 text-start">{t('Last Attended', 'آخر حضور')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drilldownStudents.map(row => (
+                  <tr key={row.studentId} className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="p-2.5">
+                      <span className="block font-semibold text-slate-900 dark:text-white">{row.fullName}</span>
+                      <span className="block text-slate-500 font-mono">{row.studentCode}</span>
+                    </td>
+                    <td className="p-2.5 font-mono">{campGroups.find(g => g.id === row.homeGroupId)?.code || '—'}</td>
+                    <td className="p-2.5 tabular-nums">{row.joinedCampDay}</td>
+                    <td className="p-2.5 tabular-nums">{row.daysAttended}{row.daysLate > 0 && (
+                      <span className="block text-amber-700 dark:text-amber-300">
+                        {t('Late days:', 'أيام التأخير:')} {row.daysLate}
+                      </span>
+                    )}</td>
+                    <td className="p-2.5 tabular-nums">{row.daysAbsent}</td>
+                    <td className="p-2.5">{row.lastAttendedDay ?? t('—', '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {drilldownStudents.length === 0 && (
+              <p className="p-4 text-center text-xs text-slate-500">
+                {t('No students in this category or filter.', 'مفيش طلاب في التصنيف أو الفلتر ده.')}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className={`${SURFACE_CARD} p-5 space-y-4`}>
