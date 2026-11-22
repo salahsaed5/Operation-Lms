@@ -122,3 +122,61 @@ test('one search immediately filters roster and shows other-group student with o
   await expect(page.getByText('Visitor from', { exact: false }).last()).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
+
+test('attendance status chips filter roster, combine with name search and reset on lecture switch', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', e => runtimeErrors.push(e.message));
+  await page.goto('/');
+  await page.getByRole('complementary', { name: 'Admin modules navigation' })
+    .getByRole('button', { name: 'Logout' }).click();
+  await page.getByRole('region', { name: 'Local sandbox account selector' })
+    .getByRole('button', { name: /Instructor/ }).first().click();
+  await page.getByRole('navigation', { name: 'Instructor navigation' })
+    .getByRole('button', { name: 'Attendance', exact: true }).click();
+
+  const lecturePicker = page.getByRole('combobox', { name: 'Select lecture and group for attendance' });
+  await lecturePicker.selectOption('lec-d4-p2-g1');
+  const chips = page.getByRole('group', { name: 'Filter attendance by status' });
+  const roster = page.getByRole('region', { name: 'Full attendance roster' });
+  const present = chips.getByRole('button', { name: /^Present\s+\d+/ });
+  const unmarked = chips.getByRole('button', { name: /^Unmarked\s+\d+/ });
+  const absent = chips.getByRole('button', { name: /^Absent\s+\d+/ });
+
+  await expect(present).toContainText('2');
+  await expect(unmarked).toContainText('3');
+  await expect(absent).toContainText('0');
+
+  await present.click();
+  await expect(present).toHaveAttribute('aria-pressed', 'true');
+  await expect(roster.getByRole('group', { name: /Attendance for / })).toHaveCount(2);
+  await expect(roster.getByRole('group', { name: 'Attendance for Omar Khaled El-Sayed' })).toBeVisible();
+  await expect(roster.getByRole('group', { name: 'Attendance for Ziad Tarek Abdelrahman' })).toHaveCount(0);
+
+  await absent.click();
+  await expect(roster.getByText('No students with this attendance status.')).toBeVisible();
+  await roster.getByRole('button', { name: 'Show all students' }).click();
+  await expect(chips.getByRole('button', { name: /^All\s+\d+/ })).toHaveAttribute('aria-pressed', 'true');
+
+  await unmarked.click();
+  await expect(roster.getByRole('group', { name: /Attendance for / })).toHaveCount(3);
+  const ziadsCard = roster.getByRole('group', { name: 'Attendance for Ziad Tarek Abdelrahman' });
+  await ziadsCard.getByRole('button', { name: 'Present', exact: true }).click();
+  await expect(ziadsCard).toHaveCount(0);
+  await expect(unmarked).toContainText('2');
+  await expect(present).toContainText('3');
+
+  // Name and status are combined; selected marks are never modified by filtering.
+  const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
+  await search.fill('Omar Khaled');
+  await expect(chips.getByRole('button', { name: /^Unmarked\s+\d+/ })).toContainText('0');
+  await present.click();
+  const searchResults = page.getByRole('group', { name: 'Matching students in this attendance sheet' });
+  await expect(searchResults.getByRole('group', { name: 'Attendance for Omar Khaled El-Sayed' })).toBeVisible();
+  await expect(searchResults.getByRole('group', { name: /Attendance for / })).toHaveCount(1);
+
+  // Prevent stale status filters from silently hiding the next group.
+  await lecturePicker.selectOption('lec-d4-p1-g1');
+  await expect(chips.getByRole('button', { name: /^All\s+\d+/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(search).toHaveValue('');
+  expect(runtimeErrors).toEqual([]);
+});
