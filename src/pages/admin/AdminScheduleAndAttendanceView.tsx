@@ -15,6 +15,7 @@ import { getSignedSelfieUrl } from '../../services/citsRepository';
 import {
   AttendanceMark,
   AttendanceSheetStatus,
+  CampStatus,
   CheckinStatus,
   Lecture,
   LectureStatus,
@@ -644,6 +645,13 @@ export const AdminAttendanceView: React.FC = () => {
   const campExceptions = checkinExceptions.filter((ex) => ex.campId === activeCamp.id);
   const campCheckins = checkins.filter((c) => c.campId === activeCamp.id);
 
+  const cairoParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const cairoPart = (name: string) => cairoParts.find(x => x.type === name)?.value || '';
+  const cairoToday = `${cairoPart('year')}-${cairoPart('month')}-${cairoPart('day')}`;
+  const campAllowsFinalAttendance = activeCamp.status === CampStatus.ACTIVE;
+
   const filteredSheets = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return campSheets.filter((sheet) => {
@@ -666,6 +674,17 @@ export const AdminAttendanceView: React.FC = () => {
   }, [campSheets, lectures, instructors, groups, searchQuery, statusFilter]);
 
   const handleForceSync = async (lectureId: string) => {
+    const lecture = lectures.find(l => l.id === lectureId);
+    if (!campAllowsFinalAttendance || !lecture || lecture.lectureDate > cairoToday) {
+      setSyncMessage({
+        ok: false,
+        text: t(
+          'Final attendance is blocked until the camp is active and the scheduled lecture date has arrived. Local drafts are not authoritative.',
+          'اعتماد كشف الحضور مقفول حتى تفعيل المعسكر وحلول موعد المحاضرة. المسودات المحلية ليست بيانات معتمدة على السيرفر.'
+        ),
+      });
+      return;
+    }
     setIsBusy(true);
     setSyncMessage(null);
     try {
@@ -953,6 +972,8 @@ export const AdminAttendanceView: React.FC = () => {
               sheet.status === AttendanceSheetStatus.SUBMITTED ||
               sheet.status === AttendanceSheetStatus.LOCKED;
             const chkDisplay = chk ? checkinStatusDisplay(chk.status, t) : null;
+            const canSubmitSheet = campAllowsFinalAttendance && Boolean(lec) &&
+              Boolean(lec && lec.lectureDate <= cairoToday);
 
             return (
               <div key={sheet.id} className={`${SURFACE_CARD} p-5 space-y-4`}>
@@ -995,11 +1016,11 @@ export const AdminAttendanceView: React.FC = () => {
                       <>
                         <StatusBadge tone="warning">
                           <Clock className="w-3.5 h-3.5" />
-                          <span>{t('Draft Sheet', 'مسودة')}</span>
+                          <span>{t('Server Draft — Not Finalized', 'مسودة السيرفر — غير معتمدة')}</span>
                         </StatusBadge>
                         <button
                           type="button"
-                          disabled={isBusy}
+                          disabled={isBusy || !canSubmitSheet}
                           onClick={() => handleForceSync(sheet.lectureId)}
                           className={BTN_PRIMARY}
                         >
@@ -1010,6 +1031,18 @@ export const AdminAttendanceView: React.FC = () => {
                   </div>
                 </div>
 
+                {!isSynced && (
+                  <p className="rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
+                    {t(
+                      canSubmitSheet
+                        ? 'Showing server-saved draft only. Instructor offline edits may differ and must be reconciled before final submission.'
+                        : 'Final submission is disabled until the camp is active and the lecture date has arrived. This is the server-saved draft; offline instructor edits may differ.',
+                      canSubmitSheet
+                        ? 'المعروض هو مسودة السيرفر فقط. ممكن تعديلات المحاضر المحلية تكون مختلفة ولازم تتراجع قبل الاعتماد.'
+                        : 'الاعتماد النهائي مقفول حتى تفعيل المعسكر وحلول موعد المحاضرة. المعروض مسودة السيرفر فقط، وممكن تعديلات المحاضر المحلية تختلف.'
+                    )}
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 dark:text-slate-400 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 font-mono tabular-nums">
                   <span>
                     {t('Present/Late:', 'حاضر/متأخر:')}{' '}

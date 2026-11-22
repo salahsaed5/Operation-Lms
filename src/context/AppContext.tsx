@@ -536,12 +536,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const snap = await fetchOperationalSnapshot(ctx);
 
-      // Merge any unsynced local IndexedDB drafts over draft sheets so offline marks persist cleanly
+      // Only the owning Instructor may overlay their own offline draft.
+      // Admin must always see authoritative server rows; never let shared
+      // browser IndexedDB silently masquerade as server-synchronized data.
       const mergedSheets = await Promise.all(
         snap.attendanceSheets.map(async (sheet) => {
-          if (sheet.status !== AttendanceSheetStatus.DRAFT) return sheet;
+          if (sheet.status !== AttendanceSheetStatus.DRAFT ||
+              ctx.profile.role !== UserRole.INSTRUCTOR || !ctx.instructor?.id ||
+              sheet.instructorId !== ctx.instructor.id) return sheet;
           const localDraft = await getOfflineAttendanceDraft(sheet.lectureId);
-          if (localDraft && localDraft.records.length > 0) {
+          if (localDraft &&
+              localDraft.instructorId === ctx.instructor.id &&
+              localDraft.campId === sheet.campId &&
+              localDraft.records.length > 0) {
             return {
               ...sheet,
               syncState: localDraft.syncState,
@@ -2566,6 +2573,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const lec = lectures.find((l) => l.id === lectureId);
     if (!sheet || !lec) {
       return { ok: false, error: 'Attendance sheet not found for this lecture.' };
+    }
+
+    // Shared authorization gate: protects BOTH Instructor and Admin UI
+    // before any draft records are uploaded or submit RPC is called.
+    const cairoParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const dateValue = (part: string) => cairoParts.find(x => x.type === part)?.value || '';
+    const cairoToday = `${dateValue('year')}-${dateValue('month')}-${dateValue('day')}`;
+    if (activeCamp.status !== CampStatus.ACTIVE || lec.lectureDate > cairoToday) {
+      return {
+        ok: false,
+        error: 'Final attendance submission requires an ACTIVE camp and the scheduled lecture date to have arrived (Africa/Cairo). Draft edits remain available.',
+      };
     }
 
     const otherSheetsSamePeriod = attendanceSheets.filter(
