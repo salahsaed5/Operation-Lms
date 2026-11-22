@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
+import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { compressSelfieUnderLimit, getSignedSelfieUrl } from '../../services/citsRepository';
 import {
   AttendanceMark,
@@ -640,7 +641,7 @@ export const InstructorCheckinView: React.FC = () => {
     );
   }
 
-  const gpsLimit = Math.min(50, activeCamp.settings.geofenceRadiusMeters / 2);
+  const gpsLimit = requiredGpsAccuracyMeters(activeCamp.settings.geofenceRadiusMeters);
   const getFreshPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
     if (!window.isSecureContext || !navigator.geolocation) {
       reject(new Error(t('Location requires HTTPS and device GPS.', 'الموقع يحتاج HTTPS وتفعيل GPS على الجهاز.')));
@@ -660,11 +661,7 @@ export const InstructorCheckinView: React.FC = () => {
         : t('Unable to read GPS. Try outside or from your phone.', 'تعذر قراءة GPS. جرب في مكان مفتوح أو بالموبايل.')
     )), { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 });
   });
-  const quality = !gpsSnapshot ? 'missing'
-    : gpsSnapshot.accuracy > gpsLimit ? 'poor'
-    : gpsSnapshot.distance > activeCamp.settings.geofenceRadiusMeters ? 'outside'
-    : gpsSnapshot.distance + gpsSnapshot.accuracy > activeCamp.settings.geofenceRadiusMeters ? 'uncertain'
-    : 'good';
+  const quality = classifyGpsVerification(gpsSnapshot, activeCamp.settings.geofenceRadiusMeters);
   const maySubmitGps = quality === 'good' ||
     (quality === 'outside' && exceptionReason.trim().length > 0);
 
