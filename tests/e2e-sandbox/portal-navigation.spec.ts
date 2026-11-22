@@ -191,3 +191,42 @@ test('attendance status chips filter roster, combine with name search and reset 
     .toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Admin attendance shows compact server summary and on-demand corrections, filters still work', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', e => runtimeErrors.push(e.message));
+  await page.goto('/');
+  const nav = page.getByRole('complementary', { name: 'Admin modules navigation' });
+  await nav.getByRole('button', { name: 'Attendance', exact: true }).click();
+
+  const overview = page.getByRole('region', { name: 'Attendance overview' });
+  await expect(overview).toBeVisible();
+  await expect(overview.getByText('Camp attendance overview')).toBeVisible();
+  await expect(overview.getByText('Lecture sheets')).toBeVisible();
+  await expect(overview.getByText('Server-saved rows')).toBeVisible();
+
+  const cards = page.getByRole('article', { name: /^Attendance sheet:/ });
+  await expect(cards.first()).toBeVisible();
+  // Avoid repeated yellow banners or risky final-submit buttons on every card.
+  await expect(page.getByText('Final submission is disabled until the camp is active and the lecture date has arrived.')).toHaveCount(0);
+  await expect(cards.first().getByText('Reason for audited corrections')).toHaveCount(0);
+  await cards.first().getByRole('button', { name: 'View details' }).click();
+  await expect(cards.first().getByText('Student attendance records')).toBeVisible();
+  await expect(cards.first().getByText('Reason for audited corrections')).toBeVisible();
+  await cards.first().getByRole('button', { name: 'Close details' }).click();
+  await expect(cards.first().getByText('Reason for audited corrections')).toHaveCount(0);
+
+  const statuses = page.getByRole('group', { name: 'Filter attendance sheets by status' });
+  await statuses.getByRole('button', { name: /^Drafts/ }).click();
+  await expect(statuses.getByRole('button', { name: /^Drafts/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(cards.first()).toBeVisible();
+  await statuses.getByRole('button', { name: /^All/ }).click();
+
+  const search = page.getByRole('searchbox', { name: 'Search attendance sheets' });
+  await search.fill('a-topic-that-does-not-exist-73893');
+  await expect(page.getByText('No lecture sheets match your search.')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(search).toHaveValue('');
+  await expect(cards.first()).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
