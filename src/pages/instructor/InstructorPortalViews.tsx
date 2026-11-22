@@ -74,11 +74,9 @@ export const InstructorDashboardView: React.FC = () => {
     checkins,
     attendanceSheets,
     setInstructorRoute,
-    acknowledgeLecture,
     t,
   } = useApp();
 
-  const [ackFeedback, setAckFeedback] = useState<string | null>(null);
   const currentInstructor =
     instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
 
@@ -133,14 +131,6 @@ export const InstructorDashboardView: React.FC = () => {
       assignedLectureIds.has(s.lectureId)
   );
 
-  const unacknowledgedLectures = myLecturesToday.filter((l) => !l.instructorAcknowledgedAt);
-
-  const handleAck = async (lectureId: string) => {
-    setAckFeedback(null);
-    const res = await acknowledgeLecture(lectureId);
-    if (!res.ok && res.error) setAckFeedback(res.error);
-  };
-
   const checkinDisplay = myCheckinToday
     ? instructorCheckinBadge(myCheckinToday.status, t)
     : null;
@@ -164,14 +154,6 @@ export const InstructorDashboardView: React.FC = () => {
           </>
         }
       />
-
-      {ackFeedback && (
-        <InlineBanner
-          type="error"
-          message={ackFeedback}
-          onDismiss={() => setAckFeedback(null)}
-        />
-      )}
 
       {/* 1. Daily Check-in Priority Card */}
       <section aria-labelledby="inst-priority-checkin" className={`${SURFACE_CARD} p-5`}>
@@ -346,7 +328,7 @@ export const InstructorDashboardView: React.FC = () => {
               {t('4. Pending Actions', '4. إجراءات معلقة')}
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
-              {myDraftSheets.length + unacknowledgedLectures.length}
+              {myDraftSheets.length}
             </span>
           </div>
 
@@ -380,31 +362,7 @@ export const InstructorDashboardView: React.FC = () => {
               </div>
             ))}
 
-            {unacknowledgedLectures.map((lec) => (
-              <div
-                key={lec.id}
-                className={`${SURFACE_SUBTLE} p-3.5 flex items-center justify-between gap-3`}
-              >
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">
-                    {t(
-                      `Confirm Schedule Rev ${lec.revisionNumber} (P${lec.periodNumber})`,
-                      `تأكيد استلام الجدول (${lec.revisionNumber} - ف${lec.periodNumber})`
-                    )}
-                  </p>
-                  <p className="text-slate-500 mt-0.5">{lec.topic}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAck(lec.id)}
-                  className={`${BTN_SECONDARY} min-h-[40px]`}
-                >
-                  {t('Confirm', 'تأكيد')}
-                </button>
-              </div>
-            ))}
-
-            {myDraftSheets.length === 0 && unacknowledgedLectures.length === 0 && (
+            {myDraftSheets.length === 0 && (
               <p className="text-slate-500 py-5 text-center">
                 {t(
                   'All daily tasks and attendance sheets are up to date.',
@@ -427,12 +385,10 @@ export const InstructorScheduleView: React.FC = () => {
     lectures,
     groups,
     rooms,
-    acknowledgeLecture,
     t,
   } = useApp();
 
   const [dayFilter, setDayFilter] = useState<'all' | number>('all');
-  const [ackError, setAckError] = useState<string | null>(null);
   const currentInstructor =
     instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
 
@@ -455,19 +411,13 @@ export const InstructorScheduleView: React.FC = () => {
     )
     .sort((a, b) => a.campDay - b.campDay || a.periodNumber - b.periodNumber);
 
-  const handleAck = async (lectureId: string) => {
-    setAckError(null);
-    const res = await acknowledgeLecture(lectureId);
-    if (!res.ok && res.error) setAckError(res.error);
-  };
-
   return (
     <div className="space-y-5">
       <PageHeader
         title={t('My Teaching Schedule', 'جدول محاضراتي')}
         subtitle={t(
-          'Review your assigned lectures, rooms, and confirm schedule revisions.',
-          'استعرض محاضراتك والقاعات التدريبية وأكّد استلام أي تحديثات في الجدول.'
+          'Assigned lectures appear automatically. Review dates, rooms, and revisions without an approval step.',
+          'المحاضرات بتظهر تلقائيًا بمجرد ما الإدارة تضيفها أو تعدلها، من غير ما تحتاج توافق على الجدول.'
         )}
         actions={
           <select
@@ -487,10 +437,6 @@ export const InstructorScheduleView: React.FC = () => {
           </select>
         }
       />
-
-      {ackError && (
-        <InlineBanner type="error" message={ackError} onDismiss={() => setAckError(null)} />
-      )}
 
       {myLectures.length === 0 ? (
         <EmptyState
@@ -529,22 +475,7 @@ export const InstructorScheduleView: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="shrink-0">
-                  {lec.instructorAcknowledgedAt ? (
-                    <StatusBadge tone="success">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{t('Acknowledged', 'تم التأكيد')}</span>
-                    </StatusBadge>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleAck(lec.id)}
-                      className={`${BTN_PRIMARY} min-h-[44px]`}
-                    >
-                      {t('Acknowledge Schedule', 'تأكيد استلام الجدول')}
-                    </button>
-                  )}
-                </div>
+                <StatusBadge tone="info">{t('Assigned — No Approval Needed', 'تم الإسناد — بدون موافقة')}</StatusBadge>
               </div>
             );
           })}
