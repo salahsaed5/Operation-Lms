@@ -39,3 +39,21 @@ export function compareAttendanceServerRows(
     persistedAttendanceRows(actualServer)
   );
 }
+
+/**
+ * Return genuine lost-update conflicts, not intentional changes made by the
+ * current editor. If their desired state already matches the live server,
+ * accepting it is a safe idempotent no-op. Without an expected baseline
+ * (legacy Offline drafts), fail closed whenever local and server differ.
+ */
+export function unsafeAttendanceDraftConflicts(
+  expectedServer: AttendanceRecordItem[] | undefined,
+  desiredRows: AttendanceRecordItem[],
+  actualServer: AttendanceRecordItem[]
+): string[] {
+  const concurrentChanges = compareAttendanceServerRows(expectedServer ?? desiredRows, actualServer);
+  if (concurrentChanges.length === 0) return [];
+  return compareAttendanceServerRows(desiredRows, actualServer).length === 0
+    ? []
+    : concurrentChanges;
+}
