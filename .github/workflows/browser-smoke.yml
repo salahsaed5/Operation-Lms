@@ -38,7 +38,24 @@ jobs:
       - name: Verify sign-in, RTL and mobile UI in real Chromium
         run: npx playwright test --config playwright.config.ts --reporter=line
 
-      - name: Verify the actual connected Staging preview guest UX
+      # Vercel Deployment Protection stays enabled. Never weaken it for CI.
+      # Only run this remote step when a valid, short-lived Trusted Sources
+      # token has been configured securely; otherwise report the release gate.
+      - name: Determine protected preview browser access
+        id: staging_access
+        env:
+          VERCEL_OIDC_TOKEN: ${{ secrets.VERCEL_OIDC_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_OIDC_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Protected Staging guest E2E: SKIPPED — no short-lived Vercel Trusted Sources token. Deployment Protection remains enabled." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Verify connected Staging preview in Chromium (protected)
+        if: ${{ steps.staging_access.outputs.available == 'true' }}
         env:
           BASE_URL: https://operation-lms-staging-salah-2543.vercel.app
+          VERCEL_OIDC_TOKEN: ${{ secrets.VERCEL_OIDC_TOKEN }}
         run: npx playwright test --config playwright.config.ts --reporter=line
