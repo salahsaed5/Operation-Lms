@@ -301,7 +301,7 @@ export const CampFinanceManager:React.FC=()=>{
         <form onSubmit={editMain} className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
           <h4 className="text-sm font-bold">{t('Edit primary default rate (future lectures only)','تعديل سعر الأساسي للمحاضرات الجديدة فقط')}</h4>
           <div className="flex flex-wrap gap-2">
-            <select value={mainEditInstId||''} onChange={e=>{
+            <select aria-label={t('Select instructor for primary rate edit','اختار محاضر تعديل سعر الأساسي')} value={mainEditInstId||''} onChange={e=>{
               const i=instructors.find(i=>i.id===e.target.value);
               setMainEditInstId(i?.id||null);setMainRate(i?String(i.defaultLectureRateEgp):'');
             }} required className={`${INPUT_CLASS} flex-1 min-w-[180px]`}>
@@ -325,12 +325,12 @@ export const CampFinanceManager:React.FC=()=>{
         </p>
         <form onSubmit={onAddBackup} className="space-y-3">
           <label className={inputLabel}>{t('Lecture being supported','المحاضرة اللي حضر معاها')}
-            <select required value={backupLectureId} onChange={e=>setBackupLectureId(e.target.value)} className={INPUT_CLASS}>
+            <select aria-label={t('Backup lecture','محاضرة الباك أب')} required value={backupLectureId} onChange={e=>setBackupLectureId(e.target.value)} className={INPUT_CLASS}>
               <option value="">{t('Select lecture','اختار المحاضرة')}</option>
               {campLectures.map(l=><option key={l.id} value={l.id}>D{l.campDay} P{l.periodNumber} · {l.topic}</option>)}
             </select></label>
           <label className={inputLabel}>{t('Backup instructor','محاضر الباك أب')}
-            <select required value={backupInstructorId} onChange={e=>setBackupInstructorId(e.target.value)} className={INPUT_CLASS}>
+            <select aria-label={t('Backup instructor','محاضر الباك أب')} required value={backupInstructorId} onChange={e=>setBackupInstructorId(e.target.value)} className={INPUT_CLASS}>
               <option value="">{t('Select backup instructor','اختار محاضر الباك أب')}</option>
               {instructors.filter(i=>i.isActive&&(campInstructorIds[campId]||[]).includes(i.id)).map(i=>
                 <option key={i.id} value={i.id}>{t(i.fullNameEn,i.fullNameAr)}</option>)}
@@ -381,7 +381,7 @@ export const CampFinanceManager:React.FC=()=>{
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <label className={inputLabel}>{t('Instructor','المحاضر')}
-          <select value={payInstructorId} onChange={e=>setPayInstructorId(e.target.value)} className={INPUT_CLASS}>
+          <select aria-label={t('Select payment instructor','اختار المحاضر للدفعة')} value={payInstructorId} onChange={e=>setPayInstructorId(e.target.value)} className={INPUT_CLASS}>
             <option value="">{t('Select','اختار')}</option>
             {rows.map(r=><option key={r.inst.id} value={r.inst.id}>{r.inst.fullNameEn} · {fmt(r.stat.balanceEgp)} {t('balance','متبقي')}</option>)}
           </select></label>
@@ -391,7 +391,7 @@ export const CampFinanceManager:React.FC=()=>{
             <option value="refund">{t('Refund / correction','استرداد / تصحيح')}</option>
           </select></label>
         <label className={inputLabel}>{t('Amount EGP','المبلغ بالجنيه')}
-          <input type="number" min="1" step="1" value={payAmount} onChange={e=>setPayAmount(e.target.value)} className={INPUT_CLASS}/></label>
+          <input aria-label={t('Payment amount EGP','مبلغ الدفع بالجنيه')} type="number" min="1" step="1" value={payAmount} onChange={e=>setPayAmount(e.target.value)} className={INPUT_CLASS}/></label>
         <label className={inputLabel}>{t('Payment method','طريقة الدفع')}
           <select value={payMethod} onChange={e=>setPayMethod(e.target.value as FinancePaymentMethod)} className={INPUT_CLASS}>
             <option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option>
@@ -400,7 +400,7 @@ export const CampFinanceManager:React.FC=()=>{
         <label className={inputLabel}>{t('Reference / transaction ID','رقم التحويل / المرجع')}
           <input value={payReference} onChange={e=>setPayReference(e.target.value)} className={INPUT_CLASS}/></label>
         <label className={inputLabel}>{t('Audit reason / notes','سبب وتفاصيل الدفع')}
-          <input required minLength={3} value={payReason} onChange={e=>setPayReason(e.target.value)} className={INPUT_CLASS}/></label>
+          <input aria-label={t('Payment audit note','سبب تسجيل الدفعة')} required minLength={3} value={payReason} onChange={e=>setPayReason(e.target.value)} className={INPUT_CLASS}/></label>
       </div>
       <button type="button" className={BTN_PRIMARY} disabled={busy||!payInstructorId||!payAmount||payReason.trim().length<3}
         onClick={()=>setPaymentConfirm(true)}>
