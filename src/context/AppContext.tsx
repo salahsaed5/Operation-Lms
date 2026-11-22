@@ -276,7 +276,7 @@ interface AppContextValue {
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
-    assignedToActiveCamp: boolean;
+    assignedToActiveCamp?: boolean;
   }) => Promise<ActionResult>;
 
   triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
@@ -1751,7 +1751,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
-    assignedToActiveCamp: boolean;
+    assignedToActiveCamp?: boolean;
   }): Promise<ActionResult> => {
     if (
       !auth.isAuthenticated ||
@@ -1833,7 +1833,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : p
       )
     );
-    if (activeCamp) {
+    if (activeCamp && input.assignedToActiveCamp !== undefined) {
       setCampInstructorIds((prev) => {
         const list = prev[activeCamp.id] || [];
         const next = input.assignedToActiveCamp
