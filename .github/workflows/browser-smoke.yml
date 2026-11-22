@@ -37,3 +37,8 @@ jobs:
 
       - name: Verify sign-in, RTL and mobile UI in real Chromium
         run: npx playwright test --config playwright.config.ts --reporter=line
+
+      - name: Verify the actual connected Staging preview guest UX
+        env:
+          BASE_URL: https://operation-lms-staging-salah-2543.vercel.app
+        run: npx playwright test --config playwright.config.ts --reporter=line
