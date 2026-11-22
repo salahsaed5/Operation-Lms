@@ -205,8 +205,8 @@ export const AdminScheduleView: React.FC = () => {
           ok: true,
           messages: [
             t(
-              'Schedule revision saved and instructor re-acknowledgment requested.',
-              'تم حفظ تعديل الجدول وإشعار المحاضر لإعادة التأكيد.'
+              'Schedule revision saved. Instructor schedule updates automatically; no approval required.',
+              'تم حفظ تعديل الجدول، والتحديث هيظهر للمحاضر تلقائيًا من غير طلب موافقة.'
             ),
           ],
         });
@@ -510,9 +510,7 @@ export const AdminScheduleView: React.FC = () => {
                   <div className="flex items-center justify-between pt-1">
                     <span className="font-mono tabular-nums font-semibold text-slate-800 dark:text-slate-200">
                       {lec.frozenRateEgp} EGP ·{' '}
-                      {lec.instructorAcknowledgedAt
-                        ? t('Acknowledged', 'مؤكد')
-                        : t('Pending Ack', 'بانتظار التأكيد')}
+                      {t('Auto Assigned', 'إسناد تلقائي')}
                     </span>
                     <button
                       type="button"
@@ -538,7 +536,7 @@ export const AdminScheduleView: React.FC = () => {
                   <th className="py-3 px-4 font-semibold text-start">{t('Topic & Instructor', 'الموضوع والمحاضر')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Status', 'الحالة')}</th>
                   <th className="py-3 px-4 font-semibold text-end">{t('Frozen Rate', 'الفئة المثبتة')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Acknowledgment', 'تأكيد المحاضر')}</th>
+                  <th className="py-3 px-4 font-semibold text-start">{t('Assignment', 'الإسناد')}</th>
                   <th className="py-3 px-5 font-semibold text-end">{t('Action', 'إجراء')}</th>
                 </tr>
               </thead>
@@ -580,11 +578,7 @@ export const AdminScheduleView: React.FC = () => {
                         {lec.frozenRateEgp} EGP
                       </td>
                       <td className="py-3.5 px-4">
-                        {lec.instructorAcknowledgedAt ? (
-                          <StatusBadge tone="success">{t('Acknowledged', 'تم التأكيد')}</StatusBadge>
-                        ) : (
-                          <StatusBadge tone="warning">{t('Awaiting Instructor', 'بانتظار التأكيد')}</StatusBadge>
-                        )}
+                        <StatusBadge tone="info">{t('Auto Assigned', 'إسناد تلقائي')}</StatusBadge>
                       </td>
                       <td className="py-3.5 px-5 text-end">
                         <button
