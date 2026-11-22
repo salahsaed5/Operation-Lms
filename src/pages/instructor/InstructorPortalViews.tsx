@@ -1270,6 +1270,7 @@ export const InstructorAttendanceView: React.FC = () => {
     mark: AttendanceMark | 'unmarked'
   ) => {
     if (isLockedOrSubmitted || !selectedLecture) return;
+    setComparisonRows(null);
     const nextRecords: AttendanceRecordItem[] = baseRecords.map((r) =>
       r.studentId === studentId ? { ...r, mark } : r
     );
@@ -1331,6 +1332,7 @@ export const InstructorAttendanceView: React.FC = () => {
       mark: AttendanceMark.PRESENT,
     };
 
+    setComparisonRows(null);
     setIsBusy(true);
     const res = await saveAttendanceDraft(
       selectedLectureId,
