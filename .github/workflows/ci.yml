@@ -2,7 +2,8 @@ name: CITS Web CI
 
 on:
   push:
-    branches: [main, phase-2-finalization]
+    # Validate unmerged staging feature/fix branches as well as main.
+    branches: [main, phase-2-finalization, 'feat/**', 'fix/**']
   pull_request:
     # Run for stacked Draft PRs too, not only PRs directly targeting main.
     branches: [main, 'feat/**', 'fix/**']
