@@ -73,3 +73,34 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
   await expect(page.getByText('Minimum Spanning Trees & Disjoint Set Union').last()).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
+
+test('one search immediately filters roster and shows other-group student with one-click visitor add', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', e => runtimeErrors.push(e.message));
+  await page.goto('/');
+  await page.getByRole('complementary', { name: 'Admin modules navigation' })
+    .getByRole('button', { name: 'Logout' }).click();
+  await page.getByRole('region', { name: 'Local sandbox account selector' })
+    .getByRole('button', { name: /Instructor/ }).first().click();
+  await page.getByRole('navigation', { name: 'Instructor navigation' })
+    .getByRole('button', { name: 'Attendance', exact: true }).click();
+
+  const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
+  await expect(search).toHaveCount(1);
+  await search.fill('Omar Khaled');
+  await expect(page.getByText('Matching students already on this sheet: 1')).toBeVisible();
+  await expect(page.getByText('Omar Khaled El-Sayed', { exact: true })).toBeVisible();
+  await search.fill('Youssef Amr');
+  await expect(page.getByText('Matching students already on this sheet: 0')).toBeVisible();
+  const visitors = page.getByRole('group', { name: 'Students from other groups' });
+  await expect(visitors.getByText('Youssef Amr Nabil')).toBeVisible();
+  await expect(visitors.getByText(/Home group: GRP-02/)).toBeVisible();
+
+  // One query and one click — never ask to type into a separate visitor box.
+  await visitors.getByRole('button', { name: 'Add Youssef Amr Nabil as visitor' }).click();
+  await expect(page.getByText('Youssef Amr Nabil added as visiting cross-group student.')).toBeVisible();
+  await expect(search).toHaveValue('');
+  await expect(page.getByText('Youssef Amr Nabil', { exact: true })).toBeVisible();
+  await expect(page.getByText('Visitor from', { exact: false }).last()).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
