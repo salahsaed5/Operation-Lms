@@ -17,6 +17,7 @@ import {
   evaluateRlsPolicy,
   createValidatedAuditLogEntry,
   calculateCampDayDate,
+  validateCampWeekdays,
   resolveStudentOriginGroupForDay,
   validateGpsCoordinates,
 } from './businessRules';
@@ -1742,3 +1743,30 @@ test('28. Migration 0008 & Security Phase Closure: closes SEC-004 enumeration, S
 });
 
 
+
+
+test('teaching calendar: Saturday/Monday/Wednesday has 10 actual sessions (not 10 consecutive dates)',()=>{
+  const days=[1,3,6]; // JS DOW Monday, Wednesday, Saturday
+  assert.equal(calculateCampDayDate('2026-11-28',1,days),'2026-11-28');
+  assert.equal(calculateCampDayDate('2026-11-28',2,days),'2026-11-30');
+  assert.equal(calculateCampDayDate('2026-11-28',3,days),'2026-12-02');
+  assert.equal(calculateCampDayDate('2026-11-28',4,days),'2026-12-05');
+  assert.equal(calculateCampDayDate('2026-11-28',10,days),'2026-12-19');
+  assert.equal(calculateCampDayDate('2026-11-28',10),'2026-12-07'); // Legacy daily
+});
+
+test('teaching calendar: Sunday/Tuesday/Thursday runs 15 sessions over five weeks',()=>{
+  const days=[0,2,4];
+  assert.equal(calculateCampDayDate('2026-11-29',1,days),'2026-11-29');
+  assert.equal(calculateCampDayDate('2026-11-29',2,days),'2026-12-01');
+  assert.equal(calculateCampDayDate('2026-11-29',3,days),'2026-12-03');
+  assert.equal(calculateCampDayDate('2026-11-29',15,days),'2026-12-31');
+});
+
+test('teaching calendar blocks non-teaching start dates, duplicate days and impossible dates',()=>{
+  assert.match(validateCampWeekdays('2026-11-30',[0,2,4])||'',/first teaching date/i);
+  assert.ok(validateCampWeekdays('2026-11-29',[0,0,2]));
+  assert.ok(validateCampWeekdays('2026-02-30',[0,2,4]));
+  assert.throws(()=>calculateCampDayDate('2026-11-29',0,[0,2,4]));
+  assert.throws(()=>calculateCampDayDate('2026-11-29',15,[]));
+});
