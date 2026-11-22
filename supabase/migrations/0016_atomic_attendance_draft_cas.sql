@@ -89,7 +89,10 @@ BEGIN
   FROM jsonb_array_elements(p_desired) x;
   UPDATE public.attendance_sheets SET synced_at=now(),updated_at=now(),sync_state='Synced'
   WHERE id=p_sheet_id;
-  IF p_submit THEN\n    PERFORM public.submit_attendance_sheet_tx(p_sheet_id);\n  END IF;\n  RETURN jsonb_build_object('ok',true,'sheet_id',p_sheet_id,'submitted',p_submit);
+  IF p_submit THEN
+    PERFORM public.submit_attendance_sheet_tx(p_sheet_id);
+  END IF;
+  RETURN jsonb_build_object('ok',true,'sheet_id',p_sheet_id,'submitted',p_submit);
 END $$;
 REVOKE ALL ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb,boolean) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb,boolean) TO authenticated;
