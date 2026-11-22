@@ -1836,7 +1836,7 @@ export const InstructorAttendanceView: React.FC = () => {
                         {t('Show all students', 'عرض كل الطلاب')}
                       </button>
                     )}
-                  </div>
+                  </div>}
             </section>
           )}
 
