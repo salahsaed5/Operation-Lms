@@ -1123,6 +1123,15 @@ export interface Database {
         Args: { p_group_id: string };
         Returns: boolean;
       };
+      save_attendance_draft_cas_tx: {
+        Args: {
+          p_sheet_id: string;
+          p_expected: Json;
+          p_desired: Json;
+          p_submit?: boolean;
+        };
+        Returns: Json;
+      };
       submit_attendance_sheet_tx: {
         Args: { p_sheet_id: string };
         Returns: {
