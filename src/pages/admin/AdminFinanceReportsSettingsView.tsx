@@ -13,6 +13,7 @@ import {
   Database,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { CampFinanceManager } from '../../components/finance/CampFinanceManager';
 import { buildCampToDateReport, type CampToDateCategory } from '../../domain/campCumulativeAttendance';
 import {
   EntitlementStatus,
@@ -59,6 +60,7 @@ function entitlementStatusDisplay(
 export const AdminFinanceView: React.FC = () => {
   const {
     activeCamp,
+    financeSnapshot,
     campInstructorIds,
     entitlements,
     instructors,
@@ -261,6 +263,12 @@ export const AdminFinanceView: React.FC = () => {
         )}
       />
 
+      {financeSnapshot.enabled ? <CampFinanceManager /> : (
+        <>
+          <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3.5 text-xs text-amber-900 dark:text-amber-200">
+            {t('The complete Finance ledger (backup + transport + payments) awaits reviewed migration 0023. Existing lecture entitlements are still shown below without pretending any payment was made.',
+              'نظام حسابات الباك أب والانتقالات والدفعات مستني مراجعة وتطبيق Migration 0023. المستحقات القديمة ظاهرة تحت من غير ما نفترض إن فيه فلوس اتدفعت.')}
+          </div>
       {/* 4 Summary Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <div className={`${SURFACE_CARD} px-4 py-3.5`}>
@@ -486,6 +494,9 @@ export const AdminFinanceView: React.FC = () => {
             'الصفحة دي لا تسجل المدفوع أو المتبقي؛ المستحق المؤكد مش معناه إن المبلغ اتصرف بالفعل.')}</p>
         </div>
       </section>
+
+        </>
+      )}
 
       {feedback && (
         <InlineBanner
