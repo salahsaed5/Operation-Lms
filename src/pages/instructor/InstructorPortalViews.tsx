@@ -1460,6 +1460,7 @@ export const InstructorAttendanceView: React.FC = () => {
             onChange={(e) => {
               setSelectedLectureId(e.target.value);
               setFeedback(null);
+              setComparisonRows(null);
             }}
             className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold max-w-full"
           >
