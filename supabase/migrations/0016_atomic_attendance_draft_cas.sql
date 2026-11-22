@@ -21,7 +21,7 @@ ON public.attendance_records FOR EACH ROW EXECUTE FUNCTION public.lock_attendanc
 -- originGroupId, attendedGroupId, isCrossGroup, note. Unmarked rows are omitted.
 -- Compare canonical server state while holding the sheet lock; reject conflicts.
 CREATE OR REPLACE FUNCTION public.save_attendance_draft_cas_tx(
-  p_sheet_id uuid, p_expected jsonb, p_desired jsonb
+  p_sheet_id uuid, p_expected jsonb, p_desired jsonb, p_submit boolean DEFAULT false
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=public,pg_temp AS $$
 DECLARE
@@ -89,7 +89,7 @@ BEGIN
   FROM jsonb_array_elements(p_desired) x;
   UPDATE public.attendance_sheets SET synced_at=now(),updated_at=now(),sync_state='Synced'
   WHERE id=p_sheet_id;
-  RETURN jsonb_build_object('ok',true,'sheet_id',p_sheet_id);
+  IF p_submit THEN\n    PERFORM public.submit_attendance_sheet_tx(p_sheet_id);\n  END IF;\n  RETURN jsonb_build_object('ok',true,'sheet_id',p_sheet_id,'submitted',p_submit);
 END $$;
-REVOKE ALL ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb,boolean) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.save_attendance_draft_cas_tx(uuid,jsonb,jsonb,boolean) TO authenticated;
