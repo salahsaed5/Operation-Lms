@@ -2218,7 +2218,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
             {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي (جنيه مصري)')}
           </h2>
           {myFinance ? (
-            <div aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
+            <section aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
               <p className="text-xs text-slate-500 dark:text-slate-400">{t(
                 'Only your own records are visible. Confirmed amounts include main, approved backup and once-daily primary transportation. Pending sums are not payable yet.',
                 'اللي ظاهر هنا حسابك إنت بس. المؤكد يشمل الأساسي والباك أب المعتمد وانتقالات أيام الأساسي مرة واحدة. المعلق مش ضمن المستحق.'
@@ -2260,7 +2260,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
                   <strong>{p.amountEgp.toLocaleString()} EGP</strong>
                 </div>)}
               </div>
-            </div>
+            </section>
           ) : (
             <p role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300">
               {t('Detailed backup, transport and payment history will become available after the Finance migration is reviewed and activated.',
