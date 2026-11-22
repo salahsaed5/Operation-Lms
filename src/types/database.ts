@@ -431,6 +431,11 @@ export interface Database {
           university: string | null;
           phone: string | null;
           is_active: boolean;
+          joined_camp_day: number;
+          enrolled_at: string;
+          enrolled_by_profile_id: string | null;
+          enrollment_origin: string;
+          enrollment_reason: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -443,6 +448,11 @@ export interface Database {
           university?: string | null;
           phone?: string | null;
           is_active?: boolean;
+          joined_camp_day?: number;
+          enrolled_at?: string;
+          enrolled_by_profile_id?: string | null;
+          enrollment_origin?: string;
+          enrollment_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -453,6 +463,11 @@ export interface Database {
           university?: string | null;
           phone?: string | null;
           is_active?: boolean;
+          joined_camp_day?: number;
+          enrolled_at?: string;
+          enrolled_by_profile_id?: string | null;
+          enrollment_origin?: string;
+          enrollment_reason?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -1396,6 +1411,12 @@ export interface Student {
   fullName: string;
   university: string;
   isActive: boolean;
+  /** Day 1 for initial roster; 2+ for approved mid-camp enrollment. */
+  joinedCampDay?: number;
+  enrolledAt?: string;
+  enrolledByProfileId?: string | null;
+  enrollmentOrigin?: string;
+  enrollmentReason?: string | null;
 }
 
 export interface Lecture {
