@@ -634,6 +634,28 @@ export async function fetchOperationalSnapshot(
     enrollmentReason: s.enrollment_reason ?? null,
   }));
   const studentById = new Map(students.map((s) => [s.id, s]));
+  const visitedIdentityById = new Map<string, { studentCode: string; fullName: string; homeGroupCode: string }>();
+  // Instructor student SELECT RLS intentionally excludes other home groups.
+  // Only resolve identity of students who ALREADY have cross-group attendance
+  // in an Instructor-assigned lecture; no unrestricted student access.
+  if (!isAdmin && ctx.instructor && (recordsRes.data || []).some(
+    rec => rec.is_cross_group && !studentById.has(rec.student_id)
+  )) {
+    const { data, error } = await client.rpc('my_recorded_visiting_student_identities');
+    if (error) {
+      // This optional hydration is non-blocking until migration 0015 is applied.
+      // It never changes roster authorization or the attendance record itself.
+      console.warn('[CITS] Authorized visiting student identity lookup unavailable:', error.message);
+    } else {
+      for (const record of data || []) {
+        visitedIdentityById.set(record.student_id, {
+          studentCode: record.student_code,
+          fullName: record.full_name,
+          homeGroupCode: record.home_group_code,
+        });
+      }
+    }
+  }
 
   const studentTransfers: StudentTransfer[] = (transfersRes.data || []).map((tr) => ({
     id: tr.id,
@@ -712,11 +734,13 @@ export async function fetchOperationalSnapshot(
   const recordsBySheetId = new Map<string, AttendanceRecordItem[]>();
   for (const r of recordsRes.data || []) {
     const stu = studentById.get(r.student_id);
+    const visitingIdentity = r.is_cross_group ? visitedIdentityById.get(r.student_id) : undefined;
     const list = recordsBySheetId.get(r.attendance_sheet_id) || [];
     list.push({
       studentId: r.student_id,
-      studentCode: stu?.studentCode || r.student_id.slice(0, 8),
-      studentName: stu?.fullName || 'Student',
+      studentCode: stu?.studentCode || visitingIdentity?.studentCode || r.student_id.slice(0, 8),
+      studentName: stu?.fullName || visitingIdentity?.fullName || 'Student',
+      originGroupCode: visitingIdentity?.homeGroupCode,
       originGroupId: r.origin_group_id,
       attendedGroupId: r.attended_group_id,
       isCrossGroup: r.is_cross_group,
