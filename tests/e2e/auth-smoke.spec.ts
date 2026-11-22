@@ -1,5 +1,23 @@
 import { test, expect } from '@playwright/test';
 
+/** Only send the short-lived Vercel Trusted Sources token to the preview origin.
+ * Never attach it to the Supabase API or any unrelated third-party host.
+ */
+test.beforeEach(async ({ page }) => {
+  const base = process.env.BASE_URL;
+  const token = process.env.VERCEL_OIDC_TOKEN;
+  if (!base || !token) return;
+  const origin = new URL(base).origin;
+  await page.route(`${origin}/**`, async route => {
+    await route.continue({
+      headers: {
+        ...route.request().headers(),
+        'x-vercel-trusted-oidc-idp-token': token,
+      },
+    });
+  });
+});
+
 test('guest receives the sign-in form instead of any role dashboard', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#login-identifier')).toBeVisible();
