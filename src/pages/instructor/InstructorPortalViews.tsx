@@ -155,14 +155,6 @@ export const InstructorDashboardView: React.FC = () => {
         }
       />
 
-      {ackFeedback && (
-        <InlineBanner
-          type="error"
-          message={ackFeedback}
-          onDismiss={() => setAckFeedback(null)}
-        />
-      )}
-
       {/* 1. Daily Check-in Priority Card */}
       <section aria-labelledby="inst-priority-checkin" className={`${SURFACE_CARD} p-5`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
