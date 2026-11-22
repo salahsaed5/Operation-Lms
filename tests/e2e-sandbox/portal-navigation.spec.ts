@@ -178,5 +178,16 @@ test('attendance status chips filter roster, combine with name search and reset 
   await lecturePicker.selectOption('lec-d4-p1-g1');
   await expect(chips.getByRole('button', { name: /^All\s+\d+/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(search).toHaveValue('');
+
+  // A submitted lecture has one genuinely ABSENT student; the filter must
+  // reveal only that student while preserving submitted read-only controls.
+  await absent.click();
+  await expect(roster.getByRole('group', { name: /Attendance for / })).toHaveCount(1);
+  const absentStudent = roster.getByRole('group', { name: 'Attendance for Seif El-Din Hany' });
+  await expect(absentStudent).toBeVisible();
+  await expect(absentStudent.getByRole('button', { name: 'Absent', exact: true }))
+    .toBeDisabled();
+  await expect(roster.getByRole('group', { name: 'Attendance for Omar Khaled El-Sayed' }))
+    .toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
 });
