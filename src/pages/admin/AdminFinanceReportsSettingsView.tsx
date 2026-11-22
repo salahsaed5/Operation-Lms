@@ -79,6 +79,7 @@ export const AdminFinanceView: React.FC = () => {
   const [editingRateInstructorId, setEditingRateInstructorId] = useState<string | null>(null);
   const [newDefaultRate, setNewDefaultRate] = useState('');
   const [showLectureLedger, setShowLectureLedger] = useState(false);
+  const [ledgerInstructorId, setLedgerInstructorId] = useState<string | null>(null);
 
   if (!activeCamp) {
     return (
@@ -151,6 +152,7 @@ export const AdminFinanceView: React.FC = () => {
   const filteredEntitlements = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return campEntitlements.filter((ent) => {
+      if (ledgerInstructorId && ent.instructorId !== ledgerInstructorId) return false;
       if (
         statusFilter === 'eligible' &&
         ent.status !== EntitlementStatus.ELIGIBLE &&
@@ -174,7 +176,7 @@ export const AdminFinanceView: React.FC = () => {
         ent.eligibilityReason.toLowerCase().includes(q)
       );
     });
-  }, [campEntitlements, instructors, lectures, searchQuery, statusFilter]);
+  }, [campEntitlements, instructors, lectures, searchQuery, statusFilter, ledgerInstructorId]);
 
   const handleDecision = async (entId: string, decision: 'approved' | 'excluded') => {
     setIsBusy(true);
@@ -296,6 +298,196 @@ export const AdminFinanceView: React.FC = () => {
         </div>
       </div>
 
+      {/* Instructor-first financial statement: historic frozen lecture rates are
+          the sole source of verified totals. "Scheduled" is not "attended" and
+          these entitlements do not assert payment/disbursement. */}
+      <section aria-label={t('Instructor financial statements', 'كشف حساب المحاضرين')}
+        className={`${SURFACE_CARD} overflow-hidden`}
+      >
+        <div className="p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                {t('Instructor financial statements', 'كشف حساب المحاضرين')}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                {t('Confirmed lectures are eligible/approved entitlements. Pending amounts are estimates, not payable yet. Scheduled count is separate from verified attendance.',
+                  'المحاضرات المؤكدة هي المستحقة أو المعتمدة. المبالغ المعلّقة تقديرية وليست مستحقة حاليًا. عدد المحاضرات المجدولة مختلف عن المؤكدة.')}
+              </p>
+            </div>
+            <div className="relative w-full sm:w-80 shrink-0">
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input type="search" value={instructorSearch}
+                onChange={e => setInstructorSearch(e.target.value)}
+                aria-label={t('Find instructor statement', 'البحث في كشف المحاضرين')}
+                placeholder={t('Find instructor by name or code', 'ابحث بالاسم أو كود المحاضر')}
+                className={`${INPUT_CLASS} ps-9 min-h-[44px]`} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 px-4 py-3">
+              <p className="text-xs text-slate-500">{t('Instructors in camp', 'المحاضرون في المعسكر')}</p>
+              <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">{instructorStatements.length}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 px-4 py-3">
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">{t('Verified entitlement total', 'إجمالي المستحق المؤكد')}</p>
+              <p className="text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300 mt-0.5">{totalEligibleEgp.toLocaleString()} EGP</p>
+            </div>
+            <div className="rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900 px-4 py-3">
+              <p className="text-xs text-amber-700 dark:text-amber-300">{t('Potential if pending approved', 'مبالغ محتملة قيد المراجعة')}</p>
+              <p className="text-xl font-bold tabular-nums text-amber-700 dark:text-amber-300 mt-0.5">{totalPendingEstimate.toLocaleString()} EGP</p>
+            </div>
+          </div>
+        </div>
+
+        {visibleInstructorStatements.length === 0 ? (
+          <p role="status" className="border-t border-slate-100 dark:border-slate-800 p-6 text-center text-sm text-slate-500">
+            {t('No instructors match this search.', 'مفيش محاضرين مطابقين للبحث.')}
+          </p>
+        ) : (
+          <>
+            <div className="hidden lg:block overflow-x-auto border-t border-slate-100 dark:border-slate-800">
+              <table className="w-full min-w-[1080px] text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 text-start font-semibold">{t('Instructor', 'المحاضر')}</th>
+                    <th scope="col" className="px-2 py-3 text-center font-semibold">{t('Scheduled', 'مجدولة')}</th>
+                    <th scope="col" className="px-2 py-3 text-center font-semibold">{t('Verified', 'مؤكدة')}</th>
+                    <th scope="col" className="px-2 py-3 text-center font-semibold">{t('Pending', 'معلّقة')}</th>
+                    <th scope="col" className="px-2 py-3 text-center font-semibold">{t('Excluded', 'مستبعدة')}</th>
+                    <th scope="col" className="px-3 py-3 text-end font-semibold">{t('Default rate', 'السعر الأساسي')}</th>
+                    <th scope="col" className="px-3 py-3 text-end font-semibold">{t('Verified total', 'المستحق المؤكد')}</th>
+                    <th scope="col" className="px-3 py-3 text-end font-semibold">{t('Pending estimate', 'المحتمل المعلّق')}</th>
+                    <th scope="col" className="px-4 py-3 text-end font-semibold">{t('Actions', 'إجراءات')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {visibleInstructorStatements.map(row => (
+                    <tr key={row.inst.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30">
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-sm text-slate-900 dark:text-white">{t(row.inst.fullNameEn, row.inst.fullNameAr)}</p>
+                        <p className="font-mono text-slate-500 mt-0.5">{row.inst.instructorCode}</p>
+                      </td>
+                      <td className="px-2 py-3 text-center font-semibold tabular-nums">{row.scheduledCount}</td>
+                      <td className="px-2 py-3 text-center font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{row.verifiedCount}</td>
+                      <td className="px-2 py-3 text-center font-bold text-amber-700 dark:text-amber-300 tabular-nums">{row.pendingCount}</td>
+                      <td className="px-2 py-3 text-center font-semibold tabular-nums">{row.excludedCount}</td>
+                      <td className="px-3 py-3 text-end whitespace-nowrap tabular-nums">
+                        {row.inst.defaultLectureRateEgp.toLocaleString()} EGP
+                      </td>
+                      <td className="px-3 py-3 text-end font-bold whitespace-nowrap text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        {row.verifiedAmount.toLocaleString()} EGP
+                      </td>
+                      <td className="px-3 py-3 text-end whitespace-nowrap font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
+                        {row.pendingEstimate.toLocaleString()} EGP
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          <button type="button" className={`${BTN_SECONDARY} text-xs`}
+                            onClick={() => { setLedgerInstructorId(row.inst.id); setSearchQuery(''); setStatusFilter('all'); setShowLectureLedger(true); }}>
+                            {t('Lectures', 'المحاضرات')}
+                          </button>
+                          <button type="button" className={`${BTN_SECONDARY} text-xs`}
+                            onClick={() => { setEditingRateInstructorId(row.inst.id); setNewDefaultRate(String(row.inst.defaultLectureRateEgp)); }}>
+                            {t('Edit rate', 'تعديل السعر')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="lg:hidden border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+              {visibleInstructorStatements.map(row => (
+                <div key={row.inst.id} className="p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{t(row.inst.fullNameEn, row.inst.fullNameAr)}</p>
+                    <p className="text-xs font-mono text-slate-500">{row.inst.instructorCode}</p>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    {[
+                      { en:'Scheduled',ar:'مجدولة',n:row.scheduledCount },
+                      { en:'Verified',ar:'مؤكدة',n:row.verifiedCount },
+                      { en:'Pending',ar:'معلقة',n:row.pendingCount },
+                      { en:'Excluded',ar:'مستبعدة',n:row.excludedCount },
+                    ].map(item=>(
+                      <div key={item.en} className="rounded-lg bg-slate-50 dark:bg-slate-800 p-2">
+                        <p className="text-xs text-slate-500">{t(item.en,item.ar)}</p>
+                        <p className="text-base font-bold tabular-nums">{item.n}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <p>{t('Default rate', 'السعر الأساسي')}: <strong>{row.inst.defaultLectureRateEgp.toLocaleString()} EGP</strong></p>
+                    <p>{t('Verified', 'المؤكد')}: <strong className="text-emerald-700 dark:text-emerald-300">{row.verifiedAmount.toLocaleString()} EGP</strong></p>
+                    <p className="col-span-2">{t('Pending estimate', 'المبلغ المحتمل')}: <strong>{row.pendingEstimate.toLocaleString()} EGP</strong></p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className={BTN_SECONDARY}
+                      onClick={() => { setLedgerInstructorId(row.inst.id); setSearchQuery(''); setStatusFilter('all'); setShowLectureLedger(true); }}>
+                      {t('Lecture details', 'تفاصيل المحاضرات')}
+                    </button>
+                    <button type="button" className={BTN_SECONDARY}
+                      onClick={() => { setEditingRateInstructorId(row.inst.id); setNewDefaultRate(String(row.inst.defaultLectureRateEgp)); }}>
+                      {t('Edit future rate', 'تعديل السعر المستقبلي')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {editingRateInstructorId && instructors.some(i=>i.id===editingRateInstructorId) && (
+          <form onSubmit={e => {
+            e.preventDefault();
+            const inst = instructors.find(i=>i.id===editingRateInstructorId);
+            if(inst) void handleSaveRate(inst);
+          }}
+            className="border-t border-slate-200 dark:border-slate-700 bg-blue-50/40 dark:bg-blue-950/20 p-4 sm:p-5 space-y-3"
+          >
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                {t('Edit default rate for future lectures', 'تعديل السعر الأساسي للمحاضرات القادمة')}
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                {t('Already scheduled lectures keep their frozen rate. This change does NOT change verified totals.',
+                  'المحاضرات اللي اتجدولت بالفعل تحتفظ بالسعر المثبت، والتعديل مش هيغيّر المستحقات المؤكدة القديمة.')}
+              </p>
+            </div>
+            <label htmlFor="finance-new-default-rate" className={LABEL_CLASS}>
+              {t('New default EGP / lecture', 'السعر الأساسي الجديد لكل محاضرة بالجنيه')}
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input id="finance-new-default-rate" type="number" min={0} max={1000000} step={1}
+                required value={newDefaultRate} onChange={e=>setNewDefaultRate(e.target.value)}
+                className={`${INPUT_CLASS} max-w-[230px] min-h-[42px]`} />
+              <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>
+                {t('Save future rate', 'حفظ السعر الجديد')}
+              </button>
+              <button type="button" className={BTN_SECONDARY} onClick={() => setEditingRateInstructorId(null)}>
+                {t('Cancel', 'إلغاء')}
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="border-t border-slate-100 dark:border-slate-800 p-4 sm:p-5 text-xs leading-relaxed text-slate-500 dark:text-slate-400 space-y-2">
+          <p>{t('The default rate is for new lectures only. If a lecturer taught at different frozen rates, the total is calculated as the sum of those actual rates, not by multiplying the current rate.',
+            'السعر الأساسي يخص المحاضرات الجديدة فقط. لو المحاضر عنده محاضرات بأسعار مختلفة، الإجمالي بيتحسب بجمع أسعار كل محاضرة الفعلية، مش ضرب العدد في السعر الحالي.')}</p>
+          <div className="flex items-center flex-wrap gap-2">
+            <span>{t('To change lecture count, add/cancel/correct the actual lecture in Schedule; do not type a fake attendance count.',
+              'لتعديل عدد المحاضرات، أضف أو ألغِ أو صحّح المحاضرات نفسها من الجدول بدل تغيير عدد غير حقيقي.')}</span>
+            <button type="button" onClick={() => setAdminRoute('schedule')}
+              className="font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+              {t('Open Schedule', 'فتح الجدول')}
+            </button>
+          </div>
+          <p>{t('Paid / unpaid is not recorded on this screen. Verified entitlement is not proof of cash payment.',
+            'الصفحة دي لا تسجل المدفوع أو المتبقي؛ المستحق المؤكد مش معناه إن المبلغ اتصرف بالفعل.')}</p>
+        </div>
+      </section>
+
       {feedback && (
         <InlineBanner
           type={feedback.ok ? 'success' : 'error'}
@@ -304,6 +496,40 @@ export const AdminFinanceView: React.FC = () => {
         />
       )}
 
+      <section aria-label={t('Individual lecture entitlement ledger', 'تفاصيل مستحقات المحاضرات')} className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">{t('Individual lecture decisions', 'قرارات مستحقات كل محاضرة')}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {t('Approve or exclude individual entitlements with a recorded reason; this is not a payment ledger.',
+                'اعتماد أو استبعاد مستحق المحاضرة بسبب مسجل للمراجعة؛ ده مش سجل صرف مبالغ.')}
+            </p>
+          </div>
+          <button type="button" onClick={() => {
+            setShowLectureLedger(value=>!value);
+            setLedgerInstructorId(null);
+            setStatusFilter('all'); setSearchQuery('');
+          }} className={BTN_SECONDARY} aria-expanded={showLectureLedger}>
+            {showLectureLedger ? t('Hide lecture details', 'إخفاء التفاصيل') : t('Show lecture details', 'عرض التفاصيل')}
+          </button>
+        </div>
+        {showLectureLedger && (
+          <div className="space-y-4">
+            {ledgerInstructorId && (
+              <div className="flex items-center flex-wrap gap-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/30 p-3">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                  {t('Viewing lectures for', 'تفاصيل محاضرات')}:
+                  {' '}{t(
+                    instructors.find(i=>i.id===ledgerInstructorId)?.fullNameEn || '',
+                    instructors.find(i=>i.id===ledgerInstructorId)?.fullNameAr || ''
+                  )}
+                </p>
+                <button type="button" onClick={()=>setLedgerInstructorId(null)}
+                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                  {t('Show all instructors', 'عرض كل المحاضرين')}
+                </button>
+              </div>
+            )}
       {/* Search & Status Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative sm:w-72">
@@ -509,6 +735,10 @@ export const AdminFinanceView: React.FC = () => {
           </div>
         </div>
       )}
+
+          </div>
+        )}
+      </section>
 
       <ConfirmDialog
         open={Boolean(excludeConfirmId)}
