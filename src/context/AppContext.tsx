@@ -82,6 +82,7 @@ import {
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
 import { compareAttendanceDraftRows } from '../domain/attendanceDraftDiff';
+import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   acknowledgeLectureInDb,
@@ -347,6 +348,8 @@ interface AppContextValue {
   submitAndSyncAttendanceSheet: (lectureId: string) => Promise<ActionResult>;
 
   // Read-only side-by-side comparison. Never writes server attendance.
+  downloadTenDayAttendanceWorkbook: () => Promise<ActionResult>;
+
   reviewAttendanceDraft: (lectureId: string) => Promise<{
     ok: boolean;
     error?: string;
@@ -2648,6 +2651,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const downloadTenDayAttendanceWorkbook = async (): Promise<ActionResult> => {
+    if (!activeCamp || !isSupabaseMode || !supabaseCtx) {
+      return { ok: false, error: 'Official attendance export requires a connected server Camp.' };
+    }
+    if (!auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN) {
+      return { ok: false, error: 'Only an authenticated Admin can download official attendance reports.' };
+    }
+    try {
+      // Do NOT export cached/offline Instructor draft overlays: fetch a fresh
+      // authenticated Admin snapshot and include only server-finalized sheets.
+      const latest = await fetchOperationalSnapshot(supabaseCtx);
+      const camp = latest.camps.find(c => c.id === activeCamp.id);
+      if (!camp) return { ok: false, error: 'Selected Camp was not found on the server.' };
+      if (camp.durationDays !== 10) {
+        return { ok: false, error: 'The handover workbook currently supports ten-day camps only.' };
+      }
+      const workbook = buildCampAttendanceWorkbook({
+        camp,
+        groups: latest.groups.filter(g => g.campId === camp.id),
+        students: latest.students.filter(s => s.campId === camp.id),
+        lectures: latest.lectures.filter(l => l.campId === camp.id),
+        attendanceSheets: latest.attendanceSheets.filter(s => s.campId === camp.id),
+        studentTransfers: latest.studentTransfers.filter(tr => tr.campId === camp.id),
+      });
+      const fileName = 'Operation-LMS-' +
+        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-10day-attendance.xlsx';
+      const url = URL.createObjectURL(workbook);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Attendance export failed.' };
+    }
+  };
+
   const reviewAttendanceDraft = async (lectureId: string): Promise<{
     ok: boolean;
     error?: string;
@@ -3559,6 +3603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveAttendanceDraft,
         submitAndSyncAttendanceSheet,
         reviewAttendanceDraft,
+        downloadTenDayAttendanceWorkbook,
         adminCorrectAttendanceRecord,
         reviewLectureEntitlement,
         reviewInstructorRequest,

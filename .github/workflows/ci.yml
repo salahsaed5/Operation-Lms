@@ -2,9 +2,11 @@ name: CITS Web CI
 
 on:
   push:
-    branches: [main, phase-2-finalization]
+    # Validate unmerged staging feature/fix branches as well as main.
+    branches: [main, phase-2-finalization, 'feat/**', 'fix/**']
   pull_request:
-    branches: [main]
+    # Run for stacked Draft PRs too, not only PRs directly targeting main.
+    branches: [main, 'feat/**', 'fix/**']
 
 jobs:
   verify-app-and-sql-static:
@@ -22,8 +24,8 @@ jobs:
       - name: TypeScript typecheck & lint
         run: bun run lint
 
-      - name: Run domain, account provisioning, security policy, and Guard 1C lexical tests
-        run: bun test src/domain/businessRules.test.ts src/domain/accountProvisioning.test.ts src/lib/supabase.test.ts src/domain/groupRosterRls.test.ts
+      - name: Run domain, attendance, security and XLSX export tests
+        run: bun test src/domain src/lib/supabase.test.ts src/services/tinyXlsxWorkbook.test.ts
 
       - name: Build production bundle
         run: bun run build
