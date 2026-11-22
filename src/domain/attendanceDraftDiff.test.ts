@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows } from './attendanceDraftDiff';
+import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows, unsafeAttendanceDraftConflicts } from './attendanceDraftDiff';
 import { AttendanceMark, type AttendanceRecordItem } from '../types/database';
 
 const row = (id: string, mark: AttendanceMark | 'unmarked'): AttendanceRecordItem => ({
@@ -74,4 +74,35 @@ test('legacy offline draft without a baseline must match server to be safe', () 
   const local = [row('1', AttendanceMark.LATE)];
   const server = [row('1', AttendanceMark.PRESENT)];
   assert.deepEqual(compareAttendanceServerRows(local, server), ['1']);
+});
+
+test('offline submit: self-edited mark is allowed when server still equals the original baseline', () => {
+  const baseline = [row('s1', AttendanceMark.ABSENT), row('s2', AttendanceMark.LATE)];
+  const desired = [row('s1', AttendanceMark.PRESENT), row('s2', AttendanceMark.LATE)];
+  assert.deepEqual(unsafeAttendanceDraftConflicts(baseline, desired, baseline), []);
+});
+
+test('offline submit: true concurrent server change is blocked even when desired mark differs', () => {
+  const baseline = [row('s1', AttendanceMark.ABSENT)];
+  const desired = [row('s1', AttendanceMark.PRESENT)];
+  const server = [row('s1', AttendanceMark.LATE)];
+  assert.deepEqual(unsafeAttendanceDraftConflicts(baseline, desired, server), ['s1']);
+});
+
+test('offline submit: desired state already matches server is safely idempotent', () => {
+  const baseline = [row('s1', AttendanceMark.ABSENT)];
+  const desired = [row('s1', AttendanceMark.PRESENT)];
+  assert.deepEqual(unsafeAttendanceDraftConflicts(baseline, desired, desired), []);
+});
+
+test('offline submit: old draft with no saved server baseline fails closed', () => {
+  const desired = [row('s1', AttendanceMark.PRESENT)];
+  const server = [row('s1', AttendanceMark.ABSENT)];
+  assert.deepEqual(unsafeAttendanceDraftConflicts(undefined, desired, server), ['s1']);
+});
+
+test('offline submit: local unmarked placeholders do not generate fake server drift', () => {
+  const baseline = [row('s1', AttendanceMark.PRESENT)];
+  const desired = [row('s1', AttendanceMark.PRESENT), row('s2', 'unmarked')];
+  assert.deepEqual(unsafeAttendanceDraftConflicts(baseline, desired, baseline), []);
 });
