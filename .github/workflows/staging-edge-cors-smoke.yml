@@ -1,0 +1,67 @@
+name: Phase 7 Staging Edge CORS Smoke
+
+on:
+  push:
+    branches:
+      - fix/atomic-attendance-sync-20261122
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-edge-cors:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check live Staging Edge Function preflight (no credentials)
+        shell: bash
+        env:
+          STAGING_PROJECT: uewhudbufykfkhimvqjj
+          STAGING_ORIGIN: https://operation-lms-staging-salah-2543.vercel.app
+        run: |
+          set -euo pipefail
+          url_base="https://${STAGING_PROJECT}.supabase.co/functions/v1"
+          for fn in auth-login provision-instructor; do
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+              -X OPTIONS "${url_base}/${fn}" \
+              -H "Origin: ${STAGING_ORIGIN}" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,apikey,content-type' \
+              -D "$headers" -o /dev/null -w '%{http_code}')"
+            origin="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
+            rm -f "$headers"
+            echo "${fn}: HTTP ${status}; CORS origin ${origin:-<absent>}"
+            if [[ "$status" != 200 && "$status" != 204 ]]; then
+              echo "::error::Staging ${fn} OPTIONS failed with HTTP ${status}; check Edge gateway JWT and CORS configuration."
+              exit 1
+            fi
+            if [[ "$origin" != "$STAGING_ORIGIN" ]]; then
+              echo "::error::Staging ${fn} does not allow exact Staging alias. Configure its ALLOWED_ORIGINS secret, not a wildcard."
+              exit 1
+            fi
+          done
+
+      - name: Confirm untrusted origins are not reflected
+        shell: bash
+        env:
+          STAGING_PROJECT: uewhudbufykfkhimvqjj
+        run: |
+          set -euo pipefail
+          url_base="https://${STAGING_PROJECT}.supabase.co/functions/v1"
+          for fn in auth-login provision-instructor; do
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+              -X OPTIONS "${url_base}/${fn}" \
+              -H 'Origin: https://unapproved.example.invalid' \
+              -H 'Access-Control-Request-Method: POST' \
+              -D "$headers" -o /dev/null -w '%{http_code}')"
+            allow_origin="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
+            rm -f "$headers"
+            echo "${fn} untrusted Origin: HTTP ${status}; reflected=${allow_origin:-no}"
+            if [[ "$allow_origin" == 'https://unapproved.example.invalid' ]]; then
+              echo "::error::Untrusted origin was reflected by ${fn}"
+              exit 1
+            fi
+          done
