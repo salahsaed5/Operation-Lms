@@ -1085,6 +1085,10 @@ export interface Database {
           home_group_code: string;
         }[];
       };
+      my_recorded_visiting_student_identities: {
+        Args: Record<string, never>;
+        Returns: { student_id: string; student_code: string; full_name: string; home_group_code: string }[];
+      };
       instructor_enroll_midcamp_student_tx: {
         Args: {
           p_group_id: string;
@@ -1484,6 +1488,8 @@ export interface AttendanceRecordItem {
   studentId: string;
   studentCode: string;
   studentName: string;
+  /** Minimal display identity returned by an authorized visitor lookup. */
+  originGroupCode?: string;
   originGroupId: string;
   attendedGroupId: string;
   isCrossGroup: boolean;
