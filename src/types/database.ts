@@ -1075,6 +1075,26 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      search_visiting_students_for_lecture: {
+        Args: { p_lecture_id: string; p_query: string };
+        Returns: {
+          student_id: string;
+          student_code: string;
+          full_name: string;
+          home_group_id: string;
+          home_group_code: string;
+        }[];
+      };
+      instructor_enroll_midcamp_student_tx: {
+        Args: {
+          p_group_id: string;
+          p_student_code: string;
+          p_full_name: string;
+          p_university: string;
+          p_reason: string;
+        };
+        Returns: string;
+      };
       is_cits_admin: {
         Args: Record<string, never>;
         Returns: boolean;
