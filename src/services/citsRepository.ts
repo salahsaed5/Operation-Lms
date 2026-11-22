@@ -1779,6 +1779,7 @@ export async function saveAttendanceDraftAtomicallyInDb(input: {
   sheetId: string;
   expected: AttendanceRecordItem[];
   desired: AttendanceRecordItem[];
+  submit?: boolean;
 }): Promise<void> {
   const toPayload = (rows: AttendanceRecordItem[]) =>
     rows.filter(r => r.mark !== 'unmarked').map(r => ({
@@ -1793,6 +1794,7 @@ export async function saveAttendanceDraftAtomicallyInDb(input: {
     p_sheet_id: input.sheetId,
     p_expected: toPayload(input.expected),
     p_desired: toPayload(input.desired),
+    p_submit: input.submit || false,
   });
   if (error) throw new Error(error.message);
 }
