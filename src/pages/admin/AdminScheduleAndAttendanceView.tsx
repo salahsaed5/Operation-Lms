@@ -986,202 +986,182 @@ export const AdminAttendanceView: React.FC = () => {
         </p>
       </section>
 
-      {/* Attendance Sheets List */}
-      {filteredSheets.length === 0 ? (
-        <EmptyState
-          icon={ClipboardCheck}
-          title={t('No attendance sheets match your filter', 'لا توجد كشوف حضور مطابقة')}
-        />
-      ) : (
-        <div className="space-y-4">
-          {filteredSheets.map((sheet) => {
-            const lec = lectures.find((l) => l.id === sheet.lectureId);
-            const inst = instructors.find((i) => i.id === sheet.instructorId);
-            const grp = groups.find((g) => g.id === lec?.groupId);
-            const chk = campCheckins.find(
-              (c) => c.instructorId === sheet.instructorId && c.campDay === sheet.campDay
-            );
-
-            const presentCount = sheet.records.filter(
-              (r) => r.mark === AttendanceMark.PRESENT || r.mark === AttendanceMark.LATE
-            ).length;
-            const absentCount = sheet.records.filter(
-              (r) => r.mark === AttendanceMark.ABSENT
-            ).length;
-            const unmarkedCount = sheet.records.filter((r) => r.mark === 'unmarked').length;
-            const isExpanded = expandedSheetId === sheet.id;
-            const isSynced =
-              sheet.status === AttendanceSheetStatus.SUBMITTED ||
-              sheet.status === AttendanceSheetStatus.LOCKED;
-            const chkDisplay = chk ? checkinStatusDisplay(chk.status, t) : null;
-            const canSubmitSheet = campAllowsFinalAttendance && Boolean(lec) &&
-              Boolean(lec && lec.lectureDate <= cairoToday);
-
-            return (
-              <div key={sheet.id} className={`${SURFACE_CARD} p-5 space-y-4`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
-                        {t(`Day ${sheet.campDay} · P${sheet.periodNumber}`, `اليوم ${sheet.campDay} · ف${sheet.periodNumber}`)}
+      {/* Condensed lecture cards; server-only counts are not misrepresented as final. */}
+      <section aria-label={t('Lecture attendance sheets', 'كشوف حضور المحاضرات')} className="space-y-3">
+        {filteredSheets.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-7 text-center space-y-3">
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              {t('No lecture sheets match your search.', 'مفيش كشوف محاضرات مطابقة للبحث.')}
+            </p>
+            <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+              className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+              {t('Clear filters', 'مسح الفلاتر')}
+            </button>
+          </div>
+        ) : filteredSheets.map(sheet => {
+          const lec = lectures.find(l => l.id === sheet.lectureId);
+          const inst = instructors.find(i => i.id === sheet.instructorId);
+          const grp = groups.find(g => g.id === lec?.groupId);
+          const chk = campCheckins.find(c =>
+            c.instructorId === sheet.instructorId && c.campDay === sheet.campDay
+          );
+          const chkDisplay = chk ? checkinStatusDisplay(chk.status, t) : null;
+          const isExpanded = expandedSheetId === sheet.id;
+          const isFinalized = sheet.status === AttendanceSheetStatus.SUBMITTED ||
+            sheet.status === AttendanceSheetStatus.LOCKED;
+          const canSubmitSheet = campAllowsFinalAttendance && Boolean(lec && lec.lectureDate <= cairoToday);
+          const presentCount = sheet.records.filter(r => r.mark === AttendanceMark.PRESENT).length;
+          const lateCount = sheet.records.filter(r => r.mark === AttendanceMark.LATE).length;
+          const absentCount = sheet.records.filter(r => r.mark === AttendanceMark.ABSENT).length;
+          const unmarkedCount = sheet.records.filter(r => r.mark === 'unmarked').length;
+          const excusedCount = sheet.records.filter(r => r.mark === AttendanceMark.EXCUSED).length;
+          const hasSavedRows = sheet.records.length > 0;
+          return (
+            <article key={sheet.id}
+              aria-label={t(`Attendance sheet: ${lec?.topic || sheet.lectureId}`,
+                `كشف حضور: ${lec?.topic || sheet.lectureId}`)}
+              className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
+            >
+              <div className="p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                      <span className="rounded-md bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 text-blue-700 dark:text-blue-300">
+                        {t(`Day ${sheet.campDay} · Period ${sheet.periodNumber}`,
+                           `اليوم ${sheet.campDay} · الفترة ${sheet.periodNumber}`)}
                       </span>
-                      <span aria-hidden="true">·</span>
-                      <span>{grp?.code}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{inst ? t(inst.fullNameEn, inst.fullNameAr) : sheet.instructorId}</span>
+                      <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-slate-600 dark:text-slate-300">
+                        {grp?.code || t('Unknown group', 'جروب غير معروف')}
+                      </span>
                     </div>
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
                       {lec?.topic || sheet.lectureId}
-                    </h2>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {inst ? t(inst.fullNameEn, inst.fullNameAr) : sheet.instructorId}
+                      {lec && <span className="ms-3">{lec.startTime}–{lec.endTime}</span>}
+                    </p>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <button
-                      type="button"
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <StatusBadge tone={isFinalized ? 'success' : 'warning'}>
+                      {isFinalized ? t('Finalized', 'معتمد') : t('Server draft', 'مسودة السيرفر')}
+                    </StatusBadge>
+                    <button type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={`admin-roster-${sheet.id}`}
                       onClick={() => setExpandedSheetId(isExpanded ? null : sheet.id)}
-                      className={BTN_SECONDARY}
+                      className="inline-flex items-center gap-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"
                     >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>
-                        {isExpanded
-                          ? t('Hide Roster', 'إخفاء القائمة')
-                          : t('Inspect Roster', 'فحص القائمة')}
-                      </span>
+                      <Eye className="w-4 h-4" />
+                      <span>{isExpanded ? t('Close details', 'إغلاق التفاصيل') : t('View details', 'عرض التفاصيل')}</span>
                     </button>
-
-                    {isSynced ? (
-                      <StatusBadge tone="success">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{t('Submitted & Synced', 'معتمد ومتزامن')}</span>
-                      </StatusBadge>
-                    ) : (
-                      <>
-                        <StatusBadge tone="warning">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>{t('Server Draft — Not Finalized', 'مسودة السيرفر — غير معتمدة')}</span>
-                        </StatusBadge>
-                        <button
-                          type="button"
-                          disabled={isBusy || !canSubmitSheet}
-                          onClick={() => handleForceSync(sheet.lectureId)}
-                          className={BTN_PRIMARY}
-                        >
-                          {t('Submit & Sync Now', 'اعتماد ومزامنة الآن')}
-                        </button>
-                      </>
-                    )}
                   </div>
                 </div>
 
-                {!isSynced && (
-                  <p className="rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-900 p-3 text-xs text-amber-900 dark:text-amber-200" role="status">
-                    {t(
-                      canSubmitSheet
-                        ? 'Showing server-saved draft only. Instructor offline edits may differ and must be reconciled before final submission.'
-                        : 'Final submission is disabled until the camp is active and the lecture date has arrived. This is the server-saved draft; offline instructor edits may differ.',
-                      canSubmitSheet
-                        ? 'المعروض هو مسودة السيرفر فقط. ممكن تعديلات المحاضر المحلية تكون مختلفة ولازم تتراجع قبل الاعتماد.'
-                        : 'الاعتماد النهائي مقفول حتى تفعيل المعسكر وحلول موعد المحاضرة. المعروض مسودة السيرفر فقط، وممكن تعديلات المحاضر المحلية تختلف.'
-                    )}
-                  </p>
+                {hasSavedRows ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5">
+                    {[
+                      { label: t('Present', 'حاضر'), count: presentCount, color: 'text-emerald-700 dark:text-emerald-300' },
+                      { label: t('Late', 'متأخر'), count: lateCount, color: 'text-amber-700 dark:text-amber-300' },
+                      { label: t('Absent', 'غائب'), count: absentCount, color: 'text-rose-700 dark:text-rose-300' },
+                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount, color: 'text-slate-700 dark:text-slate-300' },
+                      { label: t('Excused', 'بعذر'), count: excusedCount, color: 'text-violet-700 dark:text-violet-300' },
+                    ].map(stat => (
+                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 px-3 py-2.5">
+                        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
+                        <p className={`text-xl font-bold tabular-nums mt-0.5 ${stat.color}`}>{stat.count}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/30 px-3.5 py-3 flex flex-wrap items-center gap-2">
+                    <ClipboardCheck className="w-4 h-4 shrink-0 text-slate-400" />
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      {t('No server-saved marks yet — this does not mean all students are absent.',
+                        'مفيش حضور محفوظ للطلاب على السيرفر لسه — ده مش معناه إنهم غايبين.')}
+                    </span>
+                  </div>
                 )}
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 dark:text-slate-400 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 font-mono tabular-nums">
-                  <span>
-                    {t('Present/Late:', 'حاضر/متأخر:')}{' '}
-                    <strong className="text-emerald-600 dark:text-emerald-400">{presentCount}</strong>
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-slate-800 pt-3 text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {t('Instructor check-in', 'وصول المحاضر')}:
                   </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {t('Absent:', 'غائب:')}{' '}
-                    <strong className="text-red-600 dark:text-red-400">{absentCount}</strong>
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {t('Unmarked:', 'غير محدد:')} <strong>{unmarkedCount}</strong>
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {chk && chkDisplay ? (
-                      <StatusBadge tone={chkDisplay.tone}>
-                        {chkDisplay.label} ({chk.distanceFromVenueMeters}m)
-                      </StatusBadge>
-                    ) : (
-                      <StatusBadge tone="neutral">
-                        {t('Check-in Missing', 'لم يسجل الوصول')}
-                      </StatusBadge>
-                    )}
-                  </span>
+                  {chk && chkDisplay
+                    ? <StatusBadge tone={chkDisplay.tone}>{chkDisplay.label}</StatusBadge>
+                    : <span className="font-semibold text-slate-500 dark:text-slate-400">{t('Not recorded', 'لم يُسجل')}</span>}
+                  {!isFinalized && (
+                    <span className="ms-auto text-[11px] text-slate-500 dark:text-slate-400">
+                      {t('Draft · Not final', 'مسودة · ليست نهائية')}
+                    </span>
+                  )}
                 </div>
+              </div>
 
-                {isExpanded && (
-                  <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-3 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <label
-                        htmlFor={`corr-note-${sheet.id}`}
-                        className="font-semibold text-slate-700 dark:text-slate-300 shrink-0"
-                      >
-                        {t('Audit Reason for Corrections:', 'سبب التعديل للتدقيق:')}
-                      </label>
-                      <input
-                        id={`corr-note-${sheet.id}`}
-                        type="text"
-                        value={
-                          correctionNotes[sheet.id] ?? 'Verified by Admin during roster review'
-                        }
-                        onChange={(e) =>
-                          setCorrectionNotes((prev) => ({
-                            ...prev,
-                            [sheet.id]: e.target.value,
-                          }))
-                        }
-                        placeholder={t('Explain attendance correction reason...', 'أدخل سبب تعديل الحضور...')}
-                        className={INPUT_CLASS}
-                      />
-                    </div>
-
-                    {sheet.records.length === 0 ? (
-                      <p className="py-3 text-slate-500">
-                        {t('No student attendance rows saved on this sheet yet.', 'لا توجد سجلات طلاب محفوظة في هذا الكشف بعد.')}
+              {isExpanded && (
+                <div id={`admin-roster-${sheet.id}`}
+                  className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 p-4 sm:p-5 space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        {t('Student attendance records', 'سجلات حضور الطلاب')}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {t(`${sheet.records.length} rows saved on server`,
+                          `${sheet.records.length} سجل محفوظ على السيرفر`)}
                       </p>
-                    ) : (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {sheet.records.map((rec) => (
-                          <div
-                            key={rec.studentId}
-                            className="py-2.5 flex flex-wrap items-center justify-between gap-2"
+                    </div>
+                    {!isFinalized && canSubmitSheet && (
+                      <button type="button" disabled={isBusy}
+                        onClick={() => handleForceSync(sheet.lectureId)}
+                        className={`${BTN_PRIMARY} min-h-[42px]`}>
+                        {t('Submit & Sync Now', 'اعتماد ومزامنة الآن')}
+                      </button>
+                    )}
+                  </div>
+                  {hasSavedRows ? (
+                    <>
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 space-y-2">
+                        <label htmlFor={`corr-note-${sheet.id}`}
+                          className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          {t('Reason for audited corrections', 'سبب التعديل المسجل في التدقيق')}
+                        </label>
+                        <input id={`corr-note-${sheet.id}`} type="text"
+                          value={correctionNotes[sheet.id] ?? 'Verified by Admin during roster review'}
+                          onChange={e => setCorrectionNotes(prev => ({ ...prev, [sheet.id]: e.target.value }))}
+                          placeholder={t('Reason for correcting attendance', 'سبب تعديل حضور الطالب')}
+                          className={`${INPUT_CLASS} min-h-[42px]`}
+                        />
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {t('This reason is logged whenever a student mark is changed.',
+                            'السبب ده بيتسجل مع أي تعديل لحضور طالب.')}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {sheet.records.map(rec => (
+                          <div key={rec.studentId}
+                            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
                           >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-slate-900 dark:text-white">
-                                {rec.studentName}
-                              </span>
-                              <span className="font-mono text-slate-500">({rec.studentCode})</span>
-                              {rec.isCrossGroup && (
-                                <StatusBadge tone="info">
-                                  {t('Cross-Group', 'حضور زائر')}
-                                </StatusBadge>
-                              )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">{rec.studentName}</p>
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <span className="font-mono">{rec.studentCode}</span>
+                                {rec.isCrossGroup && <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              {(
-                                [
-                                  { mk: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر' },
-                                  { mk: AttendanceMark.LATE, en: 'Late', ar: 'متأخر' },
-                                  { mk: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب' },
-                                ] as const
-                              ).map((opt) => (
-                                <button
-                                  key={opt.mk}
-                                  type="button"
+                            <div className="grid grid-cols-3 gap-2 w-full md:w-[270px] shrink-0">
+                              {([
+                                { mk: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', active: 'bg-emerald-600 text-white border-emerald-600' },
+                                { mk: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', active: 'bg-amber-600 text-white border-amber-600' },
+                                { mk: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', active: 'bg-rose-600 text-white border-rose-600' },
+                              ] as const).map(opt => (
+                                <button key={opt.mk} type="button"
+                                  aria-pressed={rec.mark === opt.mk}
                                   disabled={isBusy}
-                                  onClick={() =>
-                                    handleCorrectMark(sheet.id, sheet.lectureId, rec.studentId, opt.mk)
-                                  }
-                                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer ${
-                                    rec.mark === opt.mk
-                                      ? 'bg-blue-600 text-white'
-                                      : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
-                                  }`}
-                                >
+                                  onClick={() => handleCorrectMark(sheet.id, sheet.lectureId, rec.studentId, opt.mk)}
+                                  className={`min-h-[40px] rounded-lg border px-2 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${rec.mark === opt.mk
+                                    ? opt.active
+                                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50'}`}>
                                   {t(opt.en, opt.ar)}
                                 </button>
                               ))}
@@ -1189,14 +1169,26 @@ export const AdminAttendanceView: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                    </>
+                  ) : (
+                    <p className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                      {t('This draft has no student rows saved on the server. Instructor offline edits are not visible until synchronized. Do not interpret empty records as absences.',
+                        'المسودة مفيهاش سجلات طلاب محفوظة على السيرفر. تعديلات المحاضر المحلية مش بتظهر قبل المزامنة. متعتبرش النتيجة دي غياب.')}
+                    </p>
+                  )}
+                  {!isFinalized && canSubmitSheet && (
+                    <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                      {t('Review any Instructor offline drafts before final submission. Unmarked students become absent only after finalization.',
+                        'راجع مسودات المحاضر المحلية قبل الاعتماد. الطلاب غير المحددين بيتحسبوا غياب بعد الاعتماد النهائي فقط.')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </section>
+
     </div>
   );
 };
