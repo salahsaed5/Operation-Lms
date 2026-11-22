@@ -184,6 +184,9 @@ interface AppContextValue {
   setAdminRoute: (r: AdminRouteId) => void;
   instructorRoute: InstructorRouteId;
   setInstructorRoute: (r: InstructorRouteId) => void;
+  instructorAttendanceLectureId: string;
+  setInstructorAttendanceLectureId: (lectureId: string) => void;
+  openInstructorAttendance: (lectureId: string) => void;
   isArchitectureDrawerOpen: boolean;
   setArchitectureDrawerOpen: (open: boolean) => void;
 
@@ -508,6 +511,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [adminRoute, setAdminRoute] = useState<AdminRouteId>('dashboard');
   const [instructorRoute, setInstructorRoute] = useState<InstructorRouteId>('dashboard');
+  const [instructorAttendanceLectureId, setInstructorAttendanceLectureId] = useState<string>('');
+  // Navigate with a particular lecture, not just the generic Attendance tab.
+  // This preserves the group-specific roster when the same instructor teaches
+  // more than one lecture in a day.
+  const openInstructorAttendance = (lectureId: string) => {
+    setInstructorAttendanceLectureId(lectureId);
+    setInstructorRoute('attendance');
+  };
   const [isArchitectureDrawerOpen, setArchitectureDrawerOpen] = useState(false);
 
   const loginInFlightRef = useRef<boolean>(false);
@@ -541,6 +552,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs([]);
     setAdminRoute('dashboard');
     setInstructorRoute('dashboard');
+    setInstructorAttendanceLectureId('');
   }, []);
 
   useEffect(() => {
@@ -3603,6 +3615,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAdminRoute,
         instructorRoute,
         setInstructorRoute,
+        instructorAttendanceLectureId,
+        setInstructorAttendanceLectureId,
+        openInstructorAttendance,
         isArchitectureDrawerOpen,
         setArchitectureDrawerOpen,
         profiles,
