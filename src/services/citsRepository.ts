@@ -1420,6 +1420,46 @@ export async function sendInstructorPasswordResetEmail(email: string): Promise<v
   }
 }
 
+export interface VisitingStudentLookupResult {
+  studentId: string;
+  studentCode: string;
+  fullName: string;
+  homeGroupId: string;
+  homeGroupCode: string;
+}
+
+/**
+ * Returns only minimal same-Camp visiting roster identity for an Instructor
+ * assigned to the selected lecture. Requires migration 0013 on Supabase;
+ * never broaden regular students SELECT RLS.
+ */
+export async function searchVisitingStudentsInDb(input: {
+  lectureId: string;
+  query: string;
+}): Promise<VisitingStudentLookupResult[]> {
+  const query = input.query.trim();
+  if (query.length < 2 || query.length > 64) return [];
+  const client = getClient();
+  const { data, error } = await client.rpc('search_visiting_students_for_lecture', {
+    p_lecture_id: input.lectureId,
+    p_query: query,
+  });
+  if (error) throw new Error(error.message);
+  return (data || []).map((row: {
+    student_id: string;
+    student_code: string;
+    full_name: string;
+    home_group_id: string;
+    home_group_code: string;
+  }) => ({
+    studentId: row.student_id,
+    studentCode: row.student_code,
+    fullName: row.full_name,
+    homeGroupId: row.home_group_id,
+    homeGroupCode: row.home_group_code,
+  }));
+}
+
 export async function createStudentInDb(input: {
   campId: string;
   groupId: string;
