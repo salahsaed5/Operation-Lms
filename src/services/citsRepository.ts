@@ -1774,6 +1774,29 @@ export async function saveAttendanceRecordsDraftToDb(input: {
   return targetSheetId;
 }
 
+/** Server-serialized draft CAS: no direct attendance-record upsert on this path. */
+export async function saveAttendanceDraftAtomicallyInDb(input: {
+  sheetId: string;
+  expected: AttendanceRecordItem[];
+  desired: AttendanceRecordItem[];
+}): Promise<void> {
+  const toPayload = (rows: AttendanceRecordItem[]) =>
+    rows.filter(r => r.mark !== 'unmarked').map(r => ({
+      studentId: r.studentId,
+      mark: r.mark,
+      originGroupId: r.originGroupId,
+      attendedGroupId: r.attendedGroupId,
+      isCrossGroup: r.isCrossGroup,
+      note: r.note || '',
+    }));
+  const { error } = await getClient().rpc('save_attendance_draft_cas_tx', {
+    p_sheet_id: input.sheetId,
+    p_expected: toPayload(input.expected),
+    p_desired: toPayload(input.desired),
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function submitAttendanceSheetInDb(sheetId: string): Promise<void> {
   const client = getClient();
   const { error } = await client.rpc('submit_attendance_sheet_tx', {
