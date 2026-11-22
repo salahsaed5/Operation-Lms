@@ -585,15 +585,34 @@ export const InstructorCheckinView: React.FC = () => {
   const [lng, setLng] = useState<number>(venue?.longitude ?? 31.0168);
   const [gpsAccuracy, setGpsAccuracy] = useState<number>(11);
   const [checkinTime, setCheckinTime] = useState<string>('08:45');
-  const [selfieSizeKb, setSelfieSizeKb] = useState<number>(172);
+  const [selfieSizeKb, setSelfieSizeKb] = useState<number>(0);
   const [selfieBlob, setSelfieBlob] = useState<Blob | undefined>(undefined);
   const [selfieExt, setSelfieExt] = useState<'webp' | 'jpg'>('webp');
   const [selfieMime, setSelfieMime] = useState<string>('image/webp');
   const [selfiePreviewUrl, setSelfiePreviewUrl] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraCapturing, setCameraCapturing] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = React.useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = React.useRef(0);
+  const selfiePreviewUrlRef = React.useRef<string | null>(null);
   const [signedReceiptUrl, setSignedReceiptUrl] = useState<string | null>(null);
   const [exceptionReason, setExceptionReason] = useState<string>('');
   const [isBusy, setIsBusy] = useState(false);
   const [resultMsg, setResultMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Always release the webcam and temporary image URLs when leaving Check-in.
+  // A late permission response must never reopen the camera after unmount.
+  useEffect(() => {
+    return () => {
+      cameraRequestIdRef.current += 1;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      if (selfiePreviewUrlRef.current) URL.revokeObjectURL(selfiePreviewUrlRef.current);
+      selfiePreviewUrlRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (venue && !isSupabaseMode) {
@@ -664,36 +683,128 @@ export const InstructorCheckinView: React.FC = () => {
     );
   };
 
-  const handleSelfieFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsBusy(true);
+  const releaseCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  };
+
+  const closeCamera = () => {
+    cameraRequestIdRef.current += 1;
+    releaseCamera();
+    setCameraOpen(false);
+    setCameraLoading(false);
+  };
+
+  const openCamera = async () => {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setResultMsg({
+        ok: false,
+        text: t(
+          'Live camera is unavailable. Open the Staging HTTPS link in Chrome or another camera-enabled browser.',
+          'الكاميرا غير متاحة. افتح رابط Staging الآمن HTTPS في Chrome أو متصفح يدعم الكاميرا.'
+        ),
+      });
+      return;
+    }
+
+    const requestId = ++cameraRequestIdRef.current;
+    releaseCamera();
+    if (selfiePreviewUrlRef.current) URL.revokeObjectURL(selfiePreviewUrlRef.current);
+    selfiePreviewUrlRef.current = null;
+    setSelfiePreviewUrl(null);
+    setSelfieBlob(undefined);
+    setSelfieSizeKb(0);
+    setCameraOpen(true);
+    setCameraLoading(true);
+    setResultMsg(null);
+
+    try {
+      // "ideal" allows laptop webcams while preferring the front camera on phones.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      if (requestId !== cameraRequestIdRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      cameraStreamRef.current = stream;
+      if (!videoRef.current) throw new Error('Camera preview not available.');
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+    } catch (err) {
+      if (requestId !== cameraRequestIdRef.current) return;
+      releaseCamera();
+      setCameraOpen(false);
+      const name = err instanceof DOMException ? err.name : '';
+      const message = name === 'NotAllowedError' || name === 'PermissionDeniedError'
+        ? t('Allow camera access in browser permissions and try again.', 'اسمح للموقع باستخدام الكاميرا من إعدادات المتصفح ثم حاول مجددًا.')
+        : name === 'NotFoundError' || name === 'DevicesNotFoundError'
+          ? t('No working camera was found on this device.', 'لم يتم العثور على كاميرا تعمل على الجهاز.')
+          : name === 'NotReadableError'
+            ? t('Camera is in use by another application. Close it there and retry.', 'الكاميرا مشغولة بتطبيق آخر. اقفله وحاول مجددًا.')
+            : t('Unable to start live camera. Check browser camera permissions.', 'تعذر فتح الكاميرا. راجع أذونات الكاميرا في المتصفح.');
+      setResultMsg({ ok: false, text: message });
+    } finally {
+      if (requestId === cameraRequestIdRef.current) setCameraLoading(false);
+    }
+  };
+
+  const captureLiveSelfie = async () => {
+    const video = videoRef.current;
+    if (!video || !cameraStreamRef.current || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      setResultMsg({
+        ok: false,
+        text: t('Camera is not ready yet. Wait for the live preview.', 'الكاميرا لسه مش جاهزة. استنى ظهور المعاينة المباشرة.'),
+      });
+      return;
+    }
+    setCameraCapturing(true);
     setResultMsg(null);
     try {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Camera image processing is unavailable.');
+      // Mirror the captured frame exactly as the user sees it in the selfie preview.
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const photo = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error('Unable to capture camera frame.')),
+          'image/jpeg',
+          0.9
+        );
+      });
+      const file = new File([photo], 'live-selfie.jpg', { type: 'image/jpeg' });
       const compressed = await compressSelfieUnderLimit(file, activeCamp.settings.maxSelfieKb);
+      const url = URL.createObjectURL(compressed.blob);
+      if (selfiePreviewUrlRef.current) URL.revokeObjectURL(selfiePreviewUrlRef.current);
+      selfiePreviewUrlRef.current = url;
+      setSelfiePreviewUrl(url);
       setSelfieBlob(compressed.blob);
       setSelfieSizeKb(compressed.sizeKb);
       setSelfieExt(compressed.ext);
       setSelfieMime(compressed.mimeType);
-      const preview = URL.createObjectURL(compressed.blob);
-      setSelfiePreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return preview;
-      });
+      closeCamera();
       setResultMsg({
         ok: true,
         text: t(
-          `Selfie ready (${compressed.sizeKb} KB · ${compressed.ext.toUpperCase()}).`,
-          `تم تجهيز صورة التحقق (${compressed.sizeKb} كيلوبايت).`
+          `Live selfie captured (${compressed.sizeKb} KB). Review it before submitting check-in.`,
+          `اتصورت صورة مباشرة بالكاميرا (${compressed.sizeKb} كيلوبايت). راجعها قبل تأكيد الوصول.`
         ),
       });
     } catch (err) {
       setResultMsg({
         ok: false,
-        text: err instanceof Error ? err.message : t('Selfie processing failed.', 'تعذر معالجة الصورة.'),
+        text: err instanceof Error ? err.message : t('Camera capture failed.', 'تعذر التقاط الصورة.'),
       });
     } finally {
-      setIsBusy(false);
+      setCameraCapturing(false);
     }
   };
 
@@ -850,43 +961,78 @@ export const InstructorCheckinView: React.FC = () => {
           </div>
         </div>
 
-        {/* Camera / File Input */}
-        <div className={`${SURFACE_SUBTLE} p-4 flex flex-wrap items-center justify-between gap-4 text-xs`}>
-          <div className="flex items-center gap-3">
-            {selfiePreviewUrl ? (
-              <img
-                src={selfiePreviewUrl}
-                alt={t('Compressed check-in selfie', 'صورة التحقق')}
-                className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-              />
-            ) : (
-              <Camera className="w-5 h-5 text-blue-600 shrink-0" />
-            )}
-            <div>
-              <p className="font-semibold text-slate-900 dark:text-white">
-                {selfieBlob
-                  ? t('Verification Selfie Ready', 'صورة التحقق جاهزة للرفع')
-                  : t('Select or Capture Verification Selfie', 'اختر أو التقط صورة التحقق')}
-              </p>
-              <p className="text-slate-500 font-mono tabular-nums mt-0.5">
-                {selfieBlob
-                  ? `${selfieExt.toUpperCase()}: ${selfieSizeKb} KB / ${activeCamp.settings.maxSelfieKb} KB max`
-                  : `${t('Required limit:', 'الحد الأقصى:')} <= ${activeCamp.settings.maxSelfieKb} KB`}
-              </p>
+        {/* Live camera capture ONLY: no file/gallery upload control. */}
+        <div className={`${SURFACE_SUBTLE} p-4 space-y-4 text-xs`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {selfiePreviewUrl ? (
+                <img
+                  src={selfiePreviewUrl}
+                  alt={t('Captured verification selfie', 'صورة التحقق الملتقطة')}
+                  className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                />
+              ) : (
+                <Camera className="w-5 h-5 text-blue-600 shrink-0" />
+              )}
+              <div>
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  {selfieBlob
+                    ? t('Live Selfie Captured', 'تم التقاط الصورة المباشرة')
+                    : t('Live Selfie Required', 'مطلوب صورة مباشرة بالكاميرا')}
+                </p>
+                <p className="text-slate-500 mt-0.5">
+                  {selfieBlob
+                    ? `${selfieExt.toUpperCase()}: ${selfieSizeKb} KB / ${activeCamp.settings.maxSelfieKb} KB max`
+                    : t(
+                      'Take a fresh selfie using the camera. Choosing an existing photo is disabled.',
+                      'التقط صورة جديدة باستخدام الكاميرا. اختيار صورة قديمة من الجهاز غير متاح.'
+                    )}
+                </p>
+              </div>
             </div>
+            {!cameraOpen && (
+              <button
+                type="button"
+                disabled={isBusy || cameraCapturing}
+                onClick={() => { void openCamera(); }}
+                className={BTN_SECONDARY}
+              >
+                <Camera className="w-4 h-4" />
+                <span>{selfieBlob ? t('Retake Selfie', 'إعادة التصوير') : t('Open Camera', 'فتح الكاميرا')}</span>
+              </button>
+            )}
           </div>
 
-          <label className="min-h-[40px] px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 font-semibold shrink-0 cursor-pointer flex items-center gap-1.5">
-            <Camera className="w-3.5 h-3.5 text-blue-600" />
-            <span>{t('Take / Choose Selfie', 'التقاط / اختيار صورة')}</span>
-            <input
-              type="file"
-              accept="image/*"
-              capture="user"
-              onChange={handleSelfieFileChange}
-              className="sr-only"
-            />
-          </label>
+          {/* Keep the video mounted so it can receive the stream after permission. */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            aria-label={t('Live front camera preview', 'معاينة مباشرة للكاميرا الأمامية')}
+            className={`${cameraOpen ? 'block' : 'hidden'} w-full max-w-md rounded-xl bg-black aspect-[4/3] object-cover -scale-x-100`}
+          />
+          {cameraOpen && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={cameraLoading || cameraCapturing || isBusy}
+                onClick={() => { void captureLiveSelfie(); }} className={BTN_PRIMARY}>
+                <Camera className="w-4 h-4" />
+                <span>{cameraCapturing
+                  ? t('Processing…', 'جاري تجهيز الصورة…')
+                  : cameraLoading
+                    ? t('Opening camera…', 'جاري فتح الكاميرا…')
+                    : t('Capture Selfie Now', 'التقط الصورة الآن')}</span>
+              </button>
+              <button type="button" disabled={cameraCapturing} onClick={closeCamera} className={BTN_SECONDARY}>
+                {t('Cancel Camera', 'إغلاق الكاميرا')}
+              </button>
+            </div>
+          )}
+          {selfieBlob && !cameraOpen && (
+            <p className="text-emerald-700 dark:text-emerald-300 font-medium">
+              {t('Review complete? The captured photo will be stored privately only when you submit check-in.', 'راجع الصورة. لن تُحفظ في التخزين الخاص إلا بعد إرسال تسجيل الوصول.')}
+            </p>
+          )}
         </div>
 
         <div>
@@ -908,8 +1054,8 @@ export const InstructorCheckinView: React.FC = () => {
 
         <button
           type="submit"
-          disabled={isBusy}
-          className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm`}
+          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || Boolean(existingCheckin)}
+          className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           <MapPinCheck className="w-4 h-4" />
           <span>
