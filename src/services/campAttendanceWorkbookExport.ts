@@ -108,7 +108,7 @@ export function buildCampAttendanceWorkbook(input: {
       f('COUNTIF(E'+rowNo+':N'+rowNo+',"P")+COUNTIF(E'+rowNo+':N'+rowNo+',"L")',st.presentDays),
       f('COUNTIF(E'+rowNo+':N'+rowNo+',"L")',st.lateDays),
       f('COUNTIF(E'+rowNo+':N'+rowNo+',"A")',st.absentDays),
-      f('IFERROR(O'+rowNo+'/(O'+rowNo+'+Q'+rowNo+'),0)',rate,11),
+      st.eligibleFinalDays > 0\n        ? f('IFERROR(O'+rowNo+'/(O'+rowNo+'+Q'+rowNo+'),0)',rate,11)\n        : c('N/A',10),
     ];
     dailyRows.push(cells);
   }
