@@ -101,3 +101,29 @@ test('even an archived camp export remains provisional while a lecture is pendin
   const entries=unzipStoredXml(new Uint8Array(await pending.arrayBuffer()));
   assert.match(entries['xl/worksheets/sheet1.xml'],/PROVISIONAL/);
 });
+
+test('30-student 10-day roster exports all rows without fabricating attendance',async()=>{
+  const roster:Student[]=Array.from({length:30},(_,index)=>({
+    id:'student-'+index,campId,groupId:'A',
+    studentCode:'QA-ROSTER-'+String(index+1).padStart(2,'0'),
+    fullName:'طالب اختبار '+(index+1),university:'',
+    isActive:true,joinedCampDay:index>=27?4:1,
+  }));
+  const blob=buildCampAttendanceWorkbook({
+    camp,groups:[groups[0]],students:roster,studentTransfers:[],
+    lectures:[lecture('lecture1',1),lecture('lecture4',4)],
+    attendanceSheets:[],
+  });
+  const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+  const daily=entries['xl/worksheets/sheet2.xml'];
+  for(let index=1;index<=30;index++){
+    const code='QA-ROSTER-'+String(index).padStart(2,'0');
+    assert.ok(daily.includes(code),'Missing exported student: '+code);
+  }
+  // Four header rows + 30 student rows + one totals row.
+  assert.equal((daily.match(/<row r="/g)||[]).length,35);
+  assert.match(daily,/>Pending</);
+  assert.match(daily,/>N\/A</);
+  assert.doesNotMatch(daily,/>A<\/t>/);
+  assert.match(entries['xl/worksheets/sheet1.xml'],/PROVISIONAL/);
+});
