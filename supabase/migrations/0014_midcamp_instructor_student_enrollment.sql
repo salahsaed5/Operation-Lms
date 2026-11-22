@@ -4,10 +4,20 @@
 
 ALTER TABLE public.students
   ADD COLUMN IF NOT EXISTS joined_camp_day integer NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS enrolled_at timestamptz NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS enrolled_at timestamptz,
   ADD COLUMN IF NOT EXISTS enrolled_by_profile_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS enrollment_origin text NOT NULL DEFAULT 'admin_import',
   ADD COLUMN IF NOT EXISTS enrollment_reason text;
+
+-- Preserve historical created-at as the enrollment time for existing students,
+-- rather than inaccurately labeling all older entries with migration time.
+UPDATE public.students
+SET enrolled_at = created_at
+WHERE enrolled_at IS NULL;
+
+ALTER TABLE public.students
+  ALTER COLUMN enrolled_at SET DEFAULT now(),
+  ALTER COLUMN enrolled_at SET NOT NULL;
 
 DO $c$
 BEGIN
