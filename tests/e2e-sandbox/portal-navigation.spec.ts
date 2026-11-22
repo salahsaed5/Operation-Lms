@@ -69,8 +69,8 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
   await expect(nav.getByRole('button', { name: 'Attendance', exact: true }))
     .toHaveAttribute('aria-current', 'page');
   await expect(lecturePicker).toHaveValue('lec-d4-p2-g1');
-  await expect(page.getByText('Attendance roster for the selected lecture only')).toBeVisible();
-  await expect(page.getByText('Minimum Spanning Trees & Disjoint Set Union').last()).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toContainText('Minimum Spanning Trees & Disjoint Set Union');
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -89,7 +89,7 @@ test('one search immediately filters roster and shows other-group student with o
   // Select editable P2 to test the visitor-add interaction.
   await page.getByRole('combobox', { name: 'Select lecture and group for attendance' })
     .selectOption('lec-d4-p2-g1');
-  await expect(page.getByText('Editable Draft')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toContainText('Draft');
 
   const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
   await expect(search).toHaveCount(1);
