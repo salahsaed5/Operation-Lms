@@ -1072,6 +1072,8 @@ function highlightAttendanceSearchMatch(value: string, query: string): React.Rea
   );
 }
 
+type AttendanceRosterFilter = 'all' | 'unmarked' | AttendanceMark;
+
 export const InstructorAttendanceView: React.FC = () => {
   const {
     activeCamp,
@@ -1108,6 +1110,7 @@ export const InstructorAttendanceView: React.FC = () => {
   // One query drives both the visible roster and the scoped server-side
   // visitor lookup. No second input or separate student-selection step.
   const [studentSearch, setStudentSearch] = useState('');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<AttendanceRosterFilter>('all');
   const [secureVisitingMatches, setSecureVisitingMatches] = useState<VisitingStudentLookupResult[]>([]);
   const [lastCompletedVisitQuery, setLastCompletedVisitQuery] = useState('');
   const [visitingLookupError, setVisitingLookupError] = useState<string | null>(null);
@@ -1212,15 +1215,36 @@ export const InstructorAttendanceView: React.FC = () => {
     return [...sheetRecords, ...missingFromRoster];
   })();
 
-  const filteredRecords = useMemo(() => {
-    const q = studentSearch.trim().toLowerCase();
+  // Status filters never mutate the underlying records or widen visitor RLS.
+  // In particular, 'unmarked' is not 'absent' until authorized final submit.
+  const nameMatchedRecords = useMemo(() => {
+    const q = studentSearch.trim().toLocaleLowerCase();
     if (!q) return baseRecords;
-    return baseRecords.filter(
-      (r) =>
-        r.studentName.toLowerCase().includes(q) ||
-        r.studentCode.toLowerCase().includes(q)
+    return baseRecords.filter((r) =>
+      r.studentName.toLocaleLowerCase().includes(q) ||
+      r.studentCode.toLocaleLowerCase().includes(q)
     );
   }, [baseRecords, studentSearch]);
+  const filteredRecords = useMemo(
+    () => nameMatchedRecords.filter(r =>
+      attendanceStatusFilter === 'all' || r.mark === attendanceStatusFilter
+    ),
+    [nameMatchedRecords, attendanceStatusFilter]
+  );
+  const attendanceFilterOptions: Array<{
+    value: AttendanceRosterFilter; en: string; ar: string; activeClass: string;
+  }> = [
+    { value: 'all', en: 'All', ar: 'الكل', activeClass: 'bg-slate-800 text-white border-slate-800' },
+    { value: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', activeClass: 'bg-emerald-600 text-white border-emerald-600' },
+    { value: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', activeClass: 'bg-amber-600 text-white border-amber-600' },
+    { value: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', activeClass: 'bg-red-600 text-white border-red-600' },
+    { value: AttendanceMark.EXCUSED, en: 'Excused', ar: 'بعذر', activeClass: 'bg-violet-600 text-white border-violet-600' },
+    { value: 'unmarked', en: 'Unmarked', ar: 'لم يُحدد', activeClass: 'bg-slate-600 text-white border-slate-600' },
+  ];
+  const attendanceFilterCount = (status: AttendanceRosterFilter) =>
+    status === 'all'
+      ? nameMatchedRecords.length
+      : nameMatchedRecords.filter(r => r.mark === status).length;
 
   const isLockedOrSubmitted =
     existingSheet?.status === AttendanceSheetStatus.SUBMITTED ||
@@ -1579,6 +1603,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 // Search and visiting-student selections belong to the old
                 // lecture/group. Clear them before displaying the next roster.
                 setStudentSearch('');
+                setAttendanceStatusFilter('all');
                 setSecureVisitingMatches([]);
                 setLastCompletedVisitQuery('');
                 setVisitingLookupError(null);
@@ -1655,7 +1680,7 @@ export const InstructorAttendanceView: React.FC = () => {
             className="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-3.5"
           >
             <label htmlFor="attendance-student-search" className="block text-sm font-bold text-slate-900 dark:text-white">
-              {t('Search student name or code — once', 'ابحث باسم الطالب أو الكود مرة واحدة')}
+              {t('Find student', 'البحث عن طالب')}
             </label>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1683,6 +1708,32 @@ export const InstructorAttendanceView: React.FC = () => {
                   'اكتب الاسم أو الكود مرة واحدة عشان تلاقي الطالب في الكشف أو في جروب تاني.')}
               </p>
             )}
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-2">
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                {t('Filter attendance status', 'فلترة حسب حالة الحضور')}
+              </p>
+              <div role="group" aria-label={t('Filter attendance by status', 'فلترة الحضور حسب الحالة')}
+                className="flex flex-wrap gap-2"
+              >
+                {attendanceFilterOptions.map(option => {
+                  const active = attendanceStatusFilter === option.value;
+                  return (
+                    <button key={option.value} type="button"
+                      aria-pressed={active}
+                      onClick={() => setAttendanceStatusFilter(option.value)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold min-h-[38px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${active
+                        ? option.activeClass
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      <span>{t(option.en, option.ar)}</span>
+                      <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-center ${active ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200'}`}>
+                        {attendanceFilterCount(option.value)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {/* Show the actual matching students AND controls right below
                 the search, not a count that forces the Instructor to scroll. */}
             {studentSearch.trim() && filteredRecords.length > 0 && (
@@ -1771,12 +1822,22 @@ export const InstructorAttendanceView: React.FC = () => {
                   {t('Students in this attendance sheet', 'طلاب كشف الحضور')}
                 </h3>
                 <span className="rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500">
-                  {baseRecords.length}
+                  {filteredRecords.length} / {baseRecords.length}
                 </span>
               </div>
-              {baseRecords.length > 0
-                ? renderAttendanceRows(baseRecords, '')
-                : <p className="py-5 text-xs text-slate-500">{t('No students assigned to this lecture yet.', 'مفيش طلاب مسجلين في المحاضرة دي لسه.')}</p>}
+              {filteredRecords.length > 0
+                ? renderAttendanceRows(filteredRecords, '')
+                : <div role="status" className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-5 text-center space-y-3">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      {t('No students with this attendance status.', 'مفيش طلاب بالحالة دي حاليًا.')}
+                    </p>
+                    {attendanceStatusFilter !== 'all' && (
+                      <button type="button" onClick={() => setAttendanceStatusFilter('all')}
+                        className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                        {t('Show all students', 'عرض كل الطلاب')}
+                      </button>
+                    )}
+                  </div>
             </section>
           )}
 
