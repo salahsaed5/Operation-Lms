@@ -8,20 +8,21 @@ import {
   RefreshCw,
   Send,
   ExternalLink,
-  Navigation,
   UserPlus,
   Search,
   CalendarClock,
   UserCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { resolveStudentOriginGroupForDay } from '../../domain/businessRules';
+import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
+import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { compressSelfieUnderLimit, getSignedSelfieUrl } from '../../services/citsRepository';
 import {
   AttendanceMark,
   AttendanceRecordItem,
   AttendanceSheetStatus,
   CheckinStatus,
+  CampStatus,
   EntitlementStatus,
   OfflineSyncState,
   RequestStatus,
@@ -581,9 +582,10 @@ export const InstructorCheckinView: React.FC = () => {
         )
       : undefined;
 
-  const [lat, setLat] = useState<number>(venue?.latitude ?? 30.0713);
-  const [lng, setLng] = useState<number>(venue?.longitude ?? 31.0168);
-  const [gpsAccuracy, setGpsAccuracy] = useState<number>(11);
+  const [gpsSnapshot, setGpsSnapshot] = useState<{
+    latitude: number; longitude: number; accuracy: number; distance: number; at: number;
+  } | null>(null);
+  const [gpsMessage, setGpsMessage] = useState<string | null>(null);
   const [checkinTime, setCheckinTime] = useState<string>('08:45');
   const [selfieSizeKb, setSelfieSizeKb] = useState<number>(0);
   const [selfieBlob, setSelfieBlob] = useState<Blob | undefined>(undefined);
@@ -615,13 +617,6 @@ export const InstructorCheckinView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (venue && !isSupabaseMode) {
-      setLat(venue.latitude);
-      setLng(venue.longitude);
-    }
-  }, [venue?.id, isSupabaseMode]);
-
-  useEffect(() => {
     let active = true;
     if (existingCheckin?.selfieStoragePath && isSupabaseMode) {
       getSignedSelfieUrl(existingCheckin.selfieStoragePath).then((url) => {
@@ -646,42 +641,29 @@ export const InstructorCheckinView: React.FC = () => {
     );
   }
 
-  const handleCaptureGps = () => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setResultMsg({
-        ok: false,
-        text: t(
-          'Device geolocation is not available in this browser.',
-          'خدمة تحديد الموقع غير متاحة في هذا المتصفح.'
-        ),
-      });
+  const gpsLimit = requiredGpsAccuracyMeters(activeCamp.settings.geofenceRadiusMeters);
+  const getFreshPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!window.isSecureContext || !navigator.geolocation) {
+      reject(new Error(t('Location requires HTTPS and device GPS.', 'الموقع يحتاج HTTPS وتفعيل GPS على الجهاز.')));
       return;
     }
-    setIsBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(Number(pos.coords.latitude.toFixed(6)));
-        setLng(Number(pos.coords.longitude.toFixed(6)));
-        setGpsAccuracy(Math.max(1, Math.round(pos.coords.accuracy)));
-        setResultMsg({
-          ok: true,
-          text: t(
-            `GPS snapshot captured (±${Math.round(pos.coords.accuracy)}m accuracy).`,
-            `تم التقاط إحداثيات GPS بدقة ±${Math.round(pos.coords.accuracy)} متر.`
-          ),
-        });
-        setIsBusy(false);
-      },
-      (err) => {
-        setResultMsg({
-          ok: false,
-          text: t(`GPS error: ${err.message}`, `تعذر الحصول على الموقع: ${err.message}`),
-        });
-        setIsBusy(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
+    navigator.geolocation.getCurrentPosition(pos => {
+      if (!Number.isFinite(pos.coords.latitude) || !Number.isFinite(pos.coords.longitude) ||
+          !Number.isFinite(pos.coords.accuracy) || pos.coords.accuracy <= 0 ||
+          pos.coords.latitude < -90 || pos.coords.latitude > 90 ||
+          pos.coords.longitude < -180 || pos.coords.longitude > 180 ||
+          Date.now() - pos.timestamp > 15_000 || pos.timestamp > Date.now() + 2_000) {
+        reject(new Error(t('GPS reading is invalid or stale.', 'قراءة GPS غير صحيحة أو قديمة.')));
+      } else resolve(pos);
+    }, err => reject(new Error(
+      err.code === 1
+        ? t('Allow precise location for this site.', 'اسمح للموقع باستخدام الموقع الدقيق.')
+        : t('Unable to read GPS. Try outside or from your phone.', 'تعذر قراءة GPS. جرب في مكان مفتوح أو بالموبايل.')
+    )), { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 });
+  });
+  const quality = classifyGpsVerification(gpsSnapshot, activeCamp.settings.geofenceRadiusMeters);
+  const maySubmitGps = quality === 'good' ||
+    (quality === 'outside' && exceptionReason.trim().length > 0);
 
   const releaseCamera = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -715,6 +697,8 @@ export const InstructorCheckinView: React.FC = () => {
     setSelfiePreviewUrl(null);
     setSelfieBlob(undefined);
     setSelfieSizeKb(0);
+    setGpsSnapshot(null);
+    setGpsMessage(null);
     setCameraOpen(true);
     setCameraLoading(true);
     setResultMsg(null);
@@ -733,12 +717,23 @@ export const InstructorCheckinView: React.FC = () => {
       if (!videoRef.current) throw new Error('Camera preview not available.');
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
+      // Ask location permission when the camera opens. Capture requests another
+      // precise reading, binding it to this particular photo.
+      const pos = await getFreshPosition();
+      if (requestId !== cameraRequestIdRef.current) return;
+      setGpsMessage(pos.coords.accuracy > gpsLimit
+        ? t('Location access granted, but accuracy is poor. Try outdoors or use a phone.',
+            'تم السماح بالموقع لكن الدقة ضعيفة. جرّب في مكان مفتوح أو استخدم الموبايل.')
+        : t('Location enabled. Capture your selfie to verify your position.',
+            'الموقع متاح. التقط صورة للتحقق من موقعك وقت التصوير.'));
     } catch (err) {
       if (requestId !== cameraRequestIdRef.current) return;
       releaseCamera();
       setCameraOpen(false);
       const name = err instanceof DOMException ? err.name : '';
-      const message = name === 'NotAllowedError' || name === 'PermissionDeniedError'
+      const message = err instanceof Error && /GPS|location|موقع/i.test(err.message)
+        ? err.message
+        : name === 'NotAllowedError' || name === 'PermissionDeniedError'
         ? t('Allow camera access in browser permissions and try again.', 'اسمح للموقع باستخدام الكاميرا من إعدادات المتصفح ثم حاول مجددًا.')
         : name === 'NotFoundError' || name === 'DevicesNotFoundError'
           ? t('No working camera was found on this device.', 'لم يتم العثور على كاميرا تعمل على الجهاز.')
@@ -783,6 +778,16 @@ export const InstructorCheckinView: React.FC = () => {
       });
       const file = new File([photo], 'live-selfie.jpg', { type: 'image/jpeg' });
       const compressed = await compressSelfieUnderLimit(file, activeCamp.settings.maxSelfieKb);
+      const pos = await getFreshPosition();
+      if (captureRequestId !== cameraRequestIdRef.current) return;
+      setGpsSnapshot({
+        latitude: Number(pos.coords.latitude.toFixed(6)),
+        longitude: Number(pos.coords.longitude.toFixed(6)),
+        accuracy: Math.max(1, Math.ceil(pos.coords.accuracy)),
+        distance: calculateHaversineDistanceMeters(
+          pos.coords.latitude, pos.coords.longitude, venue.latitude, venue.longitude),
+        at: Date.now(),
+      });
       // Ignore delayed compression if the user navigated away or cancelled camera.
       if (captureRequestId !== cameraRequestIdRef.current) return;
       const url = URL.createObjectURL(compressed.blob);
@@ -816,14 +821,26 @@ export const InstructorCheckinView: React.FC = () => {
 
   const handleCheckin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!gpsSnapshot || !selfieBlob || !maySubmitGps || Date.now() - gpsSnapshot.at > 30_000) {
+      setResultMsg({ ok: false, text: t(
+        'Capture a new selfie with a fresh, accurate GPS reading first.',
+        'التقط صورة جديدة ومعاها GPS حديث ودقيق قبل الحفظ.') });
+      return;
+    }
+    if (activeCamp.status !== CampStatus.ACTIVE) {
+      setResultMsg({ ok: false, text: t(
+        'Camp must be active before a check-in can be submitted.',
+        'المعسكر لازم يبقى Active قبل تسجيل الوصول.') });
+      return;
+    }
     setIsBusy(true);
     setResultMsg(null);
     try {
       const res = await submitInstructorCheckin({
         instructorId: currentInstructor.id,
-        latitude: lat,
-        longitude: lng,
-        gpsAccuracyMeters: gpsAccuracy,
+        latitude: gpsSnapshot.latitude,
+        longitude: gpsSnapshot.longitude,
+        gpsAccuracyMeters: gpsSnapshot.accuracy,
         selfieSizeKb,
         selfieBlob,
         selfieExt,
@@ -884,88 +901,57 @@ export const InstructorCheckinView: React.FC = () => {
       )}
 
       <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
-        <div className={`${SURFACE_SUBTLE} p-4 text-xs flex flex-wrap items-center justify-between gap-3`}>
-          <div>
-            <p className="font-semibold text-slate-900 dark:text-white">
-              {t(venue.nameEn, venue.nameAr)}
-            </p>
-            <p className="text-slate-500 font-mono tabular-nums mt-0.5">
-              Pin: ({venue.latitude}, {venue.longitude}) · {t('Geofence:', 'النطاق:')}{' '}
-              {activeCamp.settings.geofenceRadiusMeters}m
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={handleCaptureGps}
-            className="min-h-[40px] px-3.5 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold flex items-center gap-1.5 cursor-pointer"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>{t('Capture Device GPS', 'التقاط موقعي الحالي')}</span>
-          </button>
-        </div>
+        <section className={`${SURFACE_SUBTLE} p-4 text-xs space-y-3`}>
+          <p className="font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
+          <p className="text-slate-600 dark:text-slate-300">
+            {t('Venue geofence:', 'نطاق المقر:')} {activeCamp.settings.geofenceRadiusMeters}m
+            {' · '}{t('Required GPS precision:', 'دقة GPS المطلوبة:')} ±{gpsLimit}m
+          </p>
+          <p className="text-blue-700 dark:text-blue-300">
+            {t('Opening the camera will request precise location access. GPS is captured automatically with the selfie; no manual edits.', 'فتح الكاميرا هيطلب إذن الموقع الدقيق. GPS بيتلقط تلقائيًا مع الصورة ومفيش تعديل يدوي.')}
+          </p>
+          {gpsMessage && <p className="font-medium">{gpsMessage}</p>}
+        </section>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-          <div>
-            <label htmlFor="chk-lat" className={LABEL_CLASS}>
-              {t('GPS Latitude', 'خط العرض')}
-            </label>
-            <input
-              id="chk-lat"
-              type="number"
-              step="0.000001"
-              min={-90}
-              max={90}
-              value={lat}
-              onChange={(e) => setLat(Number(e.target.value))}
-              className={`${INPUT_CLASS} font-mono tabular-nums`}
-            />
+        <section className={`${SURFACE_SUBTLE} p-4 space-y-3 text-xs`} aria-live="polite">
+          <div className="flex flex-wrap justify-between gap-2 items-center">
+            <p className="font-bold text-slate-900 dark:text-white">{t('Location Verification', 'التحقق من الموقع')}</p>
+            <span className={`px-3 py-1 rounded-full font-bold ${
+              quality === 'good' ? 'bg-emerald-100 text-emerald-800' :
+              quality === 'missing' ? 'bg-slate-100 text-slate-700' :
+              'bg-amber-100 text-amber-900'
+            }`}>
+              {quality === 'good' ? t('GOOD — Inside Geofence', 'جيد — داخل نطاق المقر') :
+               quality === 'poor' ? t('UNVERIFIED — Low Accuracy', 'غير موثق — دقة الموقع ضعيفة') :
+               quality === 'outside' ? t('OUTSIDE — Admin Review', 'خارج النطاق — يحتاج مراجعة') :
+               quality === 'uncertain' ? t('UNVERIFIED — Boundary Uncertain', 'غير موثق — قرب حدود النطاق') :
+               t('Waiting for live capture', 'بانتظار التصوير المباشر')}
+            </span>
           </div>
-          <div>
-            <label htmlFor="chk-lng" className={LABEL_CLASS}>
-              {t('GPS Longitude', 'خط الطول')}
-            </label>
-            <input
-              id="chk-lng"
-              type="number"
-              step="0.000001"
-              min={-180}
-              max={180}
-              value={lng}
-              onChange={(e) => setLng(Number(e.target.value))}
-              className={`${INPUT_CLASS} font-mono tabular-nums`}
-            />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div><label htmlFor="chk-lat" className={LABEL_CLASS}>{t('Latitude', 'خط العرض')}</label>
+              <input id="chk-lat" type="text" readOnly value={gpsSnapshot?.latitude.toFixed(6) ?? '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
+            <div><label htmlFor="chk-lng" className={LABEL_CLASS}>{t('Longitude', 'خط الطول')}</label>
+              <input id="chk-lng" type="text" readOnly value={gpsSnapshot?.longitude.toFixed(6) ?? '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
+            <div><label htmlFor="chk-acc" className={LABEL_CLASS}>{t('Accuracy', 'دقة GPS')}</label>
+              <input id="chk-acc" type="text" readOnly value={gpsSnapshot ? `±${gpsSnapshot.accuracy}m` : '—'} className={`${INPUT_CLASS} font-mono bg-slate-100 dark:bg-slate-800 cursor-not-allowed`} /></div>
+            <div><p className={LABEL_CLASS}>{t('Distance to venue', 'المسافة للمقر')}</p>
+              <p className="py-2 font-bold text-slate-800 dark:text-slate-100">{gpsSnapshot ? `${gpsSnapshot.distance}m` : '—'}</p></div>
           </div>
-          <div>
-            <label htmlFor="chk-acc" className={LABEL_CLASS}>
-              {t('GPS Accuracy (m)', 'دقة GPS (متر)')}
-            </label>
-            <input
-              id="chk-acc"
-              type="number"
-              min={0}
-              max={500}
-              value={gpsAccuracy}
-              onChange={(e) => setGpsAccuracy(Number(e.target.value))}
-              className={`${INPUT_CLASS} font-mono tabular-nums`}
-            />
-          </div>
-          <div>
-            <label htmlFor="chk-time" className={LABEL_CLASS}>
-              {isSupabaseMode
-                ? t('Server Arrival Timestamp', 'توقيت الوصول الموثق')
-                : t('Arrival Time (HH:MM)', 'وقت الوصول')}
-            </label>
-            <input
-              id="chk-time"
-              type="time"
-              disabled={isSupabaseMode}
-              value={checkinTime}
-              onChange={(e) => setCheckinTime(e.target.value)}
-              className={`${INPUT_CLASS} font-mono tabular-nums`}
-            />
-          </div>
-        </div>
+          {gpsSnapshot && <p className="text-slate-600 dark:text-slate-300">
+            {t('Captured:', 'وقت الالتقاط:')} {new Date(gpsSnapshot.at).toLocaleTimeString()}
+            {' · '}{t('Retake after 30s for a fresh GPS check.', 'أعد التصوير لو عدى 30 ثانية عشان GPS يكون حديث.')}
+          </p>}
+          {quality === 'poor' && <p className="text-amber-800 dark:text-amber-300">{t(
+            'Accuracy is too low. Use precise location on a GPS-enabled phone and retake.',
+            'الدقة ضعيفة. فعّل Precise Location على موبايل فيه GPS وأعد التصوير.')}</p>}
+          {quality === 'uncertain' && <p className="text-amber-800 dark:text-amber-300">{t(
+            'Accuracy overlaps the geofence boundary. Move closer to the center and retake.',
+            'قراءة الموقع قريبة من حدود النطاق. قرّب من المركز وأعد التصوير.')}</p>}
+          {quality === 'outside' && <p className="text-amber-800 dark:text-amber-300">{t(
+            'Outside the venue. A written exception goes to Admin review, not verified attendance.',
+            'خارج المقر. الاستثناء بسبب مكتوب يحتاج موافقة الإدارة ومش حضور موثق.')}</p>}
+        </section>
 
         {/* Live camera capture ONLY: no file/gallery upload control. */}
         <div className={`${SURFACE_SUBTLE} p-4 space-y-4 text-xs`}>
@@ -1060,7 +1046,7 @@ export const InstructorCheckinView: React.FC = () => {
 
         <button
           type="submit"
-          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || Boolean(existingCheckin)}
+          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || !maySubmitGps || Boolean(existingCheckin) || activeCamp.status !== CampStatus.ACTIVE}
           className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           <MapPinCheck className="w-4 h-4" />
