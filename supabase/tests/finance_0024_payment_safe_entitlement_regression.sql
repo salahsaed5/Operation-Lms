@@ -1,93 +1,111 @@
--- Finance 0024 rollback-only acceptance: no persistent fixtures, no payouts.
--- Run on approved Staging project after applying migration 0024.
-DO $acceptance$
+-- Isolated Finance 0024 integration acceptance. Every fixture and payment is rolled back.
+-- Uses a fresh synthetic Camp and the existing Staging venue and active instructor.
+-- The privileged synthetic backup below checks DB settlement guards, not backup RPC eligibility.
+BEGIN;
+DO $qa$
 DECLARE
-  v_camp uuid;
-  v_lecture public.lectures%ROWTYPE;
   v_admin uuid;
-  v_ent uuid;
+  v_inst uuid;
+  v_venue uuid;
+  v_room uuid;
+  v_camp uuid;
+  v_group uuid;
+  v_l1 uuid;
+  v_l2 uuid;
   v_backup uuid;
-  v_count integer;
+  v_paid integer;
 BEGIN
-  SELECT * INTO v_lecture FROM public.lectures WHERE status <> 'cancelled' LIMIT 1;
-  IF v_lecture.id IS NULL THEN RAISE EXCEPTION 'Staging test lecture missing'; END IF;
-  v_camp := v_lecture.camp_id;
-  SELECT id INTO v_admin FROM public.profiles WHERE role = 'admin' LIMIT 1;
-  IF v_admin IS NULL THEN RAISE EXCEPTION 'Staging test admin missing'; END IF;
+  SELECT p.id INTO v_admin
+  FROM public.profiles p JOIN public.admin_accounts a ON a.profile_id=p.id
+  WHERE p.role='admin' AND p.is_active AND NOT p.must_change_password LIMIT 1;
+  SELECT i.id INTO v_inst
+  FROM public.instructors i JOIN public.profiles p ON p.id=i.profile_id
+  WHERE p.is_active LIMIT 1;
+  SELECT r.id,r.venue_id INTO v_room,v_venue
+  FROM public.rooms r WHERE r.is_active LIMIT 1;
+  IF v_admin IS NULL OR v_inst IS NULL OR v_room IS NULL THEN
+    RAISE EXCEPTION 'Finance QA requires an active Staging admin, instructor and room';
+  END IF;
 
-  -- Roll back every fixture, including the successful correction, at the end.
+  INSERT INTO public.camps
+    (code,name_en,name_ar,venue_id,start_date,end_date,duration_days,created_by)
+  VALUES ('QA-FIN-'||substr(gen_random_uuid()::text,1,8),
+    'Rollback Only Finance QA','Rollback Only Finance QA',
+    v_venue,current_date,current_date+9,10,v_admin)
+  RETURNING id INTO v_camp;
+  INSERT INTO public.camp_instructors(camp_id,instructor_id)
+  VALUES (v_camp,v_inst);
+  INSERT INTO public.groups(camp_id,code,name_en,name_ar,track)
+  VALUES(v_camp,'QA-G','Finance QA Group','Finance QA Group','General')
+  RETURNING id INTO v_group;
+  INSERT INTO public.group_instructors(camp_id,group_id,instructor_id,assigned_by)
+  VALUES(v_camp,v_group,v_inst,v_admin);
+  INSERT INTO public.lectures
+    (camp_id,camp_day,lecture_date,period_number,start_time,end_time,group_id,instructor_id,room_id,topic,frozen_rate_egp)
+  VALUES (v_camp,1,current_date,1,'09:00','12:00',v_group,v_inst,v_room,'Finance QA Primary A',300)
+  RETURNING id INTO v_l1;
+  INSERT INTO public.lectures
+    (camp_id,camp_day,lecture_date,period_number,start_time,end_time,group_id,instructor_id,room_id,topic,frozen_rate_egp)
+  VALUES(v_camp,1,current_date,2,'13:00','16:00',v_group,v_inst,v_room,'Finance QA Primary B',300)
+  RETURNING id INTO v_l2;
+  INSERT INTO public.camp_finance_rate_policies
+    (camp_id,effective_from_day,backup_rate_egp,transport_per_day_egp,created_by)
+  VALUES(v_camp,1,150,100,v_admin);
+  INSERT INTO public.lecture_entitlements
+    (camp_id,lecture_id,instructor_id,camp_day,period_number,
+     frozen_rate_egp,entitlement_amount_egp,status,eligibility_reason,
+     admin_override_by,admin_override_reason)
+  VALUES
+    (v_camp,v_l1,v_inst,1,1,300,300,'approved','Rollback-only finance fixture',v_admin,'Approved for QA'),
+    (v_camp,v_l2,v_inst,1,2,300,300,'approved','Rollback-only finance fixture',v_admin,'Approved for QA');
+
+  -- The actual Finance RPC checks the admin's AAL2 claim and recomputes due.
+  PERFORM set_config('request.jwt.claim.sub',v_admin::text,true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  PERFORM set_config('request.jwt.claims',
+    jsonb_build_object('sub',v_admin,'role','authenticated','aal','aal2')::text,true);
+  IF NOT public.is_cits_admin() THEN RAISE EXCEPTION 'Admin AAL2 finance fixture failed'; END IF;
+
+  -- Precisely 600 primary + 100 transportation, not 200 transportation.
+  PERFORM public.finance_record_payment(v_camp,v_inst,700,'cash','QA-ROLLBACK','Full two-primary daily settlement');
   BEGIN
-    INSERT INTO public.camp_finance_rate_policies
-      (camp_id,effective_from_day,backup_rate_egp,transport_per_day_egp,created_by)
-    VALUES (v_camp,1,150,100,v_admin);
-
-    INSERT INTO public.lecture_entitlements
-      (camp_id,lecture_id,instructor_id,camp_day,period_number,
-       frozen_rate_egp,entitlement_amount_egp,status,eligibility_reason,
-       admin_override_by,admin_override_reason)
-    VALUES (v_camp,v_lecture.id,v_lecture.instructor_id,
-      v_lecture.camp_day,v_lecture.period_number,300,300,'approved',
-      'Finance rollback-only acceptance',v_admin,'Test approved lecture')
-    RETURNING id INTO v_ent;
-
-    INSERT INTO public.camp_finance_payments
-      (camp_id,instructor_id,amount_egp,method,reference,note,created_by)
-    VALUES (v_camp,v_lecture.instructor_id,350,'cash','QA-ROLLBACK',
-      'Temporary primary entitlement payment',v_admin);
-
-    -- 300 primary + 100 day transportation = 400 due. Excluding the
-    -- primary would make due 0 while 350 is already paid: must reject.
-    BEGIN
-      UPDATE public.lecture_entitlements
-        SET status='excluded',admin_override_reason='QA exclusion'
-      WHERE id=v_ent;
-      RAISE EXCEPTION 'FINANCE_TEST_FAILED_MAIN_EXCLUSION_WAS_ALLOWED';
-    EXCEPTION WHEN check_violation THEN
-      IF SQLERRM NOT LIKE 'Finance settlement safety:%' THEN RAISE; END IF;
-    END;
-
-    SELECT count(*) INTO v_count FROM public.lecture_entitlements
-    WHERE id=v_ent AND status='approved';
-    IF v_count <> 1 THEN RAISE EXCEPTION 'Failed update changed primary record'; END IF;
-
-    -- After an explicit signed refund, exclusion is possible.
-    INSERT INTO public.camp_finance_payments
-      (camp_id,instructor_id,amount_egp,method,reference,note,created_by)
-    VALUES (v_camp,v_lecture.instructor_id,-350,'cash','QA-ROLLBACK',
-      'Temporary primary entitlement refund',v_admin);
-    UPDATE public.lecture_entitlements
-      SET status='excluded',admin_override_reason='QA corrected exclusion'
-    WHERE id=v_ent;
-
-    -- Backup-only case: an approved 150 session cannot be excluded when
-    -- its 150 has been paid. No transportation is granted for backup only.
-    INSERT INTO public.camp_backup_sessions
-      (camp_id,lecture_id,instructor_id,camp_day,period_number,
-       frozen_rate_egp,status,reason,created_by)
-    VALUES (v_camp,v_lecture.id,v_lecture.instructor_id,
-       v_lecture.camp_day,v_lecture.period_number,150,'approved',
-       'Temporary rollback-only backup test',v_admin)
-    RETURNING id INTO v_backup;
-    INSERT INTO public.camp_finance_payments
-      (camp_id,instructor_id,amount_egp,method,reference,note,created_by)
-    VALUES (v_camp,v_lecture.instructor_id,150,'cash','QA-ROLLBACK',
-      'Temporary backup payment',v_admin);
-    BEGIN
-      UPDATE public.camp_backup_sessions SET status='excluded' WHERE id=v_backup;
-      RAISE EXCEPTION 'FINANCE_TEST_FAILED_BACKUP_EXCLUSION_WAS_ALLOWED';
-    EXCEPTION WHEN check_violation THEN
-      IF SQLERRM NOT LIKE 'Finance settlement safety:%' THEN RAISE; END IF;
-    END;
-
-    INSERT INTO public.camp_finance_payments
-      (camp_id,instructor_id,amount_egp,method,reference,note,created_by)
-    VALUES (v_camp,v_lecture.instructor_id,-150,'cash','QA-ROLLBACK',
-      'Temporary backup refund',v_admin);
-    UPDATE public.camp_backup_sessions SET status='excluded' WHERE id=v_backup;
-
-    RAISE EXCEPTION 'FINANCE_0024_ROLLBACK_FIXTURES';
+    PERFORM public.finance_record_payment(v_camp,v_inst,1,'cash','QA-ROLLBACK','Overpayment must be blocked');
+    RAISE EXCEPTION 'QA_FAILED_OVERPAYMENT_ALLOWED';
   EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM <> 'FINANCE_0024_ROLLBACK_FIXTURES' THEN RAISE; END IF;
+    IF SQLERRM NOT LIKE 'Payment exceeds current confirmed unpaid balance%' THEN RAISE; END IF;
   END;
-  RAISE NOTICE 'PASS Finance 0024: settled main and backup cannot be excluded until refunded; fixtures rolled back';
-END $acceptance$;
+  BEGIN
+    UPDATE public.lecture_entitlements SET status='excluded',admin_override_reason='QA unsafe exclusion'
+    WHERE lecture_id=v_l2;
+    RAISE EXCEPTION 'QA_FAILED_PAID_PRIMARY_EXCLUSION_ALLOWED';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM NOT LIKE 'Finance settlement safety:%' THEN RAISE; END IF;
+  END;
+  PERFORM public.finance_record_payment(v_camp,v_inst,-300,'cash','QA-ROLLBACK','Refund before exclusion');
+  UPDATE public.lecture_entitlements SET status='excluded',admin_override_reason='QA exclusion after refund'
+  WHERE lecture_id=v_l2;
+
+  -- Backup trigger safety: superuser synthetic fixture exercises settlement
+  -- guard independently of business-rule RPC, which has its own tests.
+  INSERT INTO public.camp_backup_sessions
+    (camp_id,lecture_id,instructor_id,camp_day,period_number,
+     frozen_rate_egp,status,reason,created_by)
+  VALUES(v_camp,v_l2,v_inst,1,2,150,'approved','QA rollback-only backup guard',v_admin)
+  RETURNING id INTO v_backup;
+  PERFORM public.finance_record_payment(v_camp,v_inst,150,'cash','QA-ROLLBACK','Backup settlement safety test');
+  BEGIN
+    UPDATE public.camp_backup_sessions SET status='excluded' WHERE id=v_backup;
+    RAISE EXCEPTION 'QA_FAILED_PAID_BACKUP_EXCLUSION_ALLOWED';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM NOT LIKE 'Finance settlement safety:%' THEN RAISE; END IF;
+  END;
+  PERFORM public.finance_record_payment(v_camp,v_inst,-150,'cash','QA-ROLLBACK','Refund before backup exclusion');
+  UPDATE public.camp_backup_sessions SET status='excluded' WHERE id=v_backup;
+
+  SELECT coalesce(sum(amount_egp),0) INTO v_paid
+  FROM public.camp_finance_payments WHERE camp_id=v_camp;
+  IF v_paid<>400 THEN RAISE EXCEPTION 'Expected 400 EGP net payments; got %',v_paid; END IF;
+
+  RAISE NOTICE 'PASS finance: 2x300+100 transport, overpay denied, primary/backup exclusion blocked until refund';
+END $qa$;
+ROLLBACK;
