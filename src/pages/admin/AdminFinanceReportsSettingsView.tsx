@@ -440,12 +440,15 @@ export const AdminFinanceView: React.FC = () => {
 };
 
 export const AdminReportsView: React.FC = () => {
-  const { activeCamp, groups, students, studentTransfers, lectures, attendanceSheets, surveys, instructors, t } = useApp();
+  const { activeCamp, groups, students, studentTransfers, lectures, attendanceSheets,
+    surveys, instructors, downloadTenDayAttendanceWorkbook, t } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [asOfDay, setAsOfDay] = useState(1);
   const [groupFilter, setGroupFilter] = useState('all');
   const [attendanceCategory, setAttendanceCategory] = useState<'all' | CampToDateCategory>('all');
   const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const reportDay = Math.min(Math.max(asOfDay, 1), activeCamp?.durationDays || 10);
   const attendanceReport = useMemo(() => buildCampToDateReport({
@@ -481,6 +484,24 @@ export const AdminReportsView: React.FC = () => {
       g.nameAr.toLowerCase().includes(q) ||
       g.track.toLowerCase().includes(q)
   );
+  const handleDownloadAttendanceWorkbook = async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setExportFeedback(null);
+    try {
+      const result = await downloadTenDayAttendanceWorkbook();
+      setExportFeedback({
+        ok: result.ok,
+        text: result.ok
+          ? t('Attendance workbook download started. Draft or incomplete Camps are labeled PROVISIONAL.',
+               'بدأ تحميل ملف الحضور. المعسكرات غير المكتملة هيتكتب عليها غير نهائي بوضوح.')
+          : (result.error || t('Unable to export attendance workbook.', 'تعذر تصدير شيت الحضور.')),
+      });
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
   const filteredSurveys = campSurveys.filter((srv) => {
     const inst = instructors.find((i) => i.id === srv.instructorId);
     return (
@@ -500,19 +521,36 @@ export const AdminReportsView: React.FC = () => {
           'الحضور التراكمي وكشوف الطلاب وإشغال المجموعات وتقييمات المحاضرين.'
         )}
         actions={
-          <div className="relative sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('Filter groups or surveys...', 'تصفية المجموعات أو الاستبيانات...')}
-              aria-label={t('Filter reports', 'تصفية التقارير')}
-              className={`${INPUT_CLASS} ps-9`}
-            />
+          <div className="flex items-center flex-wrap gap-2">
+            <button type="button" className={BTN_PRIMARY}
+              disabled={exportBusy || !activeCamp}
+              onClick={() => { void handleDownloadAttendanceWorkbook(); }}>
+              <Download className="w-4 h-4" />
+              <span>{exportBusy ? t('Preparing Excel...', 'جاري تجهيز الإكسيل...') :
+                t('Download 10-Day Attendance Excel', 'تحميل شيت حضور 10 أيام')}</span>
+            </button>
+            <div className="relative sm:w-56">
+              <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('Filter groups or surveys...', 'تصفية المجموعات أو الاستبيانات...')}
+                aria-label={t('Filter reports', 'تصفية التقارير')}
+                className={`${INPUT_CLASS} ps-9`}
+              />
+            </div>
           </div>
         }
       />
+
+      {exportFeedback && (
+        <InlineBanner
+          type={exportFeedback.ok ? 'success' : 'error'}
+          message={exportFeedback.text}
+          onDismiss={() => setExportFeedback(null)}
+        />
+      )}
 
       {activeCamp && (
         <section className={`${SURFACE_CARD} p-5 space-y-4`}>
