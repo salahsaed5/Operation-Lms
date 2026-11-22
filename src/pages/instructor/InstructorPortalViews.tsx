@@ -76,6 +76,7 @@ export const InstructorDashboardView: React.FC = () => {
     checkins,
     attendanceSheets,
     setInstructorRoute,
+    openInstructorAttendance,
     t,
   } = useApp();
 
@@ -237,7 +238,7 @@ export const InstructorDashboardView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => setInstructorRoute('attendance')}
+              onClick={() => openInstructorAttendance(nextLecture.id)}
               className={`${BTN_SECONDARY} min-h-[44px] px-4`}
             >
               <ClipboardCheck className="w-4 h-4 text-blue-600" />
@@ -304,7 +305,7 @@ export const InstructorDashboardView: React.FC = () => {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setInstructorRoute('attendance')}
+                          onClick={() => openInstructorAttendance(lec.id)}
                           className={`${BTN_PRIMARY} min-h-[40px]`}
                         >
                           {t('Take Attendance', 'تسجيل الحضور')}
@@ -356,7 +357,7 @@ export const InstructorDashboardView: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setInstructorRoute('attendance')}
+                  onClick={() => openInstructorAttendance(draft.lectureId)}
                   className={`${BTN_PRIMARY} min-h-[40px]`}
                 >
                   {t('Review', 'مراجعة')}
@@ -1065,6 +1066,8 @@ export const InstructorAttendanceView: React.FC = () => {
     groups,
     attendanceSheets,
     isSupabaseMode,
+    instructorAttendanceLectureId: selectedLectureId,
+    setInstructorAttendanceLectureId: setSelectedLectureId,
     saveAttendanceDraft,
     enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
@@ -1085,7 +1088,6 @@ export const InstructorAttendanceView: React.FC = () => {
         )
       : [];
 
-  const [selectedLectureId, setSelectedLectureId] = useState<string>('');
   const [studentSearch, setStudentSearch] = useState('');
   const [crossGroupStudentId, setCrossGroupStudentId] = useState<string>('');
   const [crossGroupSearch, setCrossGroupSearch] = useState('');
