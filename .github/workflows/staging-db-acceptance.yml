@@ -72,6 +72,7 @@ jobs:
             supabase/tests/acl_and_atomic_attendance_security_regression.sql
             supabase/tests/attendance_rpc_null_authorization_regression.sql
             supabase/tests/atomic_cas_two_writer_transactional_acceptance.sql
+            supabase/tests/atomic_cas_null_json_payload_regression.sql
             supabase/tests/atomic_excused_mark_acceptance.sql
             supabase/tests/actual_authenticated_role_roster_rls_acceptance.sql
             supabase/tests/visiting_student_atomic_attendance_acceptance.sql
@@ -84,4 +85,4 @@ jobs:
             psql "${SUPABASE_STAGING_DB_URL}" --no-psqlrc -v ON_ERROR_STOP=1 -f "$file"
             echo "::endgroup::"
           done
-          echo 'Nine Staging SQL acceptance suites PASS. No Production writes.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Ten Staging SQL acceptance suites PASS. No Production writes.' >> "$GITHUB_STEP_SUMMARY"
