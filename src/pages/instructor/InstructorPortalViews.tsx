@@ -1088,10 +1088,11 @@ export const InstructorAttendanceView: React.FC = () => {
         )
       : [];
 
+  // One query drives both the visible roster and the scoped server-side
+  // visitor lookup. No second input or separate student-selection step.
   const [studentSearch, setStudentSearch] = useState('');
-  const [crossGroupStudentId, setCrossGroupStudentId] = useState<string>('');
-  const [crossGroupSearch, setCrossGroupSearch] = useState('');
   const [secureVisitingMatches, setSecureVisitingMatches] = useState<VisitingStudentLookupResult[]>([]);
+  const [lastCompletedVisitQuery, setLastCompletedVisitQuery] = useState('');
   const [visitingLookupError, setVisitingLookupError] = useState<string | null>(null);
   const [visitingSearchBusy, setVisitingSearchBusy] = useState(false);
   const [visitingSourceGroupCodes, setVisitingSourceGroupCodes] = useState<Record<string,string>>({});
@@ -1120,30 +1121,35 @@ export const InstructorAttendanceView: React.FC = () => {
   // Use a narrowly authorized, lecture-scoped RPC for visitors; never widen RLS.
   useEffect(() => {
     let cancelled = false;
-    const term = crossGroupSearch.trim();
+    const term = studentSearch.trim();
     if (!isSupabaseMode || !selectedLectureId || term.length < 2) {
       setSecureVisitingMatches([]);
       setVisitingLookupError(null);
       setVisitingSearchBusy(false);
+      setLastCompletedVisitQuery('');
       return;
     }
+    setVisitingSearchBusy(true);
     const timer = window.setTimeout(async () => {
-      setVisitingSearchBusy(true);
       setVisitingLookupError(null);
       try {
         const rows = await searchVisitingStudentsInDb({ lectureId: selectedLectureId, query: term });
-        if (!cancelled) setSecureVisitingMatches(rows);
+        if (!cancelled) {
+          setSecureVisitingMatches(rows);
+          setLastCompletedVisitQuery(term);
+        }
       } catch (err) {
         if (!cancelled) {
           setSecureVisitingMatches([]);
+          setLastCompletedVisitQuery('');
           setVisitingLookupError(err instanceof Error ? err.message : 'Secure lookup is not available.');
         }
       } finally {
         if (!cancelled) setVisitingSearchBusy(false);
       }
-    }, 350);
+    }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [isSupabaseMode, selectedLectureId, crossGroupSearch]);
+  }, [isSupabaseMode, selectedLectureId, studentSearch]);
 
   if (!activeCamp || !currentInstructor) {
     return (
@@ -1235,9 +1241,9 @@ export const InstructorAttendanceView: React.FC = () => {
     ? secureVisitingMatches.filter(stu =>
         !rosterStudentIds.has(stu.studentId) &&
         stu.homeGroupId !== selectedLecture?.groupId)
-    : crossGroupSearch.trim().length >= 2
+    : studentSearch.trim().length >= 2
       ? eligibleCrossGroupStudents.filter(stu => {
-          const q = crossGroupSearch.trim().toLocaleLowerCase();
+          const q = studentSearch.trim().toLocaleLowerCase();
           const home = groups.find(g => g.id === stu.groupId);
           return stu.fullName.toLocaleLowerCase().includes(q) ||
             stu.studentCode.toLocaleLowerCase().includes(q) ||
@@ -1254,8 +1260,7 @@ export const InstructorAttendanceView: React.FC = () => {
         })
       : [];
 
-  const selectedVisitingStudent = visitingMatches.find(s => s.studentId === crossGroupStudentId);
-  const visitingGroupName = (studentId: string) => {
+   const visitingGroupName = (studentId: string) => {
     const match = visitingMatches.find(s => s.studentId === studentId);
     if (match) return match.homeGroupCode;
     if (visitingSourceGroupCodes[studentId]) return visitingSourceGroupCodes[studentId];
@@ -1287,11 +1292,11 @@ export const InstructorAttendanceView: React.FC = () => {
     }
   };
 
-  const handleAddCrossGroupStudent = async () => {
-    if (!crossGroupStudentId || !selectedLecture || isLockedOrSubmitted || isBusy) return;
+  const handleAddCrossGroupStudent = async (selectedStudent: VisitingStudentLookupResult) => {
+    if (!selectedLecture || isLockedOrSubmitted || isBusy) return;
     // Verify eligibility again at click time; no duplicate roster row or
     // unrecognized/off-camp student can be added via the UI.
-    const stu = visitingMatches.find((s) => s.studentId === crossGroupStudentId);
+    const stu = visitingMatches.find((s) => s.studentId === selectedStudent.studentId);
     if (!stu) {
       setFeedback({ ok: false, text: t('The student is no longer eligible as a visitor.', 'الطالب غير متاح كزائر في هذه المحاضرة.') });
       return;
@@ -1341,8 +1346,9 @@ export const InstructorAttendanceView: React.FC = () => {
     setIsBusy(false);
     if (res.ok) {
       setVisitingSourceGroupCodes(prev => ({ ...prev, [stu.studentId]: stu.homeGroupCode }));
-      setCrossGroupStudentId('');
-      setCrossGroupSearch('');
+      setStudentSearch('');
+      setSecureVisitingMatches([]);
+      setLastCompletedVisitQuery('');
       setFeedback({
         ok: true,
         text: t(
@@ -1469,9 +1475,8 @@ export const InstructorAttendanceView: React.FC = () => {
                 // Search and visiting-student selections belong to the old
                 // lecture/group. Clear them before displaying the next roster.
                 setStudentSearch('');
-                setCrossGroupSearch('');
-                setCrossGroupStudentId('');
                 setSecureVisitingMatches([]);
+                setLastCompletedVisitQuery('');
                 setVisitingLookupError(null);
                 setShowMidcampEnrollForm(false);
                 setFeedback(null);
@@ -1540,168 +1545,107 @@ export const InstructorAttendanceView: React.FC = () => {
             </StatusBadge>
           </div>
 
-          {/* Search Roster + Visiting Cross-Group Student */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          {/* Single live search: home roster appears immediately below; the
+              scoped RPC returns visitors without exposing unassigned rosters. */}
+          <section aria-label={t('Find and mark student attendance', 'ابحث وسجل حضور طالب')}
+            className="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-3.5"
+          >
+            <label htmlFor="attendance-student-search" className="block text-sm font-bold text-slate-900 dark:text-white">
+              {t('Search student name or code — once', 'ابحث باسم الطالب أو الكود مرة واحدة')}
+            </label>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                id="attendance-student-search"
                 type="search"
                 value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-                placeholder={t('Filter students by name or code...', 'ابحث عن طالب بالاسم أو الكود...')}
-                aria-label={t('Filter roster students', 'بحث في كشف الطلاب')}
-                className={`${INPUT_CLASS} ps-9`}
+                onChange={(e) => {
+                  setStudentSearch(e.target.value);
+                  // Prevent results from an older search being added under a
+                  // newer query, especially while an RPC is in flight.
+                  setSecureVisitingMatches([]);
+                  setLastCompletedVisitQuery('');
+                  setVisitingLookupError(null);
+                }}
+                placeholder={t('Enter student name or ID code...', 'اكتب اسم الطالب أو الكود...')}
+                aria-label={t('Search students by name or code', 'البحث عن الطلاب بالاسم أو الكود')}
+                autoComplete="off"
+                className={`${INPUT_CLASS} ps-9 text-sm min-h-[44px]`}
               />
             </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t('Matching students in this attendance sheet appear below immediately. Other groups appear here after two characters.',
+                'طلاب الكشف الحالي بيظهروا تحت فورًا. وبعد حرفين بتظهر هنا نتائج المجموعات التانية.')}
+            </p>
+            {studentSearch.trim().length > 0 && (
+              <p role="status" className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                {t(`Matching students already on this sheet: ${filteredRecords.length}`,
+                  `طلاب مطابقين موجودين في الكشف: ${filteredRecords.length}`)}
+              </p>
+            )}
 
-            {!isLockedOrSubmitted && (
+            {!isLockedOrSubmitted && studentSearch.trim().length >= 2 && (
               <div className="space-y-2">
-                <label htmlFor="visiting-student-search" className={LABEL_CLASS}>
-                  {t('Visiting Student — Search All Camp Groups', 'طالب زائر — البحث في مجموعات المعسكر')}
-                </label>
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="visiting-student-search"
-                    type="search"
-                    value={crossGroupSearch}
-                    onChange={e => { setCrossGroupSearch(e.target.value); setCrossGroupStudentId(''); }}
-                    autoComplete="off"
-                    placeholder={t('Enter at least 2 letters of name or student code...', 'اكتب حرفين على الأقل من الاسم أو كود الطالب...')}
-                    className={`${INPUT_CLASS} ps-9`}
-                  />
-                </div>
                 {visitingSearchBusy && (
                   <p className="text-xs text-slate-500" role="status">
-                    {t('Searching other groups securely...', 'جاري البحث بشكل آمن في المجموعات التانية...')}
+                    {t('Searching other groups securely...', 'جاري البحث في المجموعات التانية...')}
                   </p>
                 )}
                 {visitingLookupError && (
                   <p className="text-xs text-rose-700 dark:text-rose-300" role="alert">
-                    {t('Secure visiting-student lookup is unavailable until the Staging server update is approved.',
-                      'البحث الآمن عن الطالب الزائر مش متاح لحد اعتماد تحديث السيرفر على Staging.')}
+                    {t('Visiting student search is currently unavailable. Try again later.',
+                      'البحث عن الطلاب الزائرين غير متاح حاليًا. حاول مرة تانية.')}
                   </p>
                 )}
-                {visitingMatches.length > 0 && (
-                  <div role="group" aria-label={t('Visiting student results', 'نتائج البحث عن الطلاب الزائرين')}
-                    className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    {visitingMatches.map(stu => (
-                      <button key={stu.studentId} type="button"
-                        onClick={() => setCrossGroupStudentId(stu.studentId)}
-                        aria-pressed={stu.studentId === crossGroupStudentId}
-                        className={`w-full text-start px-3 py-2.5 text-xs border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${
-                          stu.studentId === crossGroupStudentId
-                            ? 'bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-500'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}>
-                        <span className="block font-semibold text-slate-900 dark:text-white">{stu.fullName}</span>
-                        <span className="text-slate-500 font-mono">{stu.studentCode} · {t('Home group:', 'المجموعة الأصلية:')} {stu.homeGroupCode}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {crossGroupSearch.trim().length >= 2 && !visitingSearchBusy && !visitingLookupError && visitingMatches.length === 0 && (
-                  <p className="text-xs text-slate-500">
-                    {t('No student found in another group of this camp. Do not create duplicate student records.',
-                        'مفيش طالب مطابق في مجموعات المعسكر التانية. متضيفش بيانات طالب مكررة.')}
-                  </p>
-                )}
-                {selectedVisitingStudent && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 dark:border-blue-900 p-2.5">
-                    <span className="text-xs text-slate-700 dark:text-slate-200">
-                      {t('Selected:', 'الطالب المختار:')} <strong>{selectedVisitingStudent.fullName}</strong>
-                      {' · '}{t('Home group:', 'مجموعته:')} {selectedVisitingStudent.homeGroupCode}
-                    </span>
-                    <button type="button" disabled={isBusy} onClick={() => { void handleAddCrossGroupStudent(); }}
-                      className={BTN_SECONDARY}>
-                      <UserPlus className="w-4 h-4" />
-                      <span>{t('Mark Present as Visitor', 'تسجيل حاضر كزائر')}</span>
-                    </button>
-                  </div>
-                )}
-                <p className="text-xs text-slate-500">
-                  {t('The student keeps their original group. Once added, change Present to Late if needed. This is a local draft until safely synchronized.',
-                      'الطالب بيفضل تابع لمجموعته الأصلية. بعد الإضافة تقدر تغير حاضر إلى متأخر. التعديل مسودة محلية لحد المزامنة الآمنة.')}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
-          {!isLockedOrSubmitted && (
-            <section className={`${SURFACE_SUBTLE} rounded-lg p-3.5 space-y-3 text-xs`}>
-              <div className="flex flex-wrap justify-between items-center gap-3">
-                <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">
-                    {t('New Student Joining Mid-Camp', 'طالب جديد انضم أثناء المعسكر')}
-                  </h3>
-                  <p className="text-slate-500 mt-1">
-                    {t('Use only if the student does not already exist in another group. Group and join day are recorded by the server.',
-                        'استخدمها لو الطالب مش موجود أصلًا في أي مجموعة. السيرفر بيسجل المجموعة ويوم الانضمام تلقائيًا.')}
-                  </p>
-                </div>
-                <button type="button" onClick={() => setShowMidcampEnrollForm(v => !v)}
-                  className={BTN_SECONDARY}>
-                  <UserPlus className="w-4 h-4" />
-                  <span>{showMidcampEnrollForm ? t('Cancel', 'إلغاء') : t('Enroll New Student', 'إضافة طالب جديد')}</span>
-                </button>
-              </div>
-              {showMidcampEnrollForm && (
-                <form onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3">
-                  <p className="text-blue-700 dark:text-blue-300">
-                    {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
-                    {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="midcamp-name" className={LABEL_CLASS}>{t('Full Name', 'الاسم بالكامل')} *</label>
-                      <input id="midcamp-name" required minLength={3} maxLength={150}
-                        value={newStudentName} onChange={e => setNewStudentName(e.target.value)}
-                        className={INPUT_CLASS} autoComplete="off" />
-                    </div>
-                    <div>
-                      <label htmlFor="midcamp-code" className={LABEL_CLASS}>{t('Unique Student Code', 'كود الطالب الفريد')} *</label>
-                      <input id="midcamp-code" required minLength={3} maxLength={32}
-                        value={newStudentCode} onChange={e => setNewStudentCode(e.target.value)}
-                        className={INPUT_CLASS} autoComplete="off" />
-                    </div>
-                    <div>
-                      <label htmlFor="midcamp-university" className={LABEL_CLASS}>{t('University (Optional)', 'الجامعة (اختياري)')}</label>
-                      <input id="midcamp-university" maxLength={150}
-                        value={newStudentUniversity} onChange={e => setNewStudentUniversity(e.target.value)}
-                        className={INPUT_CLASS} />
-                    </div>
-                    <div>
-                      <label htmlFor="midcamp-reason" className={LABEL_CLASS}>{t('Enrollment Reason', 'سبب الإضافة')} *</label>
-                      <input id="midcamp-reason" required minLength={5} maxLength={400}
-                        placeholder={t('e.g. Joined on Day 4', 'مثال: انضم للمعسكر يوم 4')}
-                        value={newStudentReason} onChange={e => setNewStudentReason(e.target.value)}
-                        className={INPUT_CLASS} />
+                {visitingMatches.length > 0 && !visitingSearchBusy && (
+                  <div role="group" aria-label={t('Students from other groups', 'طلاب مجموعات أخرى')}
+                    className="space-y-2"
+                  >
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {t('Students from other groups — tap Add as visitor',
+                        'طلاب من جروبات تانية — اضغط إضافة كزائر')}
+                    </p>
+                    <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                      {visitingMatches.map(stu => (
+                        <div key={stu.studentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b last:border-b-0 border-slate-100 dark:border-slate-800">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{stu.fullName}</p>
+                            <p className="text-xs text-slate-500">
+                              <span className="font-mono">{stu.studentCode}</span>
+                              {' · '}{t('Home group:', 'المجموعة الأصلية:')} {stu.homeGroupCode}
+                            </p>
+                          </div>
+                          <button type="button" disabled={isBusy}
+                            onClick={() => { void handleAddCrossGroupStudent(stu); }}
+                            aria-label={t(`Add ${stu.fullName} as visitor`, `إضافة ${stu.fullName} كزائر`)}
+                            className={`${BTN_SECONDARY} min-h-[40px] shrink-0`}
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            <span>{t('Add as visitor', 'إضافة كزائر')}</span>
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  {activeCamp.status !== CampStatus.ACTIVE && (
-                    <p role="status" className="text-amber-800 dark:text-amber-300">
-                      {t('This camp is still Draft. Enrollment is disabled until activation.',
-                          'المعسكر لسه Draft. إضافة طالب جديد مش متاحة قبل التفعيل.')}
+                )}
+                {!visitingSearchBusy && !visitingLookupError &&
+                  lastCompletedVisitQuery === studentSearch.trim() &&
+                  visitingMatches.length === 0 && (
+                    <p className="text-xs text-slate-500" role="status">
+                      {t('No additional students found in other groups.',
+                        'مفيش طلاب مطابقين في مجموعات تانية.')}
                     </p>
                   )}
-                  <div className="flex justify-end">
-                    <button type="submit" disabled={isBusy || activeCamp.status !== CampStatus.ACTIVE}
-                      className={BTN_PRIMARY}>
-                      <UserPlus className="w-4 h-4" />
-                      <span>{t('Save Student to This Group', 'حفظ الطالب في المجموعة')}</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-            </section>
-          )}
+              </div>
+            )}
+          </section>
 
           {/* Student Touch Rows */}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {filteredRecords.length === 0 ? (
               <p className="py-6 text-xs text-slate-500 text-center">
-                {t('No matching students in roster.', 'لا يوجد طلاب مطابقون للبحث.')}
+                {t('No matching student on this sheet. See visitors above if a student belongs to another group.',
+                  'مفيش طالب مطابق في الكشف ده. بص على نتائج الطلاب الزائرين فوق لو من جروب تاني.')}
               </p>
             ) : (
               filteredRecords.map((rec) => (
@@ -1774,6 +1718,76 @@ export const InstructorAttendanceView: React.FC = () => {
               ))
             )}
           </div>
+
+          {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
+          {!isLockedOrSubmitted && (
+            <section className={`${SURFACE_SUBTLE} rounded-lg p-3.5 space-y-3 text-xs`}>
+              <div className="flex flex-wrap justify-between items-center gap-3">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white">
+                    {t('New Student Joining Mid-Camp', 'طالب جديد انضم أثناء المعسكر')}
+                  </h3>
+                  <p className="text-slate-500 mt-1">
+                    {t('Use only if the student does not already exist in another group. Group and join day are recorded by the server.',
+                        'استخدمها لو الطالب مش موجود أصلًا في أي مجموعة. السيرفر بيسجل المجموعة ويوم الانضمام تلقائيًا.')}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowMidcampEnrollForm(v => !v)}
+                  className={BTN_SECONDARY}>
+                  <UserPlus className="w-4 h-4" />
+                  <span>{showMidcampEnrollForm ? t('Cancel', 'إلغاء') : t('Enroll New Student', 'إضافة طالب جديد')}</span>
+                </button>
+              </div>
+              {showMidcampEnrollForm && (
+                <form onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3">
+                  <p className="text-blue-700 dark:text-blue-300">
+                    {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
+                    {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="midcamp-name" className={LABEL_CLASS}>{t('Full Name', 'الاسم بالكامل')} *</label>
+                      <input id="midcamp-name" required minLength={3} maxLength={150}
+                        value={newStudentName} onChange={e => setNewStudentName(e.target.value)}
+                        className={INPUT_CLASS} autoComplete="off" />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-code" className={LABEL_CLASS}>{t('Unique Student Code', 'كود الطالب الفريد')} *</label>
+                      <input id="midcamp-code" required minLength={3} maxLength={32}
+                        value={newStudentCode} onChange={e => setNewStudentCode(e.target.value)}
+                        className={INPUT_CLASS} autoComplete="off" />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-university" className={LABEL_CLASS}>{t('University (Optional)', 'الجامعة (اختياري)')}</label>
+                      <input id="midcamp-university" maxLength={150}
+                        value={newStudentUniversity} onChange={e => setNewStudentUniversity(e.target.value)}
+                        className={INPUT_CLASS} />
+                    </div>
+                    <div>
+                      <label htmlFor="midcamp-reason" className={LABEL_CLASS}>{t('Enrollment Reason', 'سبب الإضافة')} *</label>
+                      <input id="midcamp-reason" required minLength={5} maxLength={400}
+                        placeholder={t('e.g. Joined on Day 4', 'مثال: انضم للمعسكر يوم 4')}
+                        value={newStudentReason} onChange={e => setNewStudentReason(e.target.value)}
+                        className={INPUT_CLASS} />
+                    </div>
+                  </div>
+                  {activeCamp.status !== CampStatus.ACTIVE && (
+                    <p role="status" className="text-amber-800 dark:text-amber-300">
+                      {t('This camp is still Draft. Enrollment is disabled until activation.',
+                          'المعسكر لسه Draft. إضافة طالب جديد مش متاحة قبل التفعيل.')}
+                    </p>
+                  )}
+                  <div className="flex justify-end">
+                    <button type="submit" disabled={isBusy || activeCamp.status !== CampStatus.ACTIVE}
+                      className={BTN_PRIMARY}>
+                      <UserPlus className="w-4 h-4" />
+                      <span>{t('Save Student to This Group', 'حفظ الطالب في المجموعة')}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
 
           {!isLockedOrSubmitted && !canFinalizeAttendance && (
             <div role="status" className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-xs text-amber-900 dark:text-amber-200">
