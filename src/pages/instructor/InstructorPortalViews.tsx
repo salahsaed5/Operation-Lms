@@ -1067,6 +1067,7 @@ export const InstructorAttendanceView: React.FC = () => {
     saveAttendanceDraft,
     enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
+    reviewAttendanceDraft,
     t,
   } = useApp();
 
@@ -1098,6 +1099,11 @@ export const InstructorAttendanceView: React.FC = () => {
   const [newStudentReason, setNewStudentReason] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [comparisonRows, setComparisonRows] = useState<Array<{
+    studentId: string; studentCode: string; studentName: string;
+    localMark: string; serverMark: string; localNote?: string; serverNote?: string;
+  }> | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
 
   useEffect(() => {
     if (myLectures.length > 0 && !myLectures.some((l) => l.id === selectedLectureId)) {
@@ -1383,6 +1389,25 @@ export const InstructorAttendanceView: React.FC = () => {
       }
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const handleReviewDraftConflict = async () => {
+    if (!selectedLecture || isBusy || reviewBusy) return;
+    setReviewBusy(true);
+    setFeedback(null);
+    try {
+      const result = await reviewAttendanceDraft(selectedLecture.id);
+      if (!result.ok) {
+        setComparisonRows(null);
+        setFeedback({ ok: false, text: result.error || t(
+          'Could not compare draft versions.', 'تعذر مقارنة المسودتين.'
+        ) });
+      } else {
+        setComparisonRows(result.rows || []);
+      }
+    } finally {
+      setReviewBusy(false);
     }
   };
 
@@ -1716,6 +1741,76 @@ export const InstructorAttendanceView: React.FC = () => {
                 'تقدر تجهز كشف الحضور كمسودة. الاعتماد النهائي مقفول لحد تفعيل المعسكر وحلول موعد المحاضرة. الطلاب غير المحددين هيتحسبوا غياب عند الاعتماد.'
               )}
             </div>
+          )}
+
+          {!isLockedOrSubmitted && isSupabaseMode && (
+            <section className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {t('Compare Local vs Server Draft', 'مقارنة مسودة الجهاز بمسودة السيرفر')}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {t('Read-only review: does not upload, approve or replace any marks.',
+                      'مراجعة للقراءة فقط: مش هتبعت أو تعتمد أو تستبدل أي علامات حضور.')}
+                  </p>
+                </div>
+                <button type="button" className={BTN_SECONDARY}
+                  disabled={reviewBusy || isBusy}
+                  onClick={() => { void handleReviewDraftConflict(); }}>
+                  <RefreshCw className={`w-4 h-4 ${reviewBusy ? 'animate-spin' : ''}`} />
+                  <span>{reviewBusy ? t('Comparing...', 'جاري المقارنة...') :
+                    t('Review Differences', 'مراجعة الاختلافات')}</span>
+                </button>
+              </div>
+              {comparisonRows !== null && (
+                <div role="status" className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  {comparisonRows.length === 0 ? (
+                    <p className="p-3 text-xs text-emerald-700 dark:text-emerald-300">
+                      {t('No differences found at the time of review. This does not finalize attendance.',
+                          'مفيش اختلافات وقت المقارنة. ده مش اعتماد نهائي للحضور.')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2 p-3">
+                      <p className="text-xs font-bold text-amber-800 dark:text-amber-200">
+                        {t(`${comparisonRows.length} student differences; final submission remains protected.`,
+                           `فيه اختلافات تخص ${comparisonRows.length} طالب. الاعتماد النهائي محمي من استبدال البيانات بصمت.`)}
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-start">
+                          <thead className="bg-slate-100 dark:bg-slate-800">
+                            <tr>
+                              <th className="p-2 text-start">{t('Student / Code', 'الطالب / الكود')}</th>
+                              <th className="p-2 text-start">{t('On this device', 'على الجهاز')}</th>
+                              <th className="p-2 text-start">{t('On server', 'على السيرفر')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {comparisonRows.map(row => (
+                              <tr key={row.studentId} className="border-t border-slate-200 dark:border-slate-700">
+                                <td className="p-2"><strong>{row.studentName}</strong>
+                                  <span className="block font-mono text-slate-500">{row.studentCode}</span>
+                                </td>
+                                <td className="p-2 font-mono">{row.localMark}
+                                  {row.localNote && <span className="block font-sans text-slate-500">{row.localNote}</span>}
+                                </td>
+                                <td className="p-2 font-mono">{row.serverMark}
+                                  {row.serverNote && <span className="block font-sans text-slate-500">{row.serverNote}</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {t('Keep both versions unchanged. Review the marks with Admin before attempting final submission.',
+                           'هنسيب النسختين زي ما هما. راجع الاختلافات مع الإدارة قبل أي اعتماد نهائي.')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
           )}
 
           {!isLockedOrSubmitted && (
