@@ -346,6 +346,21 @@ interface AppContextValue {
 
   submitAndSyncAttendanceSheet: (lectureId: string) => Promise<ActionResult>;
 
+  // Read-only side-by-side comparison. Never writes server attendance.
+  reviewAttendanceDraft: (lectureId: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    rows?: {
+      studentId: string;
+      studentCode: string;
+      studentName: string;
+      localMark: string;
+      serverMark: string;
+      localNote?: string;
+      serverNote?: string;
+    }[];
+  }>;
+
   adminCorrectAttendanceRecord: (input: {
     sheetId: string;
     lectureId: string;
@@ -2633,6 +2648,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const reviewAttendanceDraft = async (lectureId: string): Promise<{
+    ok: boolean;
+    error?: string;
+    rows?: {
+      studentId: string;
+      studentCode: string;
+      studentName: string;
+      localMark: string;
+      serverMark: string;
+      localNote?: string;
+      serverNote?: string;
+    }[];
+  }> => {
+    if (!isSupabaseMode || !supabaseCtx || !activeCamp) {
+      return { ok: false, error: 'Server draft comparison requires an authenticated Staging connection.' };
+    }
+    if (auth.currentProfile.role !== UserRole.INSTRUCTOR || !auth.activeInstructorId) {
+      return { ok: false, error: 'Only the assigned Instructor can review their draft.' };
+    }
+    const lecture = lectures.find(l =>
+      l.id === lectureId && l.campId === activeCamp.id &&
+      (l.substituteInstructorId || l.instructorId) === auth.activeInstructorId
+    );
+    if (!lecture) return { ok: false, error: 'Lecture is not assigned to your Instructor account.' };
+
+    try {
+      // Use only the latest authorized server snapshot; the context sheet
+      // can be overlaid by this browser's offline IndexedDB draft.
+      const latest = await fetchOperationalSnapshot(supabaseCtx);
+      const remote = latest.attendanceSheets.find(sheet =>
+        sheet.lectureId === lectureId && sheet.campId === activeCamp.id);
+      if (!remote || remote.status !== AttendanceSheetStatus.DRAFT) {
+        return { ok: false, error: 'Server draft has already changed or was finalized. No data sent.' };
+      }
+      const localDraft = await getOfflineAttendanceDraft(lectureId);
+      if (!localDraft || localDraft.campId !== activeCamp.id ||
+          localDraft.instructorId !== auth.activeInstructorId) {
+        return { ok: false, error: 'No local draft exists for this Instructor and lecture.' };
+      }
+      const localById = new Map(localDraft.records.map(row => [row.studentId, row]));
+      const remoteById = new Map(remote.records.map(row => [row.studentId, row]));
+      const differentIds = compareAttendanceDraftRows(localDraft.records, remote.records);
+      const rows = differentIds.map(id => {
+        const local = localById.get(id);
+        const server = remoteById.get(id);
+        return {
+          studentId: id,
+          studentCode: local?.studentCode || server?.studentCode || id.slice(0,8),
+          studentName: local?.studentName || server?.studentName || 'Student',
+          localMark: local?.mark || 'unmarked',
+          serverMark: server?.mark || 'unmarked',
+          localNote: local?.note,
+          serverNote: server?.note,
+        };
+      });
+      return { ok: true, rows };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Unable to review drafts.' };
+    }
+  };
+
   const submitAndSyncAttendanceSheet = async (lectureId: string): Promise<ActionResult> => {
     if (!activeCamp) return { ok: false, error: 'No active camp selected.' };
     const sheet = attendanceSheets.find((s) => s.lectureId === lectureId);
@@ -3482,6 +3558,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reviewCheckinException,
         saveAttendanceDraft,
         submitAndSyncAttendanceSheet,
+        reviewAttendanceDraft,
         adminCorrectAttendanceRecord,
         reviewLectureEntitlement,
         reviewInstructorRequest,
