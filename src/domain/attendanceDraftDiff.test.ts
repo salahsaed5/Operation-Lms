@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareAttendanceDraftRows } from './attendanceDraftDiff';
+import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows } from './attendanceDraftDiff';
 import { AttendanceMark, type AttendanceRecordItem } from '../types/database';
 
 const row = (id: string, mark: AttendanceMark | 'unmarked'): AttendanceRecordItem => ({
@@ -47,4 +47,31 @@ test('note differences are material for audited attendance', () => {
   assert.deepEqual(compareAttendanceDraftRows(
     [{ ...row('1', AttendanceMark.LATE), note: 'Transport delay' }],
     [{ ...row('1', AttendanceMark.LATE), note: 'Medical' }]), ['1']);
+});
+
+test('local edits are not mistaken for concurrent changes when known baseline matches server', () => {
+  const expected = [row('1', AttendanceMark.ABSENT)];
+  const edited = [row('1', AttendanceMark.PRESENT)];
+  const server = [row('1', AttendanceMark.ABSENT)];
+  assert.deepEqual(compareAttendanceServerRows(expected, server), []);
+  assert.deepEqual(compareAttendanceDraftRows(edited, server), ['1']);
+});
+
+test('concurrent server changes are rejected relative to baseline', () => {
+  const baseline = [row('1', AttendanceMark.PRESENT)];
+  const serverChanged = [row('1', AttendanceMark.LATE)];
+  assert.deepEqual(compareAttendanceServerRows(baseline, serverChanged), ['1']);
+});
+
+test('unmarked roster placeholders never appear in persisted server comparisons', () => {
+  const local = [row('1', AttendanceMark.PRESENT), row('2', 'unmarked')];
+  const server = [row('1', AttendanceMark.PRESENT)];
+  assert.deepEqual(persistedAttendanceRows(local).map(r => r.studentId), ['1']);
+  assert.deepEqual(compareAttendanceServerRows(local, server), []);
+});
+
+test('legacy offline draft without a baseline must match server to be safe', () => {
+  const local = [row('1', AttendanceMark.LATE)];
+  const server = [row('1', AttendanceMark.PRESENT)];
+  assert.deepEqual(compareAttendanceServerRows(local, server), ['1']);
 });
