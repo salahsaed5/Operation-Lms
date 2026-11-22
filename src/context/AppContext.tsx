@@ -2597,6 +2597,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           expected: remote.records,
           desired: records,
         });
+        syncState = OfflineSyncState.SYNCED;
+        await saveOfflineAttendanceDraft({
+          lectureId,
+          campId: activeCamp.id,
+          instructorId: lec.substituteInstructorId || lec.instructorId,
+          idempotencyKey,
+          syncState,
+          records,
+          updatedAt: new Date().toISOString(),
+        });
       } catch (err) {
         syncState = OfflineSyncState.FAILED;
         dbSyncError =
