@@ -14,6 +14,7 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { calculateInstructorFinancialStatement } from '../../domain/instructorFinance';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
@@ -2035,7 +2036,10 @@ export const InstructorAttendanceView: React.FC = () => {
 export const InstructorProfileAndSectionsView: React.FC = () => {
   const {
     auth,
+    activeCamp,
+    financeSnapshot,
     instructors,
+    lectures,
     groups,
     surveys,
     entitlements,
@@ -2065,6 +2069,19 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   const myGroups = groups.filter((g) => g.primaryInstructorId === currentInstructor.id);
   const mySurveys = surveys.filter((s) => s.instructorId === currentInstructor.id);
   const myEntitlements = entitlements.filter((e) => e.instructorId === currentInstructor.id);
+  const myFinance = activeCamp && financeSnapshot.enabled
+    ? calculateInstructorFinancialStatement({
+        campId:activeCamp.id,instructor:currentInstructor,
+        lectures,entitlements:myEntitlements,
+        backups:financeSnapshot.backups.filter(b=>b.instructorId===currentInstructor.id),
+        payments:financeSnapshot.payments.filter(p=>p.instructorId===currentInstructor.id),
+        policies:financeSnapshot.policies,
+      })
+    : null;
+  const myBackupSessions = financeSnapshot.backups.filter(b=>
+    b.instructorId===currentInstructor.id && b.campId===activeCamp?.id);
+  const myRecordedPayments = financeSnapshot.payments.filter(p=>
+    p.instructorId===currentInstructor.id && p.campId===activeCamp?.id);
   const myRequests = requests.filter((r) => r.instructorId === currentInstructor.id);
 
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -2199,6 +2216,56 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي (جنيه مصري)')}
           </h2>
+          {myFinance ? (
+            <div aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t(
+                'Only your own records are visible. Confirmed amounts include main, approved backup and once-daily primary transportation. Pending sums are not payable yet.',
+                'اللي ظاهر هنا حسابك إنت بس. المؤكد يشمل الأساسي والباك أب المعتمد وانتقالات أيام الأساسي مرة واحدة. المعلق مش ضمن المستحق.'
+              )}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  {en:'Confirmed total',ar:'إجمالي المستحق المؤكد',n:myFinance.confirmedTotalEgp},
+                  {en:'Paid',ar:'المدفوع',n:myFinance.paidEgp},
+                  {en:'Remaining',ar:'المتبقي',n:myFinance.balanceEgp},
+                  {en:'Pending estimate',ar:'المعلق تقديري',n:myFinance.pendingEstimateEgp},
+                ].map(x=><div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3" key={x.en}>
+                  <p className="text-xs text-slate-500">{t(x.en,x.ar)}</p>
+                  <p className="text-base font-bold tabular-nums mt-1">{x.n.toLocaleString()} EGP</p>
+                </div>)}
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                {[
+                  {en:'Main',ar:'أساسي',n:myFinance.primaryEgp},
+                  {en:'Backup',ar:'باك أب',n:myFinance.backupEgp},
+                  {en:'Transport',ar:'انتقالات',n:myFinance.transportEgp},
+                ].map(x=><div key={x.en} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3">
+                  <p className="text-slate-500">{t(x.en,x.ar)}</p>
+                  <p className="font-bold mt-1 tabular-nums">{x.n.toLocaleString()} EGP</p>
+                </div>)}
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-bold text-sm">{t('My backup sessions','محاضراتي كـ باك أب')}</h3>
+                {myBackupSessions.length===0 && <p className="text-slate-500">{t('No backup sessions recorded','لا يوجد باك أب مسجل')}</p>}
+                {myBackupSessions.map(b=><div key={b.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>{t('Day','يوم')} {b.campDay} · {lectures.find(l=>l.id===b.lectureId)?.topic||''}</span>
+                  <span className="font-semibold">{b.frozenRateEgp} EGP · {b.status}</span>
+                </div>)}
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-bold text-sm">{t('My recorded payments','الدفعات المسجلة لي')}</h3>
+                {myRecordedPayments.length===0&&<p className="text-slate-500">{t('No payments yet','مفيش دفعات مسجلة')}</p>}
+                {myRecordedPayments.map(p=><div key={p.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>{new Date(p.createdAt).toLocaleDateString()} · {p.method}</span>
+                  <strong>{p.amountEgp.toLocaleString()} EGP</strong>
+                </div>)}
+              </div>
+            </div>
+          ) : (
+            <p role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300">
+              {t('Detailed backup, transport and payment history will become available after the Finance migration is reviewed and activated.',
+                'تفاصيل الباك أب والانتقالات والمدفوعات هتظهر بعد مراجعة وتفعيل تحديث Finance في قاعدة البيانات.')}
+            </p>
+          )}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {myEntitlements.length === 0 ? (
               <p className="py-4 text-slate-500">{t('No entitlement records yet.', 'لا توجد مستحقات مسجلة بعد.')}</p>
