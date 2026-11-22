@@ -47,11 +47,14 @@ export function buildCampAttendanceWorkbook(input: {
   const codeOf = (groupId:string) =>
     groups.find(g => g.id === groupId && g.campId === camp.id)?.code || 'Unknown';
   const generated = new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'});
+  // A draft or active Camp is never represented as a signed final handover.
+  const provisional = camp.status !== 'archived' || grid.pendingLectures > 0;
+  const reportState = provisional ? 'PROVISIONAL — NOT FINAL' : 'FINAL';
   const subtitle = camp.code + ' | ' + camp.nameEn + ' | ' + camp.startDate +
-    ' to ' + camp.endDate + ' | Cairo generated ' + generated;
+    ' to ' + camp.endDate + ' | ' + reportState + ' | Cairo generated ' + generated;
 
   const summaryRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  OFFICIAL CAMP ATTENDANCE REPORT',8),
+    headingRow('OPERATION LMS  |  ' + reportState + ' CAMP ATTENDANCE REPORT',8),
     subheadingRow(subtitle,8),
     Array.from({length:8},blank),
     [c('CAMP SUMMARY',3),c('Value',3)],
@@ -87,7 +90,7 @@ export function buildCampAttendanceWorkbook(input: {
   };
 
   const dailyRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  TEN-DAY STUDENT ATTENDANCE',18),
+    headingRow('OPERATION LMS  |  ' + reportState + ' TEN-DAY ATTENDANCE',18),
     subheadingRow(subtitle,18),
     subheadingRow('P = Present | L = Late | A = Absent | E = Excused | Pending = Not Final | — = Not Applicable',18),
     [
@@ -136,7 +139,7 @@ export function buildCampAttendanceWorkbook(input: {
   const relevantLectures=lectures.filter(l=>l.campId===camp.id && l.status!=='cancelled')
     .sort((a,b)=>a.campDay-b.campDay || a.periodNumber-b.periodNumber);
   const detailRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  LECTURE-LEVEL AUDIT',10),
+    headingRow('OPERATION LMS  |  ' + reportState + ' LECTURE AUDIT',10),
     subheadingRow(subtitle,10),
     subheadingRow('Only Submitted/Locked attendance is counted in the daily attendance sheet',10),
     [
