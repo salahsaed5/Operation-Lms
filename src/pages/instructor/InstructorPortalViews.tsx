@@ -16,7 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
-import { compressSelfieUnderLimit, getSignedSelfieUrl } from '../../services/citsRepository';
+import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
   AttendanceRecordItem,
@@ -1062,6 +1062,7 @@ export const InstructorAttendanceView: React.FC = () => {
     studentTransfers,
     groups,
     attendanceSheets,
+    isSupabaseMode,
     saveAttendanceDraft,
     submitAndSyncAttendanceSheet,
     t,
@@ -1084,6 +1085,10 @@ export const InstructorAttendanceView: React.FC = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [crossGroupStudentId, setCrossGroupStudentId] = useState<string>('');
   const [crossGroupSearch, setCrossGroupSearch] = useState('');
+  const [secureVisitingMatches, setSecureVisitingMatches] = useState<VisitingStudentLookupResult[]>([]);
+  const [visitingLookupError, setVisitingLookupError] = useState<string | null>(null);
+  const [visitingSearchBusy, setVisitingSearchBusy] = useState(false);
+  const [visitingSourceGroupCodes, setVisitingSourceGroupCodes] = useState<Record<string,string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -1094,6 +1099,35 @@ export const InstructorAttendanceView: React.FC = () => {
       setSelectedLectureId(preferred.id);
     }
   }, [myLectures, selectedLectureId, activeCamp?.currentCampDay]);
+
+  // RLS intentionally restricts direct students reads to assigned groups.
+  // Use a narrowly authorized, lecture-scoped RPC for visitors; never widen RLS.
+  useEffect(() => {
+    let cancelled = false;
+    const term = crossGroupSearch.trim();
+    if (!isSupabaseMode || !selectedLectureId || term.length < 2) {
+      setSecureVisitingMatches([]);
+      setVisitingLookupError(null);
+      setVisitingSearchBusy(false);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setVisitingSearchBusy(true);
+      setVisitingLookupError(null);
+      try {
+        const rows = await searchVisitingStudentsInDb({ lectureId: selectedLectureId, query: term });
+        if (!cancelled) setSecureVisitingMatches(rows);
+      } catch (err) {
+        if (!cancelled) {
+          setSecureVisitingMatches([]);
+          setVisitingLookupError(err instanceof Error ? err.message : 'Secure lookup is not available.');
+        }
+      } finally {
+        if (!cancelled) setVisitingSearchBusy(false);
+      }
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [isSupabaseMode, selectedLectureId, crossGroupSearch]);
 
   if (!activeCamp || !currentInstructor) {
     return (
@@ -1183,24 +1217,37 @@ export const InstructorAttendanceView: React.FC = () => {
       )
     : [];
 
-  // Do not list every student in the camp until the instructor deliberately
-  // searches. Keep the search scoped to this active Camp, not all student data.
-  const visitingMatches = crossGroupSearch.trim().length >= 2
-    ? eligibleCrossGroupStudents.filter(stu => {
-        const q = crossGroupSearch.trim().toLocaleLowerCase();
-        const g = groups.find(grp => grp.id === stu.groupId);
-        return stu.fullName.toLocaleLowerCase().includes(q) ||
-          stu.studentCode.toLocaleLowerCase().includes(q) ||
-          (g?.code.toLocaleLowerCase().includes(q) ?? false);
-      }).slice(0, 12)
-    : [];
-  const selectedVisitingStudent = eligibleCrossGroupStudents.find(s => s.id === crossGroupStudentId);
+  const visitingMatches: VisitingStudentLookupResult[] = isSupabaseMode
+    ? secureVisitingMatches.filter(stu =>
+        !rosterStudentIds.has(stu.studentId) &&
+        stu.homeGroupId !== selectedLecture?.groupId)
+    : crossGroupSearch.trim().length >= 2
+      ? eligibleCrossGroupStudents.filter(stu => {
+          const q = crossGroupSearch.trim().toLocaleLowerCase();
+          const home = groups.find(g => g.id === stu.groupId);
+          return stu.fullName.toLocaleLowerCase().includes(q) ||
+            stu.studentCode.toLocaleLowerCase().includes(q) ||
+            (home?.code.toLocaleLowerCase().includes(q) ?? false);
+        }).slice(0, 12).map(stu => {
+          const homeGroupId = selectedLecture ? resolveStudentOriginGroupForDay({
+            student: stu, transfers: studentTransfers, campDay: selectedLecture.campDay
+          }) : stu.groupId;
+          return {
+            studentId: stu.id, studentCode: stu.studentCode, fullName: stu.fullName,
+            homeGroupId,
+            homeGroupCode: groups.find(g => g.id === homeGroupId)?.code || 'Unknown',
+          };
+        })
+      : [];
+
+  const selectedVisitingStudent = visitingMatches.find(s => s.studentId === crossGroupStudentId);
   const visitingGroupName = (studentId: string) => {
-    const student = students.find(s => s.id === studentId);
-    const groupId = student && selectedLecture ? resolveStudentOriginGroupForDay({
-      student, transfers: studentTransfers, campDay: selectedLecture.campDay,
-    }) : student?.groupId;
-    return groups.find(group => group.id === groupId)?.code || t('Another group', 'مجموعة أخرى');
+    const match = visitingMatches.find(s => s.studentId === studentId);
+    if (match) return match.homeGroupCode;
+    if (visitingSourceGroupCodes[studentId]) return visitingSourceGroupCodes[studentId];
+    const rec = baseRecords.find(r => r.studentId === studentId);
+    return groups.find(g => g.id === rec?.originGroupId)?.code ||
+      t('another group', 'مجموعة أخرى');
   };
 
   const handleMarkChange = async (
@@ -1229,7 +1276,7 @@ export const InstructorAttendanceView: React.FC = () => {
     if (!crossGroupStudentId || !selectedLecture || isLockedOrSubmitted || isBusy) return;
     // Verify eligibility again at click time; no duplicate roster row or
     // unrecognized/off-camp student can be added via the UI.
-    const stu = eligibleCrossGroupStudents.find((s) => s.id === crossGroupStudentId);
+    const stu = visitingMatches.find((s) => s.studentId === crossGroupStudentId);
     if (!stu) {
       setFeedback({ ok: false, text: t('The student is no longer eligible as a visitor.', 'الطالب غير متاح كزائر في هذه المحاضرة.') });
       return;
@@ -1239,7 +1286,7 @@ export const InstructorAttendanceView: React.FC = () => {
       const otherLecture = myLectures.find(l => l.id === sheet.lectureId);
       // Cross-instructor same-period conflicts are verified again on server
       // during finalization; this local check can only see permitted sheets.
-      const record = sheet.records.find(r => r.studentId === stu.id);
+      const record = sheet.records.find(r => r.studentId === stu.studentId);
       return Boolean(otherLecture && otherLecture.campDay === selectedLecture.campDay &&
         otherLecture.periodNumber === selectedLecture.periodNumber &&
         record && record.mark !== 'unmarked' && record.mark !== AttendanceMark.ABSENT);
@@ -1252,19 +1299,19 @@ export const InstructorAttendanceView: React.FC = () => {
       return;
     }
 
-    const originGroupId = resolveStudentOriginGroupForDay({
-      student: stu,
-      transfers: studentTransfers,
-      campDay: selectedLecture.campDay,
-    });
+    const originGroupId = stu.homeGroupId;
+    if (originGroupId === selectedLecture.groupId || baseRecords.some(r => r.studentId === stu.studentId)) {
+      setFeedback({ ok: false, text: t('Student already belongs to this lecture.', 'الطالب موجود بالفعل في كشف المحاضرة.') });
+      return;
+    }
 
     const added: AttendanceRecordItem = {
-      studentId: stu.id,
+      studentId: stu.studentId,
       studentCode: stu.studentCode,
       studentName: stu.fullName,
       originGroupId,
       attendedGroupId: selectedLecture.groupId,
-      isCrossGroup: originGroupId !== selectedLecture.groupId,
+      isCrossGroup: true,
       mark: AttendanceMark.PRESENT,
     };
 
@@ -1276,6 +1323,7 @@ export const InstructorAttendanceView: React.FC = () => {
     );
     setIsBusy(false);
     if (res.ok) {
+      setVisitingSourceGroupCodes(prev => ({ ...prev, [stu.studentId]: stu.homeGroupCode }));
       setCrossGroupStudentId('');
       setCrossGroupSearch('');
       setFeedback({
@@ -1414,25 +1462,36 @@ export const InstructorAttendanceView: React.FC = () => {
                     className={`${INPUT_CLASS} ps-9`}
                   />
                 </div>
+                {visitingSearchBusy && (
+                  <p className="text-xs text-slate-500" role="status">
+                    {t('Searching other groups securely...', 'جاري البحث بشكل آمن في المجموعات التانية...')}
+                  </p>
+                )}
+                {visitingLookupError && (
+                  <p className="text-xs text-rose-700 dark:text-rose-300" role="alert">
+                    {t('Secure visiting-student lookup is unavailable until the Staging server update is approved.',
+                      'البحث الآمن عن الطالب الزائر مش متاح لحد اعتماد تحديث السيرفر على Staging.')}
+                  </p>
+                )}
                 {visitingMatches.length > 0 && (
                   <div role="group" aria-label={t('Visiting student results', 'نتائج البحث عن الطلاب الزائرين')}
                     className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
                     {visitingMatches.map(stu => (
-                      <button key={stu.id} type="button"
-                        onClick={() => setCrossGroupStudentId(stu.id)}
-                        aria-pressed={stu.id === crossGroupStudentId}
+                      <button key={stu.studentId} type="button"
+                        onClick={() => setCrossGroupStudentId(stu.studentId)}
+                        aria-pressed={stu.studentId === crossGroupStudentId}
                         className={`w-full text-start px-3 py-2.5 text-xs border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${
-                          stu.id === crossGroupStudentId
+                          stu.studentId === crossGroupStudentId
                             ? 'bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-500'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800'
                         }`}>
                         <span className="block font-semibold text-slate-900 dark:text-white">{stu.fullName}</span>
-                        <span className="text-slate-500 font-mono">{stu.studentCode} · {t('Home group:', 'المجموعة الأصلية:')} {visitingGroupName(stu.id)}</span>
+                        <span className="text-slate-500 font-mono">{stu.studentCode} · {t('Home group:', 'المجموعة الأصلية:')} {stu.homeGroupCode}</span>
                       </button>
                     ))}
                   </div>
                 )}
-                {crossGroupSearch.trim().length >= 2 && visitingMatches.length === 0 && (
+                {crossGroupSearch.trim().length >= 2 && !visitingSearchBusy && !visitingLookupError && visitingMatches.length === 0 && (
                   <p className="text-xs text-slate-500">
                     {t('No student found in another group of this camp. Do not create duplicate student records.',
                         'مفيش طالب مطابق في مجموعات المعسكر التانية. متضيفش بيانات طالب مكررة.')}
@@ -1442,7 +1501,7 @@ export const InstructorAttendanceView: React.FC = () => {
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 dark:border-blue-900 p-2.5">
                     <span className="text-xs text-slate-700 dark:text-slate-200">
                       {t('Selected:', 'الطالب المختار:')} <strong>{selectedVisitingStudent.fullName}</strong>
-                      {' · '}{t('Home group:', 'مجموعته:')} {visitingGroupName(selectedVisitingStudent.id)}
+                      {' · '}{t('Home group:', 'مجموعته:')} {selectedVisitingStudent.homeGroupCode}
                     </span>
                     <button type="button" disabled={isBusy} onClick={() => { void handleAddCrossGroupStudent(); }}
                       className={BTN_SECONDARY}>
