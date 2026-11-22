@@ -752,6 +752,7 @@ export const InstructorCheckinView: React.FC = () => {
   };
 
   const captureLiveSelfie = async () => {
+    const captureRequestId = cameraRequestIdRef.current;
     const video = videoRef.current;
     if (!video || !cameraStreamRef.current || video.videoWidth <= 0 || video.videoHeight <= 0) {
       setResultMsg({
@@ -782,6 +783,8 @@ export const InstructorCheckinView: React.FC = () => {
       });
       const file = new File([photo], 'live-selfie.jpg', { type: 'image/jpeg' });
       const compressed = await compressSelfieUnderLimit(file, activeCamp.settings.maxSelfieKb);
+      // Ignore delayed compression if the user navigated away or cancelled camera.
+      if (captureRequestId !== cameraRequestIdRef.current) return;
       const url = URL.createObjectURL(compressed.blob);
       if (selfiePreviewUrlRef.current) URL.revokeObjectURL(selfiePreviewUrlRef.current);
       selfiePreviewUrlRef.current = url;
@@ -790,6 +793,7 @@ export const InstructorCheckinView: React.FC = () => {
       setSelfieSizeKb(compressed.sizeKb);
       setSelfieExt(compressed.ext);
       setSelfieMime(compressed.mimeType);
+      setCameraCapturing(false);
       closeCamera();
       setResultMsg({
         ok: true,
@@ -799,12 +803,14 @@ export const InstructorCheckinView: React.FC = () => {
         ),
       });
     } catch (err) {
-      setResultMsg({
-        ok: false,
-        text: err instanceof Error ? err.message : t('Camera capture failed.', 'تعذر التقاط الصورة.'),
-      });
+      if (captureRequestId === cameraRequestIdRef.current) {
+        setResultMsg({
+          ok: false,
+          text: err instanceof Error ? err.message : t('Camera capture failed.', 'تعذر التقاط الصورة.'),
+        });
+      }
     } finally {
-      setCameraCapturing(false);
+      if (captureRequestId === cameraRequestIdRef.current) setCameraCapturing(false);
     }
   };
 
