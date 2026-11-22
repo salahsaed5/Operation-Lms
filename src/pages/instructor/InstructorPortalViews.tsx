@@ -817,13 +817,9 @@ export const InstructorCheckinView: React.FC = () => {
       setSelfieMime(compressed.mimeType);
       setCameraCapturing(false);
       closeCamera();
-      setResultMsg({
-        ok: true,
-        text: t(
-          `Live selfie captured (${compressed.sizeKb} KB). Review it before submitting check-in.`,
-          `اتصورت صورة مباشرة بالكاميرا (${compressed.sizeKb} كيلوبايت). راجعها قبل تأكيد الوصول.`
-        ),
-      });
+      // The photo thumbnail already confirms capture. Do not show a green
+      // success banner here: venue location may still be UNVERIFIED/OUTSIDE.
+      // Only final server-side check-in can show an attendance success banner.
     } catch (err) {
       if (captureRequestId === cameraRequestIdRef.current) {
         setResultMsg({
