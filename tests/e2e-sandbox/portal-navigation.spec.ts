@@ -231,51 +231,77 @@ test('Admin attendance shows compact server summary and on-demand corrections, f
   expect(runtimeErrors).toEqual([]);
 });
 
-test('Admin Finance summarizes instructors, edits future rate only and provides audited lecture drill-down', async ({ page }) => {
+test('Admin Finance reconciles primary, backup, transportation and immutable payments with Instructor self-view', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', error => runtimeErrors.push(error.message));
   await page.goto('/');
-  const nav = page.getByRole('complementary', { name: 'Admin modules navigation' });
-  await nav.getByRole('button', { name: 'Finance', exact: true }).click();
-  const statement = page.getByRole('region', { name: 'Instructor financial statements' });
-  await expect(statement.getByText('Instructor financial statements')).toBeVisible();
-  await expect(statement.getByText('Verified entitlement total')).toBeVisible();
-  await expect(statement.getByText('Potential if pending approved')).toBeVisible();
-  const instructorTable = statement.getByRole('table');
-  const ahmed = instructorTable.getByRole('row').filter({ hasText: 'Dr. Ahmed Khalil' });
+  const nav=page.getByRole('complementary',{name:'Admin modules navigation'});
+  await nav.getByRole('button',{name:'Finance',exact:true}).click();
+  const finance=page.getByRole('region',{name:'Complete instructor finance and settlements'});
+  await expect(finance).toBeVisible();
+  const table=finance.getByRole('table',{name:'Instructor payment statement'});
+  const ahmed=table.getByRole('row').filter({hasText:'Dr. Ahmed Khalil'});
+  const karim=table.getByRole('row').filter({hasText:'Eng. Karim Adel'});
   await expect(ahmed).toBeVisible();
-  const verifiedBefore = await ahmed.locator('td').nth(6).innerText();
-  const scheduledBefore = await ahmed.locator('td').nth(1).innerText();
-  await expect(ahmed.locator('td').nth(5)).toContainText('750 EGP');
+  await expect(karim).toBeVisible();
+  await expect(ahmed.locator('td').nth(4)).toContainText('750 EGP'); // primary
+  await expect(ahmed.locator('td').nth(6)).toContainText('100 EGP'); // transport once
+  await expect(ahmed.locator('td').nth(7)).toContainText('850 EGP'); // gross
+  await expect(ahmed.locator('td').nth(8)).toContainText('250 EGP'); // paid
+  await expect(ahmed.locator('td').nth(9)).toContainText('600 EGP'); // balance
+  await expect(karim.locator('td').nth(5)).toContainText('150 EGP'); // backup only
+  await expect(karim.locator('td').nth(6)).toContainText('0 EGP'); // no transport
 
-  // Search filters the grouped ledger by instructor code without altering totals.
-  const search = statement.getByRole('searchbox', { name: 'Find instructor statement' });
-  await search.fill('a-name-that-does-not-exist-73768');
-  await expect(statement.getByText('No instructors match this search.')).toBeVisible();
+  const search=finance.getByRole('searchbox',{name:'Search instructor accounts'});
+  await search.fill('a-name-that-does-not-exist-73831');
+  await expect(finance.getByText('No matching instructor')).toBeVisible();
   await search.fill('Ahmed Khalil');
   await expect(ahmed).toBeVisible();
-  await ahmed.getByRole('button', { name: 'Edit rate' }).click();
-  const rateInput = page.getByRole('spinbutton', { name: 'New default EGP / lecture' });
-  await expect(rateInput).toHaveValue('750');
-  await rateInput.fill('900');
-  await page.getByRole('button', { name: 'Save future rate' }).click();
-  await expect(ahmed.locator('td').nth(5)).toContainText('900 EGP');
-  await expect(ahmed.locator('td').nth(6)).toHaveText(verifiedBefore);
-  await expect(ahmed.locator('td').nth(1)).toHaveText(scheduledBefore);
-  await expect(page.getByText(/Previously scheduled lectures and verified financial amounts remain unchanged/))
-    .toBeVisible();
+  await finance.getByRole('combobox',{name:'Select instructor for primary rate edit'}).selectOption('inst-1');
+  await finance.getByRole('spinbutton',{name:'New primary default rate'}).fill('900');
+  await finance.getByRole('button',{name:'Update',exact:true}).click();
+  await expect(finance.getByText(/Future primary lecture rate saved/)).toBeVisible();
+  await expect(ahmed.locator('td').nth(7)).toContainText('850 EGP'); // frozen past preserved
+  await search.clear();
 
-  await ahmed.getByRole('button', { name: 'Lectures' }).click();
-  const detail = page.getByRole('region', { name: 'Individual lecture entitlement ledger' });
-  await expect(detail.getByText('Individual lecture decisions')).toBeVisible();
-  await expect(detail.getByText('Viewing lectures for:')).toBeVisible();
-  await detail.getByRole('button', { name: 'Show all instructors' }).click();
-  await detail.getByRole('button', { name: 'Hide lecture details' }).click();
-  await expect(detail.getByRole('button', { name: 'Show lecture details' })).toBeVisible();
+  await ahmed.getByRole('button',{name:'View account'}).click();
+  const detail=finance.getByRole('region',{name:'Selected instructor financial detail'});
+  await expect(detail.getByText('Payment history — immutable')).toBeVisible();
+  await expect(detail.getByText('Demo partial settlement')).toBeVisible();
 
-  // Number of lectures is changed in Schedule, never via fake ledger quantities.
-  await statement.getByRole('button', { name: 'Open Schedule' }).click();
-  await expect(nav.getByRole('button', { name: 'Schedule', exact: true }))
-    .toHaveAttribute('aria-current', 'page');
+  const payment=finance.getByRole('region',{name:'Payment and settlement entry'});
+  await payment.getByRole('combobox',{name:'Select payment instructor'}).selectOption('inst-1');
+  await payment.getByRole('spinbutton',{name:'Payment amount EGP'}).fill('200');
+  await payment.getByRole('textbox',{name:'Payment audit note'}).fill('Second partial payment');
+  await payment.getByRole('button',{name:'Review & post transaction'}).click();
+  await page.getByRole('button',{name:'Post transaction'}).click();
+  await expect(ahmed.locator('td').nth(8)).toContainText('450 EGP');
+  await expect(ahmed.locator('td').nth(9)).toContainText('400 EGP');
+  await expect(finance.getByText('Second partial payment')).toBeVisible();
+
+  // Record a new unscheduled backup: no Instructor Schedule / Group assignment.
+  const rateConfig=finance.getByRole('region',{name:'Finance setup and audit actions'});
+  await rateConfig.getByRole('combobox',{name:'Backup lecture'}).selectOption('lec-d4-p2-g1');
+  await rateConfig.getByRole('combobox',{name:'Backup instructor'}).selectOption('inst-3');
+  await rateConfig.getByRole('textbox',{name:'Attendance evidence / reason'}).fill('Supported after lunch during second period');
+  await rateConfig.getByRole('button',{name:'Record backup (pending)'}).click();
+  await expect(finance.getByText(/Backup session recorded as Pending Review/)).toBeVisible();
+  await expect(karim.locator('td').nth(5)).toContainText('150 EGP'); // still only approved
+  await search.fill('Karim Adel');
+  await karim.getByRole('button',{name:'View account'}).click();
+  await expect(finance.getByRole('region',{name:'Selected instructor financial detail'})).toContainText('Pending review');
+
+  // Main/backup details are private to the signed-in Instructor.
+  await nav.getByRole('button',{name:'Logout'}).click();
+  await page.getByRole('region',{name:'Local sandbox account selector'})
+    .getByRole('button',{name:/Instructor.*Ahmed Khalil/}).first().click();
+  await page.getByRole('navigation',{name:'Instructor navigation'})
+    .getByRole('button',{name:'Profile',exact:true}).click();
+  await page.getByRole('button',{name:'Entitlement History'}).click();
+  const own=page.getByRole('region',{name:'My complete finance account'});
+  await expect(own).toBeVisible();
+  await expect(own.getByText('450 EGP')).toBeVisible();
+  await expect(own.getByText('400 EGP')).toBeVisible();
+  await expect(own).not.toContainText('Eng. Karim Adel');
   expect(runtimeErrors).toEqual([]);
 });
