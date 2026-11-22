@@ -230,3 +230,52 @@ test('Admin attendance shows compact server summary and on-demand corrections, f
   await expect(cards.first()).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Admin Finance summarizes instructors, edits future rate only and provides audited lecture drill-down', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', error => runtimeErrors.push(error.message));
+  await page.goto('/');
+  const nav = page.getByRole('complementary', { name: 'Admin modules navigation' });
+  await nav.getByRole('button', { name: 'Finance', exact: true }).click();
+  const statement = page.getByRole('region', { name: 'Instructor financial statements' });
+  await expect(statement.getByText('Instructor financial statements')).toBeVisible();
+  await expect(statement.getByText('Verified entitlement total')).toBeVisible();
+  await expect(statement.getByText('Potential if pending approved')).toBeVisible();
+  const instructorTable = statement.getByRole('table');
+  const ahmed = instructorTable.getByRole('row').filter({ hasText: 'Dr. Ahmed Khalil' });
+  await expect(ahmed).toBeVisible();
+  const verifiedBefore = await ahmed.locator('td').nth(6).innerText();
+  const scheduledBefore = await ahmed.locator('td').nth(1).innerText();
+  await expect(ahmed.locator('td').nth(5)).toContainText('750 EGP');
+
+  // Search filters the grouped ledger by instructor code without altering totals.
+  const search = statement.getByRole('searchbox', { name: 'Find instructor statement' });
+  await search.fill('a-name-that-does-not-exist-73768');
+  await expect(statement.getByText('No instructors match this search.')).toBeVisible();
+  await search.fill('Ahmed Khalil');
+  await expect(ahmed).toBeVisible();
+  await ahmed.getByRole('button', { name: 'Edit rate' }).click();
+  const rateInput = page.getByRole('spinbutton', { name: 'New default EGP / lecture' });
+  await expect(rateInput).toHaveValue('750');
+  await rateInput.fill('900');
+  await page.getByRole('button', { name: 'Save future rate' }).click();
+  await expect(ahmed.locator('td').nth(5)).toContainText('900 EGP');
+  await expect(ahmed.locator('td').nth(6)).toHaveText(verifiedBefore);
+  await expect(ahmed.locator('td').nth(1)).toHaveText(scheduledBefore);
+  await expect(page.getByText(/Previously scheduled lectures and verified financial amounts remain unchanged/))
+    .toBeVisible();
+
+  await ahmed.getByRole('button', { name: 'Lectures' }).click();
+  const detail = page.getByRole('region', { name: 'Individual lecture entitlement ledger' });
+  await expect(detail.getByText('Individual lecture decisions')).toBeVisible();
+  await expect(detail.getByText('Viewing lectures for:')).toBeVisible();
+  await detail.getByRole('button', { name: 'Show all instructors' }).click();
+  await detail.getByRole('button', { name: 'Hide lecture details' }).click();
+  await expect(detail.getByRole('button', { name: 'Show lecture details' })).toBeVisible();
+
+  // Number of lectures is changed in Schedule, never via fake ledger quantities.
+  await statement.getByRole('button', { name: 'Open Schedule' }).click();
+  await expect(nav.getByRole('button', { name: 'Schedule', exact: true }))
+    .toHaveAttribute('aria-current', 'page');
+  expect(runtimeErrors).toEqual([]);
+});
