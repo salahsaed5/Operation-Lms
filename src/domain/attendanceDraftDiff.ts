@@ -23,3 +23,19 @@ export function compareAttendanceDraftRows(
   });
   return different;
 }
+
+/** The server persists only marked attendance. Ignore roster placeholders in CAS comparisons. */
+export function persistedAttendanceRows(rows: AttendanceRecordItem[]): AttendanceRecordItem[] {
+  return rows.filter(row => row.mark !== 'unmarked');
+}
+
+/** Compare the last server state the editor saw against the latest server state. */
+export function compareAttendanceServerRows(
+  expectedServer: AttendanceRecordItem[],
+  actualServer: AttendanceRecordItem[]
+): string[] {
+  return compareAttendanceDraftRows(
+    persistedAttendanceRows(expectedServer),
+    persistedAttendanceRows(actualServer)
+  );
+}
