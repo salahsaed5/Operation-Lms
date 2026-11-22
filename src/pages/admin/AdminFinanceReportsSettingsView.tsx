@@ -226,8 +226,7 @@ export const AdminFinanceView: React.FC = () => {
         specialization: inst.specialization,
         defaultLectureRateEgp: rate,
         isActive: inst.isActive,
-        // Preserve Camp membership exactly; Finance cannot assign/reassign.
-        assignedToActiveCamp: (campInstructorIds[activeCamp.id] || []).includes(inst.id),
+        // No Camp-assignment input: changing a default rate must not touch membership.
       });
       if (!res.ok) {
         setFeedback({ ok: false, text: res.error || t('Rate update failed.', 'فشل تعديل السعر.') });
