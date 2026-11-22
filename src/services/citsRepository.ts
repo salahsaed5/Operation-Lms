@@ -574,6 +574,7 @@ export async function fetchOperationalSnapshot(
     startDate: c.start_date,
     endDate: c.end_date,
     durationDays: c.duration_days,
+    operatingWeekdays: c.operating_weekdays ?? [0,1,2,3,4,5,6],
     currentCampDay: c.current_camp_day,
     settings: settingsByCampId.get(c.id) || {
       campId: c.id,
@@ -1049,6 +1050,7 @@ export async function createDraftCampInDb(input: {
   startDate: string;
   endDate: string;
   durationDays: number;
+  operatingWeekdays: number[];
   geofenceRadiusMeters: number;
   defaultRateEgp: number;
   createdBy: string;
@@ -1065,6 +1067,7 @@ export async function createDraftCampInDb(input: {
       start_date: input.startDate,
       end_date: input.endDate,
       duration_days: input.durationDays,
+      operating_weekdays: input.operatingWeekdays,
       current_camp_day: 1,
       created_by: input.createdBy,
     })
@@ -1094,13 +1097,14 @@ export async function updateCampInDb(input: {
   nameAr: string;
   startDate: string;
   durationDays: number;
+  operatingWeekdays: number[];
   currentCampDay: number;
   geofenceRadiusMeters: number;
   defaultRateEgp: number;
   maxInstructorGroupsPerDay: number;
 }): Promise<void> {
   const client = getClient();
-  const endDate = calculateCampDayDate(input.startDate, input.durationDays);
+  const endDate = calculateCampDayDate(input.startDate, input.durationDays, input.operatingWeekdays);
 
   const { error: campErr } = await client
     .from('camps')
@@ -1110,6 +1114,7 @@ export async function updateCampInDb(input: {
       start_date: input.startDate,
       end_date: endDate,
       duration_days: input.durationDays,
+      operating_weekdays: input.operatingWeekdays,
       current_camp_day: input.currentCampDay,
     })
     .eq('id', input.campId);
