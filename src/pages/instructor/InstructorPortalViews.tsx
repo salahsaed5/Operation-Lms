@@ -2038,6 +2038,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
     auth,
     activeCamp,
     financeSnapshot,
+    isSandboxMode,
     instructors,
     lectures,
     groups,
@@ -2055,7 +2056,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   const [reqFeedback, setReqFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const currentInstructor =
-    instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
+    instructors.find((i) => i.id === auth.activeInstructorId) || (isSandboxMode ? instructors[0] : undefined);
 
   if (!currentInstructor) {
     return (
