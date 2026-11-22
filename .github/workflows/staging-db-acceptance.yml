@@ -80,10 +80,11 @@ jobs:
             supabase/tests/admin_attendance_correction_transactional_acceptance.sql
             supabase/tests/gps_confidence_transactional_acceptance.sql
             supabase/tests/finance_0023_acl_and_role_regression.sql
+            supabase/tests/finance_0024_payment_safe_entitlement_regression.sql
           )
           for file in "${files[@]}"; do
             echo "::group::${file}"
             psql "${SUPABASE_STAGING_DB_URL}" --no-psqlrc -v ON_ERROR_STOP=1 -f "$file"
             echo "::endgroup::"
           done
-          echo 'Eleven Staging SQL acceptance suites PASS. No Production writes.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Twelve Staging SQL acceptance suites PASS. No Production writes.' >> "$GITHUB_STEP_SUMMARY"
