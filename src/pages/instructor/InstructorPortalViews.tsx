@@ -1749,13 +1749,26 @@ export const InstructorAttendanceView: React.FC = () => {
                 {renderAttendanceRows(filteredRecords, studentSearch)}
               </div>
             )}
-            {studentSearch.trim() && filteredRecords.length === 0 && studentSearch.trim().length < 2 && (
+            {studentSearch.trim() && nameMatchedRecords.length === 0 && studentSearch.trim().length < 2 && (
               <p role="status" className="text-xs text-slate-500">
                 {t('No match in this sheet. Enter two characters to also search other groups.',
                   'مفيش نتيجة في الكشف ده. اكتب حرفين عشان تبحث في الجروبات التانية كمان.')}
               </p>
             )}
 
+            {studentSearch.trim() && nameMatchedRecords.length > 0 &&
+              filteredRecords.length === 0 && attendanceStatusFilter !== 'all' && (
+              <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/20 p-3 flex flex-wrap gap-3 items-center justify-between">
+                <p className="text-xs text-amber-900 dark:text-amber-200">
+                  {t('Student found, but hidden by the selected status filter.',
+                    'الطالب موجود، لكن فلتر حالة الحضور مخفيه.')}
+                </p>
+                <button type="button" onClick={() => setAttendanceStatusFilter('all')}
+                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                  {t('Show matching students', 'إظهار الطلاب المطابقين')}
+                </button>
+              </div>
+            )}
             {!isLockedOrSubmitted && studentSearch.trim().length >= 2 && (
               <div className="space-y-2">
                 {visitingSearchBusy && (
@@ -1801,7 +1814,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 )}
                 {!visitingSearchBusy && !visitingLookupError &&
                   lastCompletedVisitQuery === studentSearch.trim() &&
-                  visitingMatches.length === 0 && filteredRecords.length === 0 && (
+                  visitingMatches.length === 0 && nameMatchedRecords.length === 0 && (
                     <p className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3 text-xs text-slate-600 dark:text-slate-300" role="status">
                       {t('No student matched this name or code in the current sheet or other groups.',
                         'ملقيناش طالب بالاسم أو الكود ده في الكشف أو الجروبات التانية.')}
