@@ -2529,6 +2529,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
     rooms,
     instructors,
     students,
+    profiles,
     studentTransfers,
     upsertGroup,
     createSingleStudent,
@@ -3355,6 +3356,12 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                     <p className="text-slate-500 truncate mt-0.5">
                       {grp ? grp.code : stu.groupId} · {stu.university}
                     </p>
+                    {stu.enrollmentOrigin === 'instructor_late_join' && (
+                      <p className="text-amber-800 dark:text-amber-300 mt-1">
+                        {t('Joined Day', 'انضم يوم')} {stu.joinedCampDay}
+                        {' · '}{t('Added by', 'أضافه')} {profiles.find(p => p.id === stu.enrolledByProfileId)?.fullNameEn || t('Instructor', 'محاضر')}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -3384,6 +3391,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                   <th className="py-3 px-4 font-semibold text-start">{t('Full Name', 'اسم الطالب')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Assigned Group', 'المجموعة')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('University', 'الجامعة')}</th>
+                  <th className="py-3 px-4 font-semibold text-start">{t('Enrollment', 'تفاصيل التسجيل')}</th>
                   <th className="py-3 px-5 font-semibold text-end">{t('Transfer', 'نقل')}</th>
                 </tr>
               </thead>
@@ -3406,6 +3414,18 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
                         {stu.university}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                        {stu.enrollmentOrigin === 'instructor_late_join' ? (
+                          <div className="space-y-1 text-xs">
+                            <p className="font-semibold text-amber-800 dark:text-amber-300">
+                              {t('Joined Day', 'انضم يوم')} {stu.joinedCampDay}
+                            </p>
+                            <p>{t('Added by', 'أضافه')} {profiles.find(p => p.id === stu.enrolledByProfileId)?.fullNameEn || t('Instructor', 'محاضر')}</p>
+                            {stu.enrolledAt && <p className="text-slate-500">{new Date(stu.enrolledAt).toLocaleString()}</p>}
+                            {stu.enrollmentReason && <p className="text-slate-500">{stu.enrollmentReason}</p>}
+                          </div>
+                        ) : <span className="text-slate-500">{t('Initial roster', 'الكشف الأصلي')} · {t('Day 1', 'اليوم الأول')}</span>}
                       </td>
                       <td className="py-3 px-5 text-end">
                         <button
