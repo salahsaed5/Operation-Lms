@@ -94,12 +94,24 @@ test('one search immediately filters roster and shows other-group student with o
   const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
   await expect(search).toHaveCount(1);
   await search.fill('Omar Khaled');
-  await expect(page.getByText('Matching students already on this sheet: 1')).toBeVisible();
-  await expect(page.getByText('Omar Khaled El-Sayed', { exact: true })).toBeVisible();
+  // The actual matching student card (not just a result count) must appear
+  // immediately below the single search, with working attendance buttons.
+  const ownResults = page.getByRole('group', { name: 'Matching students in this attendance sheet' });
+  const ownStudent = ownResults.getByRole('group', { name: 'Attendance for Omar Khaled El-Sayed' });
+  await expect(ownStudent).toBeVisible();
+  await expect(ownStudent.locator('mark')).toHaveText('Omar Khaled');
+  await expect(ownStudent.getByText('CITS-2601')).toBeVisible();
+  await expect(ownStudent.getByText('In this group')).toBeVisible();
+  await ownStudent.getByRole('button', { name: 'Late', exact: true }).click();
+  await expect(ownStudent.getByRole('button', { name: 'Late', exact: true }))
+    .toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Full attendance roster' })).toHaveCount(0);
+
   await search.fill('Youssef Amr');
-  await expect(page.getByText('Matching students already on this sheet: 0')).toBeVisible();
+  await expect(ownResults).toHaveCount(0);
   const visitors = page.getByRole('group', { name: 'Students from other groups' });
   await expect(visitors.getByText('Youssef Amr Nabil')).toBeVisible();
+  await expect(visitors.locator('mark')).toHaveText('Youssef Amr');
   await expect(visitors.getByText(/Home group: GRP-BETA/)).toBeVisible();
 
   // One query and one click — never ask to type into a separate visitor box.
