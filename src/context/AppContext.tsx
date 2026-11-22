@@ -81,6 +81,7 @@ import {
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
+import { compareAttendanceDraftRows } from '../domain/attendanceDraftDiff';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   acknowledgeLectureInDb,
@@ -2635,10 +2636,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseMode) {
       try {
+        if (!supabaseCtx) throw new Error('Authentication context is unavailable. Sign in and retry.');
+        // Fail closed: re-read authoritative server records immediately before
+        // writing. A local IndexedDB draft must NEVER silently replace a
+        // different server draft (e.g., 002 Present/003 Late locally vs
+        // 002 Late/003 Absent saved on the server).
+        const latest = await fetchOperationalSnapshot(supabaseCtx);
+        const serverSheet = latest.attendanceSheets.find(s =>
+          s.lectureId === lectureId && s.campId === activeCamp.id
+        );
+        if (!serverSheet || serverSheet.status !== AttendanceSheetStatus.DRAFT) {
+          throw new Error('Server attendance sheet was changed or is missing. Refresh and review before finalizing.');
+        }
+        const differences = compareAttendanceDraftRows(sheet.records, serverSheet.records);
+        if (differences.length > 0) {
+          throw new Error(
+            `Local and server attendance drafts differ for ${differences.length} student(s). ` +
+            'Final submission is blocked to prevent data loss. Review and reconcile the drafts before submitting.'
+          );
+        }
         const persistedSheetId = await saveAttendanceRecordsDraftToDb({
           campId: activeCamp.id,
           lecture: lec,
-          sheetId: sheet.id.startsWith('sheet-') ? undefined : sheet.id,
+          sheetId: serverSheet.id,
           records: finalized.finalizedRecords,
           updatedBy: auth.currentProfile.id,
         });
