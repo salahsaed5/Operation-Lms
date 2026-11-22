@@ -152,6 +152,54 @@ export const CampFinanceManager:React.FC=()=>{
     anchor.href=url;anchor.download=(activeCamp?.code||'CAMP')+'-instructor-finance'+(only?'-'+only:'')+'.csv';
     document.body.appendChild(anchor);anchor.click();anchor.remove();URL.revokeObjectURL(url);
   };
+  const printStatement=(instructorId:string)=>{
+    const row=rows.find(r=>r.inst.id===instructorId);
+    if(!row)return;
+    const popup=window.open('','_blank');
+    if(!popup){
+      setFeedback({ok:false,text:t('Allow popups to print the statement.','اسمح بفتح نافذة جديدة لطباعة كشف الحساب.')});
+      return;
+    }
+    const e=(v:string|number)=>String(v).replace(/[&<>"']/g,c=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
+    }[c]||c));
+    const st=row.stat;
+    const data=[
+      ['Confirmed main lectures',st.confirmedMain,fmt(st.primaryEgp)],
+      ['Approved backup sessions',st.approvedBackup,fmt(st.backupEgp)],
+      ['Primary transport days',st.transportDays,fmt(st.transportEgp)],
+      ['Confirmed total','',fmt(st.confirmedTotalEgp)],
+      ['Payments / refunds recorded','',fmt(st.paidEgp)],
+      ['Remaining unpaid balance','',fmt(st.balanceEgp)],
+      ['Pending estimate (NOT payable)','',fmt(st.pendingEstimateEgp)],
+    ];
+    const records=campPayments.filter(p=>p.instructorId===instructorId)
+      .map(p=>'<tr><td>'+e(new Date(p.createdAt).toLocaleDateString())+
+        '</td><td>'+e(p.method)+'</td><td>'+e(p.reference)+'</td><td>'+
+        e(p.note)+'</td><td>'+e(fmt(p.amountEgp))+'</td></tr>').join('');
+    popup.document.open();
+    popup.document.write('<!doctype html><html lang="en"><head><meta charset="utf-8">'+
+      '<title>Instructor financial statement</title><style>'+
+      'body{font:14px Arial,sans-serif;max-width:850px;margin:35px auto;color:#142034}'+
+      'h1{font-size:24px}table{width:100%;border-collapse:collapse;margin:18px 0}'+
+      'td,th{border:1px solid #d8e0eb;padding:10px;text-align:left}'+
+      'th{background:#f4f6f9}.total{font-weight:700}.fine{font-size:11px;color:#66768b}'+
+      '@page{size:A4;margin:16mm}@media print{body{margin:0}}'+
+      '</style></head><body><h1>Instructor Finance Statement</h1>'+
+      '<p><strong>Camp:</strong> '+e(activeCamp?.nameEn||campId)+'</p>'+
+      '<p><strong>Instructor:</strong> '+e(row.inst.fullNameEn)+' ('+e(row.inst.instructorCode)+')</p>'+
+      '<p><strong>Prepared:</strong> '+e(new Date().toLocaleDateString())+'</p>'+
+      '<table><thead><tr><th>Component</th><th>Count</th><th>Amount</th></tr></thead><tbody>'+
+      data.map(([name,count,amount])=>'<tr><td>'+e(name)+'</td><td>'+e(count)+'</td><td>'+e(amount)+'</td></tr>').join('')+
+      '</tbody></table><h2>Payment History</h2>'+
+      '<table><thead><tr><th>Date</th><th>Method</th><th>Reference</th><th>Reason</th><th>Amount</th></tr></thead><tbody>'+
+      (records||'<tr><td colspan="5">No payments recorded</td></tr>')+
+      '</tbody></table><p class="fine">Main amounts use frozen lecture rates. '+
+      'Backup amounts require admin approval. Transportation is once per eligible primary day. '+
+      'Pending estimates are not payable. Save as PDF via your browser Print destination.</p>'+
+      '</body></html>');
+    popup.document.close();popup.focus();popup.print();
+  };
   if(!activeCamp)return null;
   const inputLabel='text-xs font-semibold text-slate-600 dark:text-slate-300';
 
@@ -240,9 +288,14 @@ export const CampFinanceManager:React.FC=()=>{
         <div><h3 className="text-base font-bold">{t(selectedRow.inst.fullNameEn,selectedRow.inst.fullNameAr)}</h3>
           <p className="text-xs text-slate-500">{t('Breakdown of verified work and payments','تفاصيل المحاضرات المؤكدة والمدفوعات')}</p>
         </div>
-        <button className={BTN_SECONDARY} type="button" onClick={()=>downloadCsv(selectedRow.inst.id)}>
-          <Download className="w-4 h-4 inline me-2"/>{t('Download statement','تحميل كشف الحساب')}
-        </button>
+        <div className="flex items-center flex-wrap gap-2">
+          <button className={BTN_SECONDARY} type="button" onClick={()=>downloadCsv(selectedRow.inst.id)}>
+            <Download className="w-4 h-4 inline me-2"/>{t('Export Excel-compatible CSV','تصدير CSV لبرنامج Excel')}
+          </button>
+          <button className={BTN_SECONDARY} type="button" onClick={()=>printStatement(selectedRow.inst.id)}>
+            {t('Print / Save as PDF','طباعة / حفظ PDF')}
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         {[
