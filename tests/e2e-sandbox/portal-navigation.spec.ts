@@ -85,6 +85,12 @@ test('one search immediately filters roster and shows other-group student with o
   await page.getByRole('navigation', { name: 'Instructor navigation' })
     .getByRole('button', { name: 'Attendance', exact: true }).click();
 
+  // The default P1 sheet is already SUBMITTED in the sandbox fixtures.
+  // Select editable P2 to test the visitor-add interaction.
+  await page.getByRole('combobox', { name: 'Select lecture and group for attendance' })
+    .selectOption('lec-d4-p2-g1');
+  await expect(page.getByText('Editable Draft')).toBeVisible();
+
   const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
   await expect(search).toHaveCount(1);
   await search.fill('Omar Khaled');
