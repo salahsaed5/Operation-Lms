@@ -16,6 +16,8 @@ import { useApp } from '../../context/AppContext';
 import { buildCampToDateReport, type CampToDateCategory } from '../../domain/campCumulativeAttendance';
 import {
   EntitlementStatus,
+  LectureStatus,
+  type Instructor,
   IssueSeverity,
   IssueStatus,
   RequestStatus,
@@ -57,9 +59,12 @@ function entitlementStatusDisplay(
 export const AdminFinanceView: React.FC = () => {
   const {
     activeCamp,
+    campInstructorIds,
     entitlements,
     instructors,
     lectures,
+    setAdminRoute,
+    updateInstructorAccount,
     reviewLectureEntitlement,
     t,
   } = useApp();
@@ -70,6 +75,10 @@ export const AdminFinanceView: React.FC = () => {
   const [excludeConfirmId, setExcludeConfirmId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [instructorSearch, setInstructorSearch] = useState('');
+  const [editingRateInstructorId, setEditingRateInstructorId] = useState<string | null>(null);
+  const [newDefaultRate, setNewDefaultRate] = useState('');
+  const [showLectureLedger, setShowLectureLedger] = useState(false);
 
   if (!activeCamp) {
     return (
@@ -95,6 +104,49 @@ export const AdminFinanceView: React.FC = () => {
     (e) => e.status === EntitlementStatus.EXCLUDED
   );
   const totalEligibleEgp = verifiedItems.reduce((sum, e) => sum + e.entitlementAmountEgp, 0);
+
+  // Financial statement is grouped by the instructor who is actually assigned
+  // (including a substitute), with frozen per-lecture amounts as the source
+  // of truth. A count of eligible lectures is NOT a count of payments made.
+  const campLectures = lectures.filter(l => l.campId === activeCamp.id);
+  const includedInstructorIds = new Set([
+    ...(campInstructorIds[activeCamp.id] || []),
+    ...campLectures.map(l => l.substituteInstructorId || l.instructorId),
+    ...campEntitlements.map(e => e.instructorId),
+  ]);
+  const instructorStatements = instructors
+    .filter(inst => includedInstructorIds.has(inst.id))
+    .map(inst => {
+      const assignedLectures = campLectures.filter(l =>
+        (l.substituteInstructorId || l.instructorId) === inst.id &&
+        l.status !== LectureStatus.CANCELLED
+      );
+      const items = campEntitlements.filter(e => e.instructorId === inst.id);
+      const payable = items.filter(e =>
+        e.status === EntitlementStatus.ELIGIBLE || e.status === EntitlementStatus.APPROVED
+      );
+      const pending = items.filter(e => e.status === EntitlementStatus.PENDING_REVIEW);
+      const excluded = items.filter(e => e.status === EntitlementStatus.EXCLUDED);
+      return {
+        inst,
+        scheduledCount: assignedLectures.length,
+        verifiedCount: payable.length,
+        pendingCount: pending.length,
+        excludedCount: excluded.length,
+        verifiedAmount: payable.reduce((sum, e) => sum + e.entitlementAmountEgp, 0),
+        pendingEstimate: pending.reduce((sum, e) => sum + e.frozenRateEgp, 0),
+        frozenRates: Array.from(new Set(items.map(e => e.frozenRateEgp))),
+      };
+    })
+    .sort((a,b) => a.inst.fullNameEn.localeCompare(b.inst.fullNameEn));
+  const visibleInstructorStatements = instructorStatements.filter(({ inst }) => {
+    const q = instructorSearch.trim().toLocaleLowerCase();
+    return !q || inst.fullNameEn.toLocaleLowerCase().includes(q) ||
+      inst.fullNameAr.toLocaleLowerCase().includes(q) ||
+      inst.instructorCode.toLocaleLowerCase().includes(q);
+  });
+  const totalPendingEstimate = instructorStatements.reduce((sum,r) => sum + r.pendingEstimate, 0);
+
 
   const filteredEntitlements = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -147,6 +199,45 @@ export const AdminFinanceView: React.FC = () => {
     } finally {
       setIsBusy(false);
       setExcludeConfirmId(null);
+    }
+  };
+
+  const handleSaveRate = async (inst: Instructor) => {
+    const rate = Number(newDefaultRate.trim());
+    if (!newDefaultRate.trim() || !Number.isSafeInteger(rate) || rate < 0 || rate > 1000000) {
+      setFeedback({ ok: false, text: t(
+        'Enter a valid whole-number EGP rate between 0 and 1,000,000.',
+        'اكتب سعر صحيح بالجنيه بين 0 ومليون من غير كسور.'
+      ) });
+      return;
+    }
+    if (rate === inst.defaultLectureRateEgp) {
+      setEditingRateInstructorId(null);
+      return;
+    }
+    setIsBusy(true);
+    setFeedback(null);
+    try {
+      const res = await updateInstructorAccount({
+        instructorId: inst.id,
+        profileId: inst.profileId,
+        specialization: inst.specialization,
+        defaultLectureRateEgp: rate,
+        isActive: inst.isActive,
+        // Preserve Camp membership exactly; Finance cannot assign/reassign.
+        assignedToActiveCamp: (campInstructorIds[activeCamp.id] || []).includes(inst.id),
+      });
+      if (!res.ok) {
+        setFeedback({ ok: false, text: res.error || t('Rate update failed.', 'فشل تعديل السعر.') });
+      } else {
+        setEditingRateInstructorId(null);
+        setFeedback({ ok: true, text: t(
+          'Future default lecture rate updated. Previously scheduled lectures and verified financial amounts remain unchanged.',
+          'تم تعديل السعر الأساسي للمحاضرات الجديدة فقط. أسعار المحاضرات المجدولة والمستحقات القديمة لم تتغير.'
+        ) });
+      }
+    } finally {
+      setIsBusy(false);
     }
   };
 
