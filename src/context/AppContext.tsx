@@ -2788,8 +2788,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const latest = await fetchOperationalSnapshot(supabaseCtx);
       const camp = latest.camps.find(c => c.id === activeCamp.id);
       if (!camp) return { ok: false, error: 'Selected Camp was not found on the server.' };
-      if (camp.durationDays !== 10) {
-        return { ok: false, error: 'The handover workbook currently supports ten-day camps only.' };
+      if (camp.durationDays < 1 || camp.durationDays > 60) {
+        return { ok: false, error: 'Invalid teaching day count for attendance workbook.' };
       }
       const workbook = buildCampAttendanceWorkbook({
         camp,
@@ -2800,7 +2800,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         studentTransfers: latest.studentTransfers.filter(tr => tr.campId === camp.id),
       });
       const fileName = 'Operation-LMS-' +
-        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-10day-attendance.xlsx';
+        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-' + camp.durationDays + 'day-attendance.xlsx';
       const url = URL.createObjectURL(workbook);
       const link = document.createElement('a');
       link.href = url;
