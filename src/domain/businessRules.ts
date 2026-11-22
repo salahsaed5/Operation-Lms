@@ -19,17 +19,48 @@ import {
   UserRole,
 } from '../types/database';
 
-/**
- * Compute ISO YYYY-MM-DD date for a 1-indexed camp day from camp.startDate
+/** JS/PostgreSQL weekday convention: Sunday=0, Monday=1, ... Saturday=6.
+ * Existing Camps without a selected pattern retain their daily schedule.
  */
-export function calculateCampDayDate(startDateIso: string, campDay: number): string {
-  const safeDay = Math.max(1, Math.floor(campDay || 1));
-  const parsed = new Date(`${startDateIso}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toISOString().slice(0, 10);
+export const ALL_CAMP_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+export function validateCampWeekdays(startDateIso: string, weekdays: readonly number[]): string | null {
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDateIso)) return 'Choose a valid first teaching date.';
+  const date = new Date(`${startDateIso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== startDateIso) {
+    return 'Choose a valid first teaching date.';
   }
-  parsed.setUTCDate(parsed.getUTCDate() + (safeDay - 1));
-  return parsed.toISOString().slice(0, 10);
+  if (!weekdays.length || weekdays.length > 7 ||
+      new Set(weekdays).size !== weekdays.length ||
+      weekdays.some(d => !Number.isInteger(d) || d < 0 || d > 6)) {
+    return 'Select one or more different teaching weekdays (Sunday–Saturday).';
+  }
+  if (!weekdays.includes(date.getUTCDay())) {
+    return 'The first teaching date must fall on one of the selected weekdays.';
+  }
+  return null;
+}
+
+/** 1-indexed teaching session date, NOT a calendar-day offset.
+ * UTC calendar arithmetic avoids local timezone/DST shifts in Egypt.
+ * Legacy daily camps remain identical when weekdays are omitted.
+ */
+export function calculateCampDayDate(
+  startDateIso: string, campDay: number, weekdays: readonly number[] = ALL_CAMP_WEEKDAYS
+): string {
+  if (!Number.isSafeInteger(campDay) || campDay < 1 || campDay > 365) {
+    throw new Error('Camp teaching day must be between 1 and 365.');
+  }
+  const error = validateCampWeekdays(startDateIso, weekdays);
+  if (error) throw new Error(error);
+  const date = new Date(`${startDateIso}T00:00:00Z`);
+  const selected = new Set(weekdays);
+  let remaining = campDay - 1;
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    if (selected.has(date.getUTCDay())) remaining--;
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 /**
