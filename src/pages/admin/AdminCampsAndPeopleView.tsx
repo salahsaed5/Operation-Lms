@@ -25,6 +25,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
 import { RawStudentImportRow } from '../../domain/businessRules';
+import { parseStudentRosterFile } from '../../domain/studentRosterFile';
 import {
   CredentialDeliveryMode,
   validateProvisionInstructorInput,
@@ -2545,6 +2546,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
   const [importGroupId, setImportGroupId] = useState<string>(campGroups[0]?.id || '');
   const [importMode, setImportMode] = useState<'smart_update' | 'strict_insert'>('smart_update');
   const [rawBatchText, setRawBatchText] = useState<string>('');
+  const [rosterFileName, setRosterFileName] = useState('');
+  const [rosterRows, setRosterRows] = useState<RawStudentImportRow[] | null>(null);
+  const [rosterFileError, setRosterFileError] = useState('');
+  const [rosterParsing, setRosterParsing] = useState(false);
   const [importResult, setImportResult] = useState<{
     ok: boolean;
     errors: { rowNumber: number; message: string }[];
@@ -2707,9 +2712,30 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
     }
   };
 
+  const handleRosterFileChange = async (file: File | null) => {
+    setRosterRows(null);
+    setRosterFileName(file?.name || '');
+    setRosterFileError('');
+    setImportResult(null);
+    if (!file) return;
+    setRosterParsing(true);
+    try {
+      const parsed = await parseStudentRosterFile(file);
+      setRosterRows(parsed);
+      // Do not overwrite existing records accidentally on the initial upload.
+      setImportMode('strict_insert');
+      setRawBatchText('');
+    } catch (error) {
+      setRosterFileError(error instanceof Error ? error.message : 'Unable to read the student spreadsheet.');
+    } finally {
+      setRosterParsing(false);
+    }
+  };
+
   const handleRunImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rawBatchText.trim()) return;
+    if (!rosterRows && !rawBatchText.trim()) return;
+    setImportResult(null);
     setIsBusy(true);
     try {
       const lines = rawBatchText
@@ -2717,7 +2743,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         .map((l) => l.trim())
         .filter(Boolean);
 
-      const parsedRows: RawStudentImportRow[] = lines.map((line, index) => {
+      const pastedRows: RawStudentImportRow[] = lines.map((line, index) => {
         const parts = line.split(',').map((p) => p.trim());
         return {
           rowNumber: index + 1,
@@ -2727,13 +2753,38 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         };
       });
 
-      const res = await importStudentsBatch(
-        parsedRows,
-        importGroupId || campGroups[0]?.id,
-        importMode
+      const parsedRows = rosterRows || pastedRows;
+      const groupId = importGroupId || campGroups[0]?.id;
+      const target = campGroups.find(g => g.id === groupId);
+      if (!target) {
+        setImportResult({
+          ok: false, errors: [{ rowNumber: 1, message: 'Select a real target group before importing.' }],
+          inserted: 0, updated: 0,
+        });
+        return;
+      }
+      const knownCodes = new Set(
+        allCampStudents.map(student => student.studentCode.trim().toUpperCase())
       );
+      const newCodes = new Set(parsedRows
+        .map(row => row.studentCode.trim().toUpperCase())
+        .filter(code => code && !knownCodes.has(code)));
+      const enrolled = allCampStudents.filter(student => student.groupId === target.id).length;
+      if (enrolled + newCodes.size > target.capacity) {
+        setImportResult({
+          ok: false,
+          errors: [{ rowNumber: 1, message: `Group ${target.code} capacity ${target.capacity} exceeded: ${enrolled} enrolled + ${newCodes.size} new.` }],
+          inserted: 0, updated: 0,
+        });
+        return;
+      }
+      const res = await importStudentsBatch(parsedRows, groupId, importMode);
       setImportResult(res);
-      if (res.ok) setRawBatchText('');
+      if (res.ok) {
+        setRawBatchText('');
+        setRosterRows(null);
+        setRosterFileName('');
+      }
     } finally {
       setIsBusy(false);
     }
@@ -3079,8 +3130,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {t(
-                'Format per line: Full Name, Student Code, University. Any invalid line cancels the batch cleanly.',
-                'الصيغة لكل سطر: الاسم الكامل، كود الطالب، الجامعة. أي خطأ يوقف الدفعة بالكامل للحفاظ على سلامة البيانات.'
+                'Upload one Excel (.xlsx) or CSV roster per group: Full Name, Student Code, University. Review before importing. Any invalid student cancels the entire batch.',
+                'ارفع ملف Excel أو CSV واحدًا لكل مجموعة، بالأعمدة: الاسم الكامل، كود الطالب، الجامعة. راجع الكشف قبل الاستيراد؛ أي خطأ يوقف الدفعة بالكامل.'
               )}
             </p>
           </div>
@@ -3111,6 +3162,71 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
           </div>
         </div>
 
+        <div className="space-y-2">
+          <label htmlFor="roster-excel-upload" className={LABEL_CLASS}>
+            {t('Upload Excel / CSV group roster', 'رفع كشف المجموعة Excel أو CSV')}
+          </label>
+          <input
+            id="roster-excel-upload"
+            type="file"
+            accept=".xlsx,.csv"
+            disabled={isBusy || rosterParsing || campGroups.length === 0}
+            onChange={e => {
+              void handleRosterFileChange(e.currentTarget.files?.[0] || null);
+              e.currentTarget.value = '';
+            }}
+            className={`${INPUT_CLASS} file:me-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:font-semibold file:text-blue-700`}
+          />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t(
+              'First worksheet only. Columns: Full Name, Student Code, University. Maximum 1000 rows / 2 MB. File is read locally; no roster is saved until you confirm.',
+              'أول ورقة فقط. الأعمدة: Full Name وStudent Code وUniversity. بحد أقصى 1000 طالب و2 ميجابايت. الملف يُقرأ على جهازك ولا تُحفظ بيانات الطلاب إلا بعد التأكيد.'
+            )}
+          </p>
+          {rosterParsing && <p className="text-xs text-blue-600">{t('Reading file…', 'جاري قراءة الملف…')}</p>}
+          {rosterFileError && <InlineBanner type="error" message={rosterFileError} />}
+          {rosterRows && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20 p-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                {t(
+                  `Ready to import ${rosterRows.length} students from ${rosterFileName} into ${campGroups.find(g => g.id === (importGroupId || campGroups[0]?.id))?.code || 'selected group'}.`,
+                  `جاهز لمراجعة ${rosterRows.length} طالب من ${rosterFileName} إلى المجموعة ${campGroups.find(g => g.id === (importGroupId || campGroups[0]?.id))?.code || ''}.`
+                )}
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-start">
+                  <thead><tr className="text-slate-500 border-b">
+                    <th className="py-1 pe-2">{t('Row','الصف')}</th>
+                    <th className="py-1 pe-2">{t('Student','الطالب')}</th>
+                    <th className="py-1 pe-2">{t('Student Code','كود الطالب')}</th>
+                    <th className="py-1 pe-2">{t('University','الجامعة')}</th>
+                  </tr></thead>
+                  <tbody>
+                    {rosterRows.slice(0, 5).map((student, i) => (
+                      <tr key={i} className="border-b border-slate-100 dark:border-slate-800">
+                        <td className="py-1 pe-2">{student.rowNumber}</td>
+                        <td className="py-1 pe-2">{student.studentName}</td>
+                        <td className="py-1 pe-2">{student.studentCode}</td>
+                        <td className="py-1 pe-2">{student.university || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {rosterRows.length > 5 && (
+                <p className="text-xs text-slate-500">{t(
+                  `Showing first 5 of ${rosterRows.length}; all rows will be validated.`,
+                  `معروض أول 5 من ${rosterRows.length}، وسيتم فحص جميع الصفوف.`
+                )}</p>
+              )}
+              <button type="button" className={BTN_SECONDARY} disabled={isBusy}
+                onClick={() => { setRosterRows(null); setRosterFileName(''); }}>
+                {t('Discard file', 'إلغاء الملف')}
+              </button>
+            </div>
+          )}
+        </div>
+
         <textarea
           rows={3}
           aria-label={t('Student batch rows', 'بيانات دفعة الطلاب')}
@@ -3119,6 +3235,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             'مثال:\nسلمى حسن، CITS-2620، جامعة القاهرة'
           )}
           value={rawBatchText}
+          disabled={Boolean(rosterRows) || rosterParsing}
           onChange={(e) => setRawBatchText(e.target.value)}
           className={`${INPUT_CLASS} font-mono`}
         />
@@ -3126,10 +3243,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         <div className="flex items-center justify-end">
           <button
             type="submit"
-            disabled={isBusy || campGroups.length === 0 || !rawBatchText.trim()}
+            disabled={isBusy || rosterParsing || Boolean(rosterFileError) || campGroups.length === 0 || (!rosterRows && !rawBatchText.trim())}
             className={BTN_PRIMARY}
           >
-            {t('Validate & Import Batch', 'فحص واستيراد الدفعة')}
+            {t('Confirm & Import Group Roster', 'تأكيد واستيراد كشف المجموعة')}
           </button>
         </div>
 
