@@ -81,7 +81,7 @@ import {
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
-import { compareAttendanceDraftRows } from '../domain/attendanceDraftDiff';
+import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows } from '../domain/attendanceDraftDiff';
 import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
@@ -515,8 +515,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loginInFlightRef = useRef<boolean>(false);
   const passwordUpdateInFlightRef = useRef<boolean>(false);
   const pendingRecoveryFlowRef = useRef<boolean>(false);
+  const serverAttendanceBaselinesRef = useRef<Record<string, AttendanceRecordItem[]>>({});
 
   const clearSupabaseOperationalState = useCallback(() => {
+    serverAttendanceBaselinesRef.current = {};
     setSupabaseCtx(null);
     setProfiles([]);
     setAdminAccounts([]);
@@ -564,6 +566,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDataError(null);
     try {
       const snap = await fetchOperationalSnapshot(ctx);
+      // Capture server state BEFORE IndexedDB overlays. Unsynced drafts keep
+      // their original baseline in IndexedDB so reloads cannot erase conflicts.
+      serverAttendanceBaselinesRef.current = Object.fromEntries(
+        snap.attendanceSheets.map(sheet => [`${sheet.campId}:${sheet.lectureId}`, sheet.records])
+      );
 
       // Only the owning Instructor may overlay their own offline draft.
       // Admin must always see authoritative server rows; never let shared
@@ -577,7 +584,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (localDraft &&
               localDraft.instructorId === ctx.instructor.id &&
               localDraft.campId === sheet.campId &&
-              localDraft.records.length > 0) {
+              localDraft.syncState !== OfflineSyncState.SYNCED) {
             return {
               ...sheet,
               syncState: localDraft.syncState,
@@ -2563,6 +2570,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let syncState = OfflineSyncState.OFFLINE;
     let dbSyncError: string | null = null;
     const idempotencyKey = existingSheet?.idempotencyKey || `idem-${activeCamp.id}-${lectureId}`;
+    const baselineKey = `${activeCamp.id}:${lectureId}`;
+    const previouslyStoredDraft = await getOfflineAttendanceDraft(lectureId);
+    const pendingDraftBelongsToInstructor = Boolean(
+      previouslyStoredDraft && previouslyStoredDraft.campId === activeCamp.id &&
+      previouslyStoredDraft.instructorId === (lec.substituteInstructorId || lec.instructorId) &&
+      previouslyStoredDraft.syncState !== OfflineSyncState.SYNCED
+    );
+    // Preserve the *original* server baseline through multiple offline edits
+    // and reloads. Legacy drafts with no baseline must fail closed unless the
+    // desired rows are already identical to the server.
+    const serverBaselineRecords = pendingDraftBelongsToInstructor
+      ? previouslyStoredDraft?.serverBaselineRecords
+      : serverAttendanceBaselinesRef.current[baselineKey];
 
     await saveOfflineAttendanceDraft({
       lectureId,
@@ -2571,6 +2591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       idempotencyKey,
       syncState,
       records,
+      serverBaselineRecords,
       updatedAt: new Date().toISOString(),
     });
 
@@ -2585,8 +2606,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!remote || remote.status !== AttendanceSheetStatus.DRAFT) {
           throw new Error('Server draft missing or already finalized. Refresh and review before syncing.');
         }
-        const conflicts = compareAttendanceDraftRows(records, remote.records);
-        if (conflicts.length) {
+        // Compare what this editor last saw on the server, NOT the marks
+        // they are trying to change. CAS in Postgres checks this again
+        // under the sheet lock to close the read/write race.
+        const conflicts = compareAttendanceServerRows(serverBaselineRecords || records, remote.records);
+        if (conflicts.length && compareAttendanceServerRows(records, remote.records).length) {
           throw new Error(
             `Draft conflict for ${conflicts.length} student(s): no server changes were made. ` +
             'Review local and server marks before syncing.'
@@ -2598,6 +2622,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           desired: records,
         });
         syncState = OfflineSyncState.SYNCED;
+        serverAttendanceBaselinesRef.current[baselineKey] = persistedAttendanceRows(records);
         await saveOfflineAttendanceDraft({
           lectureId,
           campId: activeCamp.id,
@@ -2605,6 +2630,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           idempotencyKey,
           syncState,
           records,
+          serverBaselineRecords: persistedAttendanceRows(records),
           updatedAt: new Date().toISOString(),
         });
       } catch (err) {
@@ -2620,6 +2646,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           idempotencyKey,
           syncState,
           records,
+          serverBaselineRecords,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -2842,7 +2869,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!serverSheet || serverSheet.status !== AttendanceSheetStatus.DRAFT) {
           throw new Error('Server attendance sheet was changed or is missing. Refresh and review before finalizing.');
         }
-        const differences = compareAttendanceDraftRows(sheet.records, serverSheet.records);
+        const differences = compareAttendanceServerRows(sheet.records, serverSheet.records);
         if (differences.length > 0) {
           throw new Error(
             `Local and server attendance drafts differ for ${differences.length} student(s). ` +
