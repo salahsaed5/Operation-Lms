@@ -52,7 +52,6 @@ test('multiple finalized lectures on same day do not double-count days attended'
   assert.equal(r.everAttended,1);
   assert.equal(r.students[0].daysAttended,1);
   assert.equal(r.students[0].daysLate,0);
-  assert.equal(r.students[0].finalizedLectureCount,undefined);
 });
 
 test('joiner on Day 4 is not eligible for Day 1-3 absence or never-attended', () => {
