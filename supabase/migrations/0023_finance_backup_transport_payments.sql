@@ -64,6 +64,12 @@ CREATE POLICY finance_policies_instructor_read ON public.camp_finance_rate_polic
     SELECT 1 FROM public.camp_instructors ci
     WHERE ci.camp_id = camp_id AND ci.instructor_id = public.current_instructor_id()
       AND ci.is_active
+  ) OR EXISTS (
+    SELECT 1 FROM public.lecture_entitlements le
+    WHERE le.camp_id = camp_id AND le.instructor_id = public.current_instructor_id()
+  ) OR EXISTS (
+    SELECT 1 FROM public.camp_backup_sessions bs
+    WHERE bs.camp_id = camp_id AND bs.instructor_id = public.current_instructor_id()
   ));
 CREATE POLICY backup_sessions_admin_read ON public.camp_backup_sessions
   FOR SELECT TO authenticated
@@ -135,6 +141,8 @@ BEGIN
     THEN RAISE EXCEPTION 'Reason for backup attendance required'; END IF;
   SELECT * INTO v_lec FROM public.lectures WHERE id = p_lecture_id AND status <> 'cancelled';
   IF v_lec.id IS NULL THEN RAISE EXCEPTION 'Lecture is missing or cancelled'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.camps WHERE id=v_lec.camp_id AND status <> 'archived')
+    THEN RAISE EXCEPTION 'New backup records are locked after Camp archive'; END IF;
   IF p_instructor_id IS NULL OR p_instructor_id IN (v_lec.instructor_id,v_lec.substitute_instructor_id)
     THEN RAISE EXCEPTION 'Backup must be a different instructor from primary/substitute'; END IF;
   IF NOT EXISTS (
@@ -209,7 +217,9 @@ BEGIN
      OR p_method NOT IN ('cash','bank_transfer','instapay','wallet','other')
      OR length(trim(coalesce(p_note,'')))<3
     THEN RAISE EXCEPTION 'Invalid payment, method or reason'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.camps WHERE id=p_camp_id AND status <> 'archived')
+  -- Historical settlements are payable even after a Camp is Archived.
+  -- This function NEVER changes an archived attendance/entitlement record.
+  IF NOT EXISTS (SELECT 1 FROM public.camps WHERE id=p_camp_id)
      OR NOT EXISTS (SELECT 1 FROM public.instructors WHERE id=p_instructor_id)
     THEN RAISE EXCEPTION 'Camp or instructor not found'; END IF;
   PERFORM pg_advisory_xact_lock(hashtext(p_camp_id::text),hashtext(p_instructor_id::text));
