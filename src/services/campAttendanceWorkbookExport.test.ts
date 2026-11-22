@@ -127,3 +127,22 @@ test('30-student 10-day roster exports all rows without fabricating attendance',
   assert.doesNotMatch(daily,/>A<\/t>/);
   assert.match(entries['xl/worksheets/sheet1.xml'],/PROVISIONAL/);
 });
+
+test('15 teaching-day Excel contains Day 15 and correct dynamic formula columns',async()=>{
+  const fifteen:Camp={...camp,code:'STG-EXPORT-15',startDate:'2026-11-29',
+    endDate:'2026-12-31',operatingWeekdays:[0,2,4],durationDays:15};
+  const blob=buildCampAttendanceWorkbook({
+    camp:fifteen,groups,students,studentTransfers:[],
+    lectures:[lecture('lecture15',15)],
+    attendanceSheets:[sheet('sheet15','lecture15',[record('early',AttendanceMark.PRESENT)])],
+  });
+  const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+  const daily=entries['xl/worksheets/sheet2.xml'];
+  const summary=entries['xl/worksheets/sheet1.xml'];
+  assert.match(daily,/Day 15/);
+  assert.match(daily,/COUNTIF\(E5:S5/);
+  assert.match(daily,/SUM\(T5:T7\)/);
+  assert.match(daily,/A4:W/);
+  assert.match(summary,/2026-12-31/);
+  assert.doesNotMatch(daily,/A4:R/);
+});
