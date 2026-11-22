@@ -1,0 +1,87 @@
+# Operational SQL acceptance: never apply migrations and never contact Production.
+# All test fixtures are inside PL/pgSQL rollback-only subtransactions.
+name: Phase 7 Staging Database Acceptance
+
+on:
+  push:
+    branches:
+      - fix/atomic-attendance-sync-20261122
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-database-acceptance:
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 15
+    steps:
+      - name: Checkout acceptance tests
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Confirm staging connection has been provisioned securely
+        id: preflight
+        shell: bash
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_STAGING_DB_URL}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo 'Staging SQL acceptance: NOT TESTED. Configure SUPABASE_STAGING_DB_URL in GitHub staging environment.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          url = urlsplit(os.environ["SUPABASE_STAGING_DB_URL"])
+          project = "uewhudbufykfkhimvqjj"
+          production = "wdmlxsgbjkboadkeekdq"
+          host = (url.hostname or "").lower()
+          user = unquote(url.username or "")
+          dbname = unquote(url.path.lstrip("/"))
+          direct = host == f"db.{project}.supabase.co" and user == "postgres"
+          pooler = host.endswith(".pooler.supabase.com") and user == f"postgres.{project}"
+          if production in host or production in user:
+              raise SystemExit("REJECTED: Production database reference detected.")
+          if url.scheme not in ("postgres", "postgresql") or not (direct or pooler):
+              raise SystemExit("REJECTED: URL does not identify the approved Staging database.")
+          if dbname != "postgres" or url.port not in (None,5432):
+              raise SystemExit("REJECTED: unexpected database/port in Staging URL.")
+          print("Target validated: exact Staging project; no Production access.")
+          PY
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install PostgreSQL client
+        if: steps.preflight.outputs.available == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Execute rolled-back Staging acceptance and security suites
+        if: steps.preflight.outputs.available == 'true'
+        shell: bash
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          set -euo pipefail
+          files=(
+            supabase/tests/acl_and_atomic_attendance_security_regression.sql
+            supabase/tests/attendance_rpc_null_authorization_regression.sql
+            supabase/tests/atomic_cas_two_writer_transactional_acceptance.sql
+            supabase/tests/atomic_excused_mark_acceptance.sql
+            supabase/tests/actual_authenticated_role_roster_rls_acceptance.sql
+            supabase/tests/visiting_student_atomic_attendance_acceptance.sql
+            supabase/tests/midcamp_day4_transactional_acceptance.sql
+            supabase/tests/admin_attendance_correction_transactional_acceptance.sql
+            supabase/tests/gps_confidence_transactional_acceptance.sql
+          )
+          for file in "${files[@]}"; do
+            echo "::group::${file}"
+            psql "${SUPABASE_STAGING_DB_URL}" --no-psqlrc -v ON_ERROR_STOP=1 -f "$file"
+            echo "::endgroup::"
+          done
+          echo 'Nine Staging SQL acceptance suites PASS. No Production writes.' >> "$GITHUB_STEP_SUMMARY"
