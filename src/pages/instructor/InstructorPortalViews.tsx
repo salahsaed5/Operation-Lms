@@ -16,6 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
+import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
 import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
@@ -1154,7 +1155,7 @@ export const InstructorAttendanceView: React.FC = () => {
       (s) =>
         s.campId === activeCamp.id &&
         s.isActive &&
-        (s.joinedCampDay ?? 1) <= selectedLecture.campDay &&
+        studentEligibleForCampDay(s, selectedLecture.campDay) &&
         resolveStudentOriginGroupForDay({
           student: s,
           transfers: studentTransfers,
@@ -1215,7 +1216,7 @@ export const InstructorAttendanceView: React.FC = () => {
         (s) =>
           s.campId === activeCamp.id &&
           s.isActive &&
-          (s.joinedCampDay ?? 1) <= selectedLecture.campDay &&
+          studentEligibleForCampDay(s, selectedLecture.campDay) &&
           !rosterStudentIds.has(s.id) &&
           resolveStudentOriginGroupForDay({
             student: s,
