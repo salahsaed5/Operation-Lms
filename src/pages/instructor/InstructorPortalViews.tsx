@@ -17,6 +17,7 @@ import { useApp } from '../../context/AppContext';
 import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
+import { studentsForSelectedLecture } from '../../domain/instructorLectureRoster';
 import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
@@ -1157,17 +1158,13 @@ export const InstructorAttendanceView: React.FC = () => {
   const baseRecords: AttendanceRecordItem[] = (() => {
     if (!selectedLecture) return [];
     const sheetRecords = existingSheet?.records || [];
-    const groupRoster = students.filter(
-      (s) =>
-        s.campId === activeCamp.id &&
-        s.isActive &&
-        studentEligibleForCampDay(s, selectedLecture.campDay) &&
-        resolveStudentOriginGroupForDay({
-          student: s,
-          transfers: studentTransfers,
-          campDay: selectedLecture.campDay,
-        }) === selectedLecture.groupId
-    );
+    // Never reuse another lecture's home roster: P2 / GRP-02 must only
+    // show GRP-02 students, even if the same Instructor also teaches P1.
+    const groupRoster = studentsForSelectedLecture({
+      lecture: selectedLecture,
+      students,
+      transfers: studentTransfers,
+    });
     const existingIds = new Set(sheetRecords.map((r) => r.studentId));
     const missingFromRoster: AttendanceRecordItem[] = groupRoster
       .filter((stu) => !existingIds.has(stu.id))
@@ -1454,22 +1451,39 @@ export const InstructorAttendanceView: React.FC = () => {
           'سجل حضور الطلاب في أي وقت؛ يتحول الطلاب غير المحددين إلى غياب عند الاعتماد النهائي فقط.'
         )}
         actions={
-          <select
-            aria-label={t('Select lecture for attendance', 'اختر المحاضرة')}
-            value={selectedLectureId}
-            onChange={(e) => {
-              setSelectedLectureId(e.target.value);
-              setFeedback(null);
-              setComparisonRows(null);
-            }}
-            className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold max-w-full"
-          >
-            {myLectures.map((l) => (
-              <option key={l.id} value={l.id}>
-                D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-1.5 min-w-[230px]">
+            <label
+              htmlFor="instructor-attendance-lecture"
+              className="text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              {t('Choose lecture AND group to mark attendance', 'اختار المحاضرة والجروب قبل تسجيل الحضور')}
+            </label>
+            <select
+              id="instructor-attendance-lecture"
+              aria-label={t('Select lecture and group for attendance', 'اختر المحاضرة والجروب للحضور')}
+              value={selectedLectureId}
+              onChange={(e) => {
+                setSelectedLectureId(e.target.value);
+                // Search and visiting-student selections belong to the old
+                // lecture/group. Clear them before displaying the next roster.
+                setStudentSearch('');
+                setCrossGroupSearch('');
+                setCrossGroupStudentId('');
+                setSecureVisitingMatches([]);
+                setVisitingLookupError(null);
+                setShowMidcampEnrollForm(false);
+                setFeedback(null);
+                setComparisonRows(null);
+              }}
+              className="px-3.5 py-2 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-sm font-bold max-w-full"
+            >
+              {myLectures.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {groups.find(g => g.id === l.groupId)?.code || t('Unknown group', 'جروب غير معروف')} · D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
+                </option>
+              ))}
+            </select>
+          </div>
         }
       />
 
@@ -1483,6 +1497,28 @@ export const InstructorAttendanceView: React.FC = () => {
 
       {selectedLecture ? (
         <div className={`${SURFACE_CARD} p-5 space-y-4`}>
+          <div
+            role="status"
+            className="rounded-lg border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-4 py-3 space-y-1"
+          >
+            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+              {t('Attendance roster for the selected lecture only', 'كشف حضور المحاضرة المختارة فقط')}
+            </p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">
+              {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
+              {' · '}D{selectedLecture.campDay} P{selectedLecture.periodNumber}
+              {' · '}{selectedLecture.topic}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              {t('Home-group students:', 'طلاب الجروب الأصلي:')}
+              {' '}{studentsForSelectedLecture({
+                lecture: selectedLecture,
+                students,
+                transfers: studentTransfers,
+              }).length}
+              {' · '}{t('Change the lecture above to view another group.', 'غيّر المحاضرة من القائمة فوق لعرض طلاب جروب مختلف.')}
+            </p>
+          </div>
           {/* Sheet Status Header */}
           <div className={`${SURFACE_SUBTLE} p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs`}>
             <div className="flex items-center gap-2">
