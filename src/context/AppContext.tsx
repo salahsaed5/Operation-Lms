@@ -111,6 +111,7 @@ import {
   resolveIssueInDb,
   reviewCheckinExceptionInDb,
   reviewInstructorRequestInDb,
+  saveAttendanceDraftAtomicallyInDb,
   saveAttendanceRecordsDraftToDb,
   sendInstructorPasswordResetEmail,
   signOutSupabase,
@@ -2591,12 +2592,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'Review local and server marks before syncing.'
           );
         }
-        await saveAttendanceRecordsDraftToDb({
-          campId: activeCamp.id,
-          lecture: lec,
+        await saveAttendanceDraftAtomicallyInDb({
           sheetId: remote.id,
-          records,
-          updatedBy: auth.currentProfile.id,
+          expected: remote.records,
+          desired: records,
         });
       } catch (err) {
         syncState = OfflineSyncState.FAILED;
@@ -2840,14 +2839,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'Final submission is blocked to prevent data loss. Review and reconcile the drafts before submitting.'
           );
         }
-        const persistedSheetId = await saveAttendanceRecordsDraftToDb({
-          campId: activeCamp.id,
-          lecture: lec,
+        await saveAttendanceDraftAtomicallyInDb({
           sheetId: serverSheet.id,
-          records: finalized.finalizedRecords,
-          updatedBy: auth.currentProfile.id,
+          expected: serverSheet.records,
+          desired: finalized.finalizedRecords,
+          submit: true,
         });
-        await submitAttendanceSheetInDb(persistedSheetId);
         await deleteOfflineAttendanceDraft(lectureId);
         await refreshOperationalData();
         return { ok: true };
