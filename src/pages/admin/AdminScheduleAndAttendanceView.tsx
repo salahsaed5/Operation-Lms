@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { getSignedSelfieUrl } from '../../services/citsRepository';
+import { calculateCampDayDate } from '../../domain/businessRules';
 import {
   AttendanceMark,
   AttendanceSheetStatus,
@@ -127,6 +128,7 @@ export const AdminScheduleView: React.FC = () => {
     );
   }
 
+  const selectedTeachingDate = calculateCampDayDate(activeCamp.startDate, selectedDay, activeCamp.operatingWeekdays);
   const dayLectures = lectures
     .filter((l) => l.campId === activeCamp.id && l.campDay === selectedDay)
     .sort((a, b) => a.periodNumber - b.periodNumber);
@@ -238,7 +240,7 @@ export const AdminScheduleView: React.FC = () => {
             >
               {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map((day) => (
                 <option key={day} value={day}>
-                  {t(`Day ${day}`, `اليوم ${day}`)}{' '}
+                  {t(`Day ${day}`, `اليوم ${day}`)} · {calculateCampDayDate(activeCamp.startDate,day,activeCamp.operatingWeekdays)}{' '}
                   {day === activeCamp.currentCampDay ? `(${t('Current', 'الحالي')})` : ''}
                 </option>
               ))}
@@ -252,7 +254,7 @@ export const AdminScheduleView: React.FC = () => {
         <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <Plus className="w-4 h-4 text-blue-600" />
           <span>
-            {t(`Add Lecture — Day ${selectedDay}`, `إضافة محاضرة — اليوم ${selectedDay}`)}
+            {t(`Add Lecture — Day ${selectedDay}`, `إضافة محاضرة — اليوم ${selectedDay}`)} · {selectedTeachingDate}
           </span>
         </h2>
 
