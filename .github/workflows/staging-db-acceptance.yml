@@ -30,9 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_STAGING_DB_URL}" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo 'Staging SQL acceptance: NOT TESTED. Configure SUPABASE_STAGING_DB_URL in GitHub staging environment.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            echo '::error::Staging SQL acceptance NOT RUN: missing SUPABASE_STAGING_DB_URL in staging environment.'
+            echo 'Staging SQL acceptance: BLOCKED — configure the approved Staging DB URL.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
           python3 - <<'PY'
           import os
