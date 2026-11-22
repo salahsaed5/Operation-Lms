@@ -81,7 +81,7 @@ import {
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
-import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows } from '../domain/attendanceDraftDiff';
+import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows, unsafeAttendanceDraftConflicts } from '../domain/attendanceDraftDiff';
 import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
@@ -2607,8 +2607,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Compare what this editor last saw on the server, NOT the marks
         // they are trying to change. CAS in Postgres checks this again
         // under the sheet lock to close the read/write race.
-        const conflicts = compareAttendanceServerRows(serverBaselineRecords || records, remote.records);
-        if (conflicts.length && compareAttendanceServerRows(records, remote.records).length) {
+        const conflicts = unsafeAttendanceDraftConflicts(serverBaselineRecords, records, remote.records);
+        if (conflicts.length) {
           throw new Error(
             `Draft conflict for ${conflicts.length} student(s): no server changes were made. ` +
             'Review local and server marks before syncing.'
@@ -2867,10 +2867,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!serverSheet || serverSheet.status !== AttendanceSheetStatus.DRAFT) {
           throw new Error('Server attendance sheet was changed or is missing. Refresh and review before finalizing.');
         }
-        const differences = compareAttendanceServerRows(sheet.records, serverSheet.records);
+        // The submitted marks may legitimately differ from the last server
+        // snapshot when the Instructor edited offline. Reject only if another
+        // writer changed that expected snapshot, not the editor's own changes.
+        const pendingLocalDraft = await getOfflineAttendanceDraft(lectureId);
+        const isOwnedPendingDraft = auth.currentProfile.role === UserRole.INSTRUCTOR &&
+          pendingLocalDraft?.campId === activeCamp.id &&
+          pendingLocalDraft?.instructorId === (lec.substituteInstructorId || lec.instructorId) &&
+          pendingLocalDraft?.syncState !== OfflineSyncState.SYNCED;
+        const serverBaseline = isOwnedPendingDraft
+          ? pendingLocalDraft?.serverBaselineRecords
+          : serverAttendanceBaselinesRef.current[`${activeCamp.id}:${lectureId}`];
+        const differences = unsafeAttendanceDraftConflicts(
+          serverBaseline, sheet.records, serverSheet.records
+        );
         if (differences.length > 0) {
           throw new Error(
-            `Local and server attendance drafts differ for ${differences.length} student(s). ` +
+            `Another editor changed the server draft for ${differences.length} student(s). ` +
             'Final submission is blocked to prevent data loss. Review and reconcile the drafts before submitting.'
           );
         }
