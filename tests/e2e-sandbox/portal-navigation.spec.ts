@@ -94,7 +94,7 @@ test('one search immediately filters roster and shows other-group student with o
   await expect(page.getByText('Matching students already on this sheet: 0')).toBeVisible();
   const visitors = page.getByRole('group', { name: 'Students from other groups' });
   await expect(visitors.getByText('Youssef Amr Nabil')).toBeVisible();
-  await expect(visitors.getByText(/Home group: GRP-02/)).toBeVisible();
+  await expect(visitors.getByText(/Home group: GRP-BETA/)).toBeVisible();
 
   // One query and one click — never ask to type into a separate visitor box.
   await visitors.getByRole('button', { name: 'Add Youssef Amr Nabil as visitor' }).click();
