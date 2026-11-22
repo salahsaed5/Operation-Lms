@@ -38,6 +38,9 @@ jobs:
       - name: Verify sign-in, RTL and mobile UI in real Chromium
         run: npx playwright test --config playwright.config.ts --reporter=line
 
+      - name: Verify all Admin and Instructor navigation modules in isolated local sandbox
+        run: npx playwright test --config playwright.sandbox.config.ts --reporter=line
+
       # Vercel Deployment Protection stays enabled. Never weaken it for CI.
       # Only run this remote step when a valid, short-lived Trusted Sources
       # token has been configured securely; otherwise report the release gate.
