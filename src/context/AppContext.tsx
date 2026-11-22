@@ -56,7 +56,9 @@ import {
   INITIAL_VENUES,
 } from '../services/seedData';
 import {
+  ALL_CAMP_WEEKDAYS,
   calculateCampDayDate,
+  validateCampWeekdays,
   createValidatedAuditLogEntry,
   evaluateDailyCheckin,
   evaluateLectureEntitlement,
@@ -260,6 +262,7 @@ interface AppContextValue {
     venueId?: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
   }) => Promise<ActionResult>;
@@ -269,6 +272,7 @@ interface AppContextValue {
     nameAr: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     currentCampDay: number;
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
@@ -1366,6 +1370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     venueId?: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
   }): Promise<ActionResult> => {
@@ -1377,8 +1382,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { ok: false, error: 'At least one venue is required before creating a camp.' };
     }
 
-    const duration = Math.max(1, input.durationDays || 10);
-    const endDateStr = calculateCampDayDate(input.startDate, duration);
+    const duration = input.durationDays;
+    if (!Number.isInteger(duration) || duration < 1 || duration > 60) {
+      return { ok: false, error: 'Camp duration must be between 1 and 60 teaching days.' };
+    }
+    const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
+    if (calendarError) return { ok: false, error: calendarError };
+    const endDateStr = calculateCampDayDate(input.startDate, duration, input.operatingWeekdays);
 
     if (isSupabaseMode) {
       try {
@@ -1390,6 +1400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           startDate: input.startDate,
           endDate: endDateStr,
           durationDays: duration,
+          operatingWeekdays: input.operatingWeekdays,
           geofenceRadiusMeters: input.geofenceRadiusMeters || 100,
           defaultRateEgp: Math.round(input.defaultRateEgp || 700),
           createdBy: auth.currentProfile.id,
@@ -1412,6 +1423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startDate: input.startDate,
       endDate: endDateStr,
       durationDays: duration,
+      operatingWeekdays: [...input.operatingWeekdays],
       currentCampDay: 1,
       settings: {
         campId: id,
@@ -1443,6 +1455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     nameAr: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     currentCampDay: number;
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
@@ -1452,6 +1465,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!target) return { ok: false, error: 'Camp not found.' };
     const archiveCheck = validateCampNotArchived(target);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
+    if (!Number.isInteger(input.durationDays) || input.durationDays < 1 || input.durationDays > 60 ||
+        !Number.isInteger(input.currentCampDay) || input.currentCampDay < 1 || input.currentCampDay > input.durationDays) {
+      return { ok: false, error: 'Invalid teaching-day count or current camp day.' };
+    }
+    const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
+    if (calendarError) return { ok: false, error: calendarError };
+    const conflictingLecture = lectures.find(l => l.campId === target.id &&
+      (l.campDay > input.durationDays ||
+       l.lectureDate !== calculateCampDayDate(input.startDate, l.campDay, input.operatingWeekdays)));
+    if (conflictingLecture) return { ok: false, error: 'Existing lectures would move to another date. Reconcile schedule first.' };
 
     if (isSupabaseMode) {
       try {
@@ -1463,7 +1486,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const endDate = calculateCampDayDate(input.startDate, input.durationDays);
+    const endDate = calculateCampDayDate(input.startDate, input.durationDays, input.operatingWeekdays);
     setCamps((prev) =>
       prev.map((c) =>
         c.id === input.campId
@@ -1474,6 +1497,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               startDate: input.startDate,
               endDate,
               durationDays: input.durationDays,
+              operatingWeekdays: [...input.operatingWeekdays],
               currentCampDay: input.currentCampDay,
               settings: {
                 ...c.settings,
@@ -2131,7 +2155,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const inst = instructors.find((i) => i.id === input.instructorId) || instructors[0];
-    const lectureDate = calculateCampDayDate(activeCamp.startDate, input.campDay);
+    if (!Number.isInteger(input.campDay) || input.campDay < 1 || input.campDay > activeCamp.durationDays) {
+      return { ok: false, errors: ['Lecture must be on a valid Camp teaching day.'] };
+    }
+    const lectureDate = calculateCampDayDate(activeCamp.startDate, input.campDay, activeCamp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS);
     const frozenRate = inst?.defaultLectureRateEgp ?? activeCamp.settings.defaultLectureRateEgp;
 
     if (isSupabaseMode) {
@@ -2487,7 +2514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       campId: activeCamp.id,
       instructorId: input.instructorId,
       campDay: activeCamp.currentCampDay,
-      checkinDate: calculateCampDayDate(activeCamp.startDate, activeCamp.currentCampDay),
+      checkinDate: calculateCampDayDate(activeCamp.startDate, activeCamp.currentCampDay, activeCamp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS),
       serverTimestamp: new Date().toISOString(),
       latitude: input.latitude,
       longitude: input.longitude,
