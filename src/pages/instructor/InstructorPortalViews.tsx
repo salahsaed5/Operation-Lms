@@ -1500,11 +1500,11 @@ export const InstructorAttendanceView: React.FC = () => {
                   key={rec.studentId}
                   role="group"
                   aria-label={t(`Attendance for ${rec.studentName}`, `حضور ${rec.studentName}`)}
-                  className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                  className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-950/40"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                    <div className="grid grid-cols-3 gap-2 w-full md:w-[280px] shrink-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">
                         {highlightAttendanceSearchMatch(rec.studentName, searchTerm)}
                       </p>
                       {rec.isCrossGroup ? (
@@ -1537,7 +1537,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       disabled={isLockedOrSubmitted}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
                       aria-pressed={rec.mark === AttendanceMark.PRESENT}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.PRESENT
                           ? 'bg-emerald-600 text-white'
                           : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
@@ -1550,7 +1550,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       disabled={isLockedOrSubmitted}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
                       aria-pressed={rec.mark === AttendanceMark.LATE}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.LATE
                           ? 'bg-amber-600 text-white'
                           : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
@@ -1563,7 +1563,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       disabled={isLockedOrSubmitted}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
                       aria-pressed={rec.mark === AttendanceMark.ABSENT}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.ABSENT
                           ? 'bg-red-600 text-white'
                           : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
@@ -1583,16 +1583,16 @@ export const InstructorAttendanceView: React.FC = () => {
       <PageHeader
         title={t('Lecture Attendance', 'تسجيل حضور المحاضرة')}
         subtitle={t(
-          'Mark student attendance offline or online. Unmarked students become absent upon final submission.',
-          'سجل حضور الطلاب في أي وقت؛ يتحول الطلاب غير المحددين إلى غياب عند الاعتماد النهائي فقط.'
+          'Search, filter and mark attendance for the selected lecture.',
+          'بحث وفلترة وتسجيل حضور طلاب المحاضرة المختارة.'
         )}
         actions={
-          <div className="flex flex-col gap-1.5 min-w-[230px]">
+          <div className="flex flex-col gap-1.5 w-full sm:w-[380px]">
             <label
               htmlFor="instructor-attendance-lecture"
               className="text-xs font-bold text-slate-700 dark:text-slate-200"
             >
-              {t('Choose lecture AND group to mark attendance', 'اختار المحاضرة والجروب قبل تسجيل الحضور')}
+              {t('Lecture & group', 'المحاضرة والجروب')}
             </label>
             <select
               id="instructor-attendance-lecture"
@@ -1611,7 +1611,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 setFeedback(null);
                 setComparisonRows(null);
               }}
-              className="px-3.5 py-2 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-sm font-bold max-w-full"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold max-w-full focus:ring-2 focus:ring-blue-500"
             >
               {myLectures.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -1632,52 +1632,50 @@ export const InstructorAttendanceView: React.FC = () => {
       )}
 
       {selectedLecture ? (
-        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
-          <div
-            role="status"
-            className="rounded-lg border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-4 py-3 space-y-1"
+        <div className="space-y-5">
+          {/* Compact lecture summary — never duplicate the draft status panel. */}
+          <section aria-label={t('Selected lecture summary', 'ملخص المحاضرة المختارة')}
+            className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
           >
-            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-              {t('Attendance roster for the selected lecture only', 'كشف حضور المحاضرة المختارة فقط')}
-            </p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">
-              {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
-              {' · '}D{selectedLecture.campDay} P{selectedLecture.periodNumber}
-              {' · '}{selectedLecture.topic}
-            </p>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {t('Home-group students:', 'طلاب الجروب الأصلي:')}
-              {' '}{studentsForSelectedLecture({
-                lecture: selectedLecture,
-                students,
-                transfers: studentTransfers,
-              }).length}
-              {' · '}{t('Change the lecture above to view another group.', 'غيّر المحاضرة من القائمة فوق لعرض طلاب جروب مختلف.')}
-            </p>
-          </div>
-          {/* Sheet Status Header */}
-          <div className={`${SURFACE_SUBTLE} p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs`}>
-            <div className="flex items-center gap-2">
-              {existingSheet?.syncState === OfflineSyncState.SYNCED ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <WifiOff className="w-4 h-4 text-amber-600" />
-              )}
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {isLockedOrSubmitted
-                  ? t('Submitted & Synced', 'معتمد ومتزامن')
-                  : t('Draft — Not Yet Finalized', 'مسودة — لم تُعتمد نهائيًا')}
-              </span>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="min-w-0 space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  {t('Selected lecture', 'المحاضرة المختارة')}
+                </p>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
+                  {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
+                  {' · '}{selectedLecture.topic}
+                </h2>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <span>D{selectedLecture.campDay} · P{selectedLecture.periodNumber}</span>
+                  <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
+                  <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
+                    lecture: selectedLecture, students, transfers: studentTransfers,
+                  }).length}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap md:flex-col md:items-end gap-2 shrink-0">
+                <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
+                  {isLockedOrSubmitted
+                    ? t('Submitted · Locked', 'معتمد · مغلق')
+                    : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
+                </StatusBadge>
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  {existingSheet?.syncState === OfflineSyncState.SYNCED
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
+                  {existingSheet?.syncState === OfflineSyncState.SYNCED
+                    ? t('Synced', 'متزامن')
+                    : t('Local draft / pending sync', 'مسودة محلية / انتظار المزامنة')}
+                </span>
+              </div>
             </div>
-            <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
-              {isLockedOrSubmitted ? t('Locked', 'مغلق') : t('Editable Draft', 'قابل للتعديل')}
-            </StatusBadge>
-          </div>
+          </section>
 
           {/* Single live search: home roster appears immediately below; the
               scoped RPC returns visitors without exposing unassigned rosters. */}
           <section aria-label={t('Find and mark student attendance', 'ابحث وسجل حضور طالب')}
-            className="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-3.5"
+            className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
           >
             <label htmlFor="attendance-student-search" className="block text-sm font-bold text-slate-900 dark:text-white">
               {t('Find student', 'البحث عن طالب')}
@@ -1699,13 +1697,13 @@ export const InstructorAttendanceView: React.FC = () => {
                 placeholder={t('Enter student name or ID code...', 'اكتب اسم الطالب أو الكود...')}
                 aria-label={t('Search students by name or code', 'البحث عن الطلاب بالاسم أو الكود')}
                 autoComplete="off"
-                className={`${INPUT_CLASS} ps-9 text-sm min-h-[44px]`}
+                className={`${INPUT_CLASS} ps-9 text-sm min-h-[48px] rounded-xl`}
               />
             </div>
             {!studentSearch.trim() && (
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t('Type once to find a student in this roster or any other assigned Camp group.',
-                  'اكتب الاسم أو الكود مرة واحدة عشان تلاقي الطالب في الكشف أو في جروب تاني.')}
+                {t('Search by student name or code in the roster and other groups.',
+                  'ابحث بالاسم أو كود الطالب في الكشف والجروبات التانية.')}
               </p>
             )}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-2">
@@ -1816,12 +1814,13 @@ export const InstructorAttendanceView: React.FC = () => {
 {/* Complete roster appears when the search is clear. Search matches are
               displayed directly under the input rather than far below. */}
           {!studentSearch.trim() && (
-            <section aria-label={t('Full attendance roster', 'كشف الحضور الكامل')} className="space-y-3">
+            <section aria-label={t('Full attendance roster', 'كشف الحضور الكامل')}
+              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {t('Students in this attendance sheet', 'طلاب كشف الحضور')}
+                  {t('Attendance roster', 'كشف حضور الطلاب')}
                 </h3>
-                <span className="rounded-full border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500">
+                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-200 tabular-nums">
                   {filteredRecords.length} / {baseRecords.length}
                 </span>
               </div>
@@ -1843,25 +1842,27 @@ export const InstructorAttendanceView: React.FC = () => {
 
                     {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
           {!isLockedOrSubmitted && (
-            <section className={`${SURFACE_SUBTLE} rounded-lg p-3.5 space-y-3 text-xs`}>
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-sm text-xs">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-white">
-                    {t('New Student Joining Mid-Camp', 'طالب جديد انضم أثناء المعسكر')}
+                    {t('Enroll new student', 'إضافة طالب جديد')}
                   </h3>
                   <p className="text-slate-500 mt-1">
-                    {t('Use only if the student does not already exist in another group. Group and join day are recorded by the server.',
-                        'استخدمها لو الطالب مش موجود أصلًا في أي مجموعة. السيرفر بيسجل المجموعة ويوم الانضمام تلقائيًا.')}
+                    {t('For students not already registered in any Camp group.',
+                        'للطالب اللي مش متسجل أصلًا في أي جروب بالمعسكر.')}
                   </p>
                 </div>
                 <button type="button" onClick={() => setShowMidcampEnrollForm(v => !v)}
+                  aria-expanded={showMidcampEnrollForm}
+                  aria-controls="midcamp-enrollment-form"
                   className={BTN_SECONDARY}>
                   <UserPlus className="w-4 h-4" />
                   <span>{showMidcampEnrollForm ? t('Cancel', 'إلغاء') : t('Enroll New Student', 'إضافة طالب جديد')}</span>
                 </button>
               </div>
               {showMidcampEnrollForm && (
-                <form onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3">
+                <form id="midcamp-enrollment-form" onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
                   <p className="text-blue-700 dark:text-blue-300">
                     {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
                     {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
@@ -1912,16 +1913,16 @@ export const InstructorAttendanceView: React.FC = () => {
           )}
 
           {!isLockedOrSubmitted && !canFinalizeAttendance && (
-            <div role="status" className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-xs text-amber-900 dark:text-amber-200">
+            <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
               {t(
-                'Draft preparation is available. Final submission is disabled until this camp is active and the scheduled lecture date has arrived. Unmarked students will count as absent after final submission.',
-                'تقدر تجهز كشف الحضور كمسودة. الاعتماد النهائي مقفول لحد تفعيل المعسكر وحلول موعد المحاضرة. الطلاب غير المحددين هيتحسبوا غياب عند الاعتماد.'
+                'Draft only. Submission opens when the camp is active and the lecture date arrives. Unmarked students become absent only on final submission.',
+                'مسودة فقط. الاعتماد متاح بعد تفعيل المعسكر وحلول موعد المحاضرة. غير المحددين يتحولوا لغياب عند الاعتماد النهائي.'
               )}
             </div>
           )}
 
           {!isLockedOrSubmitted && isSupabaseMode && (
-            <section className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <section className="space-y-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1991,7 +1992,7 @@ export const InstructorAttendanceView: React.FC = () => {
           )}
 
           {!isLockedOrSubmitted && (
-            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shadow-sm">
               <button
                 type="button"
                 disabled={isBusy || !canFinalizeAttendance}
