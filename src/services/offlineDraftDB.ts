@@ -7,6 +7,8 @@ export interface OfflineAttendanceDraft {
   idempotencyKey: string;
   syncState: OfflineSyncState;
   records: AttendanceRecordItem[];
+  /** Authoritative server state when this offline edit began; preserved across reloads. */
+  serverBaselineRecords?: AttendanceRecordItem[];
   updatedAt: string;
 }
 
