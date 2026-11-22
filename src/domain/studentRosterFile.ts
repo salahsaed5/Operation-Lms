@@ -159,7 +159,20 @@ async function readXlsxGrid(file: File): Promise<GridRow[]> {
         throw new Error('Your browser does not support Excel unzip. Use Chrome or upload a CSV.');
       }
       // Chromium's deflate-raw decompressor for Excel ZIP entries.
-      const stream = new Blob([compressed.buffer]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      // Limit streamed decompression before accumulating bytes (ZIP bomb defense).
+      let outputSize = 0;
+      const limit = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          outputSize += chunk.byteLength;
+          if (outputSize > MAX_XML_BYTES || outputSize > e.expanded) {
+            throw new Error('Excel ZIP entry expanded beyond its declared safe size.');
+          }
+          controller.enqueue(chunk);
+        },
+      });
+      const stream = new Blob([compressed]).stream()
+        .pipeThrough(new DecompressionStream('deflate-raw'))
+        .pipeThrough(limit);
       expanded = new Uint8Array(await new Response(stream).arrayBuffer());
     } else throw new Error('Unsupported Excel compression format.');
     if (expanded.length !== e.expanded || expanded.length > MAX_XML_BYTES) {
