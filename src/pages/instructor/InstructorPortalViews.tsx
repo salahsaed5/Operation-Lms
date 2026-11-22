@@ -1456,7 +1456,8 @@ export const InstructorAttendanceView: React.FC = () => {
                       'الطالب بيفضل تابع لمجموعته الأصلية. بعد الإضافة تقدر تغير حاضر إلى متأخر. التعديل مسودة محلية لحد المزامنة الآمنة.')}
                 </p>
               </div>
-            )}          </div>
+            )}
+          </div>
 
           {/* Student Touch Rows */}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
