@@ -274,7 +274,7 @@ test('Admin Finance reconciles primary, backup, transportation and immutable pay
   await payment.getByRole('spinbutton',{name:'Payment amount EGP'}).fill('200');
   await payment.getByRole('textbox',{name:'Payment audit note'}).fill('Second partial payment');
   await payment.getByRole('button',{name:'Review & post transaction'}).click();
-  await page.getByRole('button',{name:'Post transaction'}).click();
+  await page.getByRole('button',{name:'Post transaction',exact:true}).click();
   await expect(ahmed.locator('td').nth(8)).toContainText('450 EGP');
   await expect(ahmed.locator('td').nth(9)).toContainText('400 EGP');
   await expect(finance.getByText('Second partial payment')).toBeVisible();
