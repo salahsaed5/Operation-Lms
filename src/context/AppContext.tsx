@@ -85,6 +85,16 @@ import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAtten
 import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
+  EMPTY_FINANCE_SNAPSHOT, financePolicyForDay,
+  calculateInstructorFinancialStatement,
+  type FinanceSnapshot, type FinancePaymentMethod,
+} from '../domain/instructorFinance';
+import {
+  fetchFinanceSnapshotInDb, setFinanceRatesInDb,
+  addBackupFinanceSessionInDb, reviewBackupFinanceSessionInDb,
+  postFinancePaymentInDb,
+} from '../services/financeRepository';
+import {
   acknowledgeLectureInDb,
   adminCorrectAttendanceRecordInDb,
   archiveCampInDb,
@@ -207,6 +217,20 @@ interface AppContextValue {
   checkinExceptions: CheckinExceptionItem[];
   attendanceSheets: AttendanceSheet[];
   entitlements: LectureEntitlement[];
+  financeSnapshot: FinanceSnapshot;
+  setCampFinanceRates: (input: {
+    campId: string; effectiveDay: number; backupRate: number; transportRate: number; reason: string;
+  }) => Promise<ActionResult>;
+  addFinanceBackup: (input: {
+    lectureId: string; instructorId: string; reason: string;
+  }) => Promise<ActionResult>;
+  reviewFinanceBackup: (input: {
+    backupId: string; decision: 'approved'|'excluded'; reason: string;
+  }) => Promise<ActionResult>;
+  recordFinancePayment: (input: {
+    instructorId: string; amountEgp: number; method: FinancePaymentMethod;
+    reference: string; note: string;
+  }) => Promise<ActionResult>;
   requests: InstructorRequestItem[];
   notifications: AppNotification[];
   issues: OperationalIssue[];
@@ -481,6 +505,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [entitlements, setEntitlements] = useState<LectureEntitlement[]>(
     isSandboxMode ? INITIAL_ENTITLEMENTS : []
   );
+  // Mock records ONLY for offline Local Sandbox demo — never uploaded.
+  const [financeSnapshot, setFinanceSnapshot] = useState<FinanceSnapshot>(
+    isSandboxMode ? {
+      enabled:true,
+      policies:[{
+        id:'demo-policy-1',campId:'camp-2026-spring',
+        effectiveFromDay:1,backupRateEgp:150,transportPerDayEgp:100,
+        createdAt:'2026-11-13T08:00:00Z',
+      }],
+      backups:[{
+        id:'demo-backup-1',campId:'camp-2026-spring',
+        lectureId:'lec-d4-p1-g1',instructorId:'inst-3',
+        campDay:4,frozenRateEgp:150,status:'approved',
+        reason:'Confirmed onsite supporting instructor',
+        reviewedAt:'2026-11-16T12:00:00Z',
+      }],
+      payments:[{
+        id:'demo-finance-payment-1',campId:'camp-2026-spring',
+        instructorId:'inst-1',amountEgp:250,method:'cash',
+        reference:'SANDBOX-001',note:'Demo partial settlement',
+        createdAt:'2026-11-17T10:00:00Z',
+      }],
+    } : EMPTY_FINANCE_SNAPSHOT
+  );
   const [requests, setRequests] = useState<InstructorRequestItem[]>(
     isSandboxMode ? INITIAL_REQUESTS : []
   );
@@ -544,6 +592,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCheckinExceptions([]);
     setAttendanceSheets([]);
     setEntitlements([]);
+    setFinanceSnapshot(EMPTY_FINANCE_SNAPSHOT);
     setRequests([]);
     setNotifications([]);
     setIssues([]);
@@ -576,6 +625,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDataError(null);
     try {
       const snap = await fetchOperationalSnapshot(ctx);
+      const finance = await fetchFinanceSnapshotInDb();
       // Capture server state BEFORE IndexedDB overlays. Unsynced drafts keep
       // their original baseline in IndexedDB so reloads cannot erase conflicts.
       serverAttendanceBaselinesRef.current = Object.fromEntries(
@@ -620,6 +670,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCheckinExceptions(snap.checkinExceptions);
       setAttendanceSheets(mergedSheets);
       setEntitlements(snap.entitlements);
+      setFinanceSnapshot(finance);
       setRequests(snap.requests);
       setNotifications(snap.notifications);
       setIssues(snap.issues);
@@ -3099,6 +3150,135 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  // Finance mutations are admin-only. Connected writes are audit-RPC transactions;
+  // never write directly to finance tables or expose payment modifications to Instructor.
+  const mayManageFinance = () =>
+    auth.isAuthenticated && auth.currentProfile.isActive &&
+    auth.currentProfile.role === UserRole.ADMIN && Boolean(activeCamp) &&
+    financeSnapshot.enabled;
+  const financeNoAccess = (): ActionResult => ({
+    ok:false,
+    error:t('Finance is unavailable or the Administrator is not authorized. Migration 0023 must be reviewed and applied on Staging first.',
+      'الحسابات غير متاحة أو الحساب ملوش صلاحية. لازم مراجعة وتطبيق Migration 0023 على Staging الأول.'),
+  });
+  const safeFinanceError = (err:unknown):ActionResult=>({
+    ok:false,error:err instanceof Error ? err.message : 'Finance operation failed.',
+  });
+  const setCampFinanceRates = async (input:{
+    campId:string;effectiveDay:number;backupRate:number;transportRate:number;reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance() || input.campId!==activeCamp?.id) return financeNoAccess();
+    const {campId,effectiveDay,backupRate,transportRate,reason}=input;
+    if(!reason.trim() || reason.trim().length<3 ||
+      ![effectiveDay,backupRate,transportRate].every(Number.isSafeInteger) ||
+      effectiveDay<1 || backupRate<0 || transportRate<0 || backupRate>1000000 || transportRate>1000000)
+      return {ok:false,error:'Valid future day, nonnegative whole-number rates and reason required.'};
+    const existing=financeSnapshot.policies.filter(p=>p.campId===campId);
+    if (existing.length>0 ? effectiveDay<=activeCamp!.currentCampDay || existing.some(p=>p.effectiveFromDay===effectiveDay)
+      : effectiveDay!==1)
+      return {ok:false,error:'Initial rates must start on Day 1; future changes must start after current day.'};
+    if(isSupabaseMode) {
+      try{await setFinanceRatesInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-finance-policy-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,policies:[...prev.policies,{
+      id,campId,effectiveFromDay:effectiveDay,backupRateEgp:backupRate,
+      transportPerDayEgp:transportRate,createdAt:new Date().toISOString(),
+    }]}));
+    appendSandboxAudit('FINANCE_RATE_POLICY_CREATED','camp_finance_rate_policies',id,null,
+      {effectiveDay,backupRate,transportRate},reason.trim());
+    return {ok:true};
+  };
+  const addFinanceBackup = async (input:{
+    lectureId:string;instructorId:string;reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const lec=lectures.find(l=>l.id===input.lectureId && l.campId===activeCamp!.id &&
+      l.status!==LectureStatus.CANCELLED);
+    const instructor=instructors.find(i=>i.id===input.instructorId && i.isActive);
+    const existing=financeSnapshot.backups.some(b=>b.lectureId===input.lectureId && b.instructorId===input.instructorId);
+    const policy=lec&&financePolicyForDay(financeSnapshot.policies,activeCamp!.id,lec.campDay);
+    if(!lec || !instructor || !policy || existing ||
+      (campInstructorIds[activeCamp!.id]||[]).indexOf(instructor.id)===-1 ||
+      input.instructorId===lec.instructorId || input.instructorId===lec.substituteInstructorId ||
+      input.reason.trim().length<3)
+      return {ok:false,error:'Select a different active Camp instructor and lecture; configure rates and add a reason. Duplicates are blocked.'};
+    if(lectures.some(l=>l.id!==lec.id && l.campId===lec.campId && l.campDay===lec.campDay &&
+      l.periodNumber===lec.periodNumber && l.status!==LectureStatus.CANCELLED &&
+      (l.substituteInstructorId||l.instructorId)===instructor.id))
+      return {ok:false,error:'Backup instructor has a primary lecture in this same period.'};
+    if(isSupabaseMode){
+      try{await addBackupFinanceSessionInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-backup-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,backups:[...prev.backups,{
+      id,campId:lec.campId,lectureId:lec.id,instructorId:instructor.id,
+      campDay:lec.campDay,frozenRateEgp:policy.backupRateEgp,status:'pending',
+      reason:input.reason.trim(),reviewedAt:null,
+    }]}));
+    appendSandboxAudit('FINANCE_BACKUP_RECORDED','camp_backup_sessions',id,null,
+      {lectureId:lec.id,instructorId:instructor.id,rate:policy.backupRateEgp},input.reason.trim());
+    return {ok:true};
+  };
+  const reviewFinanceBackup = async (input:{
+    backupId:string;decision:'approved'|'excluded';reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const backup=financeSnapshot.backups.find(b=>b.id===input.backupId && b.campId===activeCamp!.id);
+    const lec=backup&&lectures.find(l=>l.id===backup.lectureId);
+    const sheet=backup&&attendanceSheets.find(s=>s.lectureId===backup.lectureId);
+    if(!backup || input.reason.trim().length<3)
+      return {ok:false,error:'Backup record and audit reason are required.'};
+    if(input.decision==='approved' && (lec?.status===LectureStatus.CANCELLED ||
+      (sheet?.status!==AttendanceSheetStatus.SUBMITTED && sheet?.status!==AttendanceSheetStatus.LOCKED)))
+      return {ok:false,error:'Finalized lecture attendance is required before approving backup.'};
+    if(isSupabaseMode){
+      try{await reviewBackupFinanceSessionInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    setFinanceSnapshot(prev=>({...prev,backups:prev.backups.map(b=>b.id!==backup.id?b:{
+      ...b,status:input.decision,reviewedAt:new Date().toISOString(),
+    })}));
+    appendSandboxAudit('FINANCE_BACKUP_REVIEWED','camp_backup_sessions',backup.id,
+      {status:backup.status},{status:input.decision},input.reason.trim());
+    return {ok:true};
+  };
+  const recordFinancePayment = async (input:{
+    instructorId:string;amountEgp:number;method:FinancePaymentMethod;reference:string;note:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const inst=instructors.find(i=>i.id===input.instructorId);
+    if(!inst || !Number.isSafeInteger(input.amountEgp) || input.amountEgp===0 ||
+      Math.abs(input.amountEgp)>10000000 || input.note.trim().length<3 ||
+      !(['cash','bank_transfer','instapay','wallet','other'] as string[]).includes(input.method))
+      return {ok:false,error:'Valid instructor, nonzero whole-number amount, payment method and reason required.'};
+    const st=calculateInstructorFinancialStatement({
+      campId:activeCamp!.id,instructor:inst,lectures,entitlements,
+      backups:financeSnapshot.backups,payments:financeSnapshot.payments,
+      policies:financeSnapshot.policies,
+    });
+    if(input.amountEgp>0 && input.amountEgp>st.balanceEgp)
+      return {ok:false,error:'Cannot record payment greater than confirmed unpaid balance.'};
+    if(input.amountEgp<0 && -input.amountEgp>st.paidEgp)
+      return {ok:false,error:'Refund exceeds recorded payments.'};
+    const command={...input,campId:activeCamp!.id};
+    if(isSupabaseMode){
+      try{await postFinancePaymentInDb(command);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-payment-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,payments:[...prev.payments,{
+      id,campId:activeCamp!.id,instructorId:inst.id,amountEgp:input.amountEgp,
+      method:input.method,reference:input.reference.trim(),note:input.note.trim(),
+      createdAt:new Date().toISOString(),
+    }]}));
+    appendSandboxAudit(input.amountEgp>0?'FINANCE_PAYMENT_POSTED':'FINANCE_REFUND_POSTED',
+      'camp_finance_payments',id,null,{instructorId:inst.id,amount:input.amountEgp},input.note.trim());
+    return {ok:true};
+  };
+
   const reviewLectureEntitlement = async (
     entitlementId: string,
     decision: 'approved' | 'excluded',
@@ -3636,6 +3816,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkinExceptions,
         attendanceSheets,
         entitlements,
+        financeSnapshot,
+        setCampFinanceRates,
+        addFinanceBackup,
+        reviewFinanceBackup,
+        recordFinancePayment,
         requests,
         notifications,
         issues,
