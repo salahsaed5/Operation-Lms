@@ -402,7 +402,7 @@ export const CampFinanceManager:React.FC=()=>{
         <label className={inputLabel}>{t('Audit reason / notes','سبب وتفاصيل الدفع')}
           <input aria-label={t('Payment audit note','سبب تسجيل الدفعة')} required minLength={3} value={payReason} onChange={e=>setPayReason(e.target.value)} className={INPUT_CLASS}/></label>
       </div>
-      <button type="button" className={BTN_PRIMARY} disabled={busy||!payInstructorId||!payAmount||payReason.trim().length<3}
+      <button type="button" className={BTN_PRIMARY} disabled={busy||!hasPolicy||!payInstructorId||!payAmount||payReason.trim().length<3}
         onClick={()=>setPaymentConfirm(true)}>
         <Wallet className="h-4 w-4 inline me-2"/>{t('Review & post transaction','مراجعة وتسجيل العملية')}
       </button>
