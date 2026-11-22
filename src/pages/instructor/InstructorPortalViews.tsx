@@ -1398,14 +1398,9 @@ export const InstructorAttendanceView: React.FC = () => {
     setIsBusy(true);
     setFeedback(null);
     try {
-      const draftRes = await saveAttendanceDraft(selectedLectureId, baseRecords, false);
-      if (!draftRes.ok) {
-        setFeedback({
-          ok: false,
-          text: draftRes.error || t('Unable to prepare attendance sheet.', 'تعذر تجهيز كشف الحضور.'),
-        });
-        return;
-      }
+      // Mark changes have already been saved as an offline draft.
+      // NEVER upload them first: doing so can overwrite the server draft
+      // before submitAndSyncAttendanceSheet compares against the server.
       const res = await submitAndSyncAttendanceSheet(selectedLectureId);
       if (!res.ok) {
         setFeedback({ ok: false, text: res.error || t('Sync failed.', 'تعذر إرسال الكشف.') });
