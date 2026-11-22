@@ -1,9 +1,12 @@
 import { supabase } from '../lib/supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FinanceSnapshot, FinancePaymentMethod } from '../domain/instructorFinance';
 
 function client() {
   if (!supabase) throw new Error('Supabase not configured');
-  return supabase;
+  // SQL migration 0023 introduces these new tables/RPCs. Their generated
+  // database types are intentionally not claimed before schema promotion.
+  return supabase as unknown as SupabaseClient;
 }
 const unavailable = (error: {code?: string; message: string} | null) =>
   Boolean(error && (error.code === '42P01' || error.code === 'PGRST205' ||
