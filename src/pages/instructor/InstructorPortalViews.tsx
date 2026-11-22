@@ -1224,6 +1224,18 @@ export const InstructorAttendanceView: React.FC = () => {
     existingSheet?.status === AttendanceSheetStatus.SUBMITTED ||
     existingSheet?.status === AttendanceSheetStatus.LOCKED;
 
+  // Allow preparing attendance drafts ahead of opening day, but never permit
+  // irreversible final submission for Draft camps or future lecture dates.
+  const cairoDateParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const cairoDatePart = (name: string) => cairoDateParts.find(part => part.type === name)?.value || '';
+  const cairoToday = `${cairoDatePart('year')}-${cairoDatePart('month')}-${cairoDatePart('day')}`;
+  const campOpenForAttendance = activeCamp.status === CampStatus.ACTIVE;
+  const lectureIsFuture = Boolean(selectedLecture && selectedLecture.lectureDate > cairoToday);
+  const canFinalizeAttendance = campOpenForAttendance && !lectureIsFuture;
+
   const rosterStudentIds = new Set(baseRecords.map((r) => r.studentId));
   const eligibleCrossGroupStudents = selectedLecture
     ? students.filter(
@@ -1303,6 +1315,13 @@ export const InstructorAttendanceView: React.FC = () => {
 
   const handleSubmitAndSync = async () => {
     if (!selectedLecture || isLockedOrSubmitted) return;
+    if (!canFinalizeAttendance) {
+      setFeedback({ ok: false, text: t(
+        'You may prepare a draft, but final attendance submission requires an active camp and a lecture date that has arrived.',
+        'تقدر تجهز مسودة الحضور، لكن الاعتماد النهائي متاح بعد تفعيل المعسكر وحلول موعد المحاضرة فقط.'
+      ) });
+      return;
+    }
     setIsBusy(true);
     setFeedback(null);
     try {
@@ -1379,7 +1398,7 @@ export const InstructorAttendanceView: React.FC = () => {
               <span className="font-semibold text-slate-900 dark:text-white">
                 {isLockedOrSubmitted
                   ? t('Submitted & Synced', 'معتمد ومتزامن')
-                  : t('Local Draft (Not Yet Submitted)', 'مسودة محلية (لم تُرسل بعد)')}
+                  : t('Draft — Not Yet Finalized', 'مسودة — لم تُعتمد نهائيًا')}
               </span>
             </div>
             <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
@@ -1510,11 +1529,20 @@ export const InstructorAttendanceView: React.FC = () => {
             )}
           </div>
 
+          {!isLockedOrSubmitted && !canFinalizeAttendance && (
+            <div role="status" className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-xs text-amber-900 dark:text-amber-200">
+              {t(
+                'Draft preparation is available. Final submission is disabled until this camp is active and the scheduled lecture date has arrived. Unmarked students will count as absent after final submission.',
+                'تقدر تجهز كشف الحضور كمسودة. الاعتماد النهائي مقفول لحد تفعيل المعسكر وحلول موعد المحاضرة. الطلاب غير المحددين هيتحسبوا غياب عند الاعتماد.'
+              )}
+            </div>
+          )}
+
           {!isLockedOrSubmitted && (
             <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={isBusy || !canFinalizeAttendance}
                 onClick={handleSubmitAndSync}
                 className={`${BTN_PRIMARY} min-h-[48px] px-6`}
               >
