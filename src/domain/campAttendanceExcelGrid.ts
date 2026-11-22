@@ -46,7 +46,7 @@ export function buildCampAttendanceExcelGrid(input: {
   lectures: Lecture[];
   attendanceSheets: AttendanceSheet[];
 }): CampAttendanceExcelGrid {
-  const dayCount = 10; // Contract: exactly ten Day 1..Day 10 columns.
+  const dayCount = input.durationDays; // Every real teaching day, 10 or 15 (or legacy custom duration).
   const { campId, durationDays, students, studentTransfers, lectures, attendanceSheets } = input;
   const validLectures = lectures.filter(l =>
     l.campId === campId && l.campDay >= 1 && l.campDay <= durationDays &&
