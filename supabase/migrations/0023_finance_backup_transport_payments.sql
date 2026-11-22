@@ -242,6 +242,9 @@ BEGIN
   ) pol ON true;
   SELECT coalesce(sum(amount_egp),0) INTO v_paid
     FROM public.camp_finance_payments WHERE camp_id=p_camp_id AND instructor_id=p_instructor_id;
+  -- Never post a financial settlement without an explicit Camp rate policy.
+  IF NOT EXISTS (SELECT 1 FROM public.camp_finance_rate_policies WHERE camp_id=p_camp_id)
+    THEN RAISE EXCEPTION 'Configure and review Camp finance rates before posting payments'; END IF;
   v_due:=v_primary+v_backup+v_transport;
   IF p_amount_egp>0 AND p_amount_egp>v_due-v_paid
     THEN RAISE EXCEPTION 'Payment exceeds current confirmed unpaid balance'; END IF;
