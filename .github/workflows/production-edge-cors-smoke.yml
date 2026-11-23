@@ -49,7 +49,7 @@ jobs:
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
             -X POST "https://${PRODUCTION_PROJECT}.supabase.co/functions/v1/auth-login" \
             -H "Origin: ${HOSTINGER_ORIGIN}" -H 'Content-Type: application/json' \
-            -d '{"identifier":"hostinger-smoke-nonexistent@invalid.example","password":"not-an-actual-password"}' \
+            -d "{\"identifier\":\"hostinger-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@invalid.example\",\"password\":\"not-an-actual-password\"}" \
             -o /dev/null -w '%{http_code}')"
           echo "Fabricated login: HTTP ${status}"
           if [[ "${status}" != "401" ]]; then
