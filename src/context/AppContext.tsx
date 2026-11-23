@@ -85,6 +85,7 @@ import {
 } from '../services/offlineDraftDB';
 import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows, unsafeAttendanceDraftConflicts } from '../domain/attendanceDraftDiff';
 import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
+import { campsAvailableToUser, resolveCampSelection } from '../domain/campSelection';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   EMPTY_FINANCE_SNAPSHOT, financePolicyForDay,
@@ -209,7 +210,10 @@ interface AppContextValue {
   venues: Venue[];
   rooms: Room[];
   camps: Camp[];
+  /** Camps this signed-in user may select. Always filtered by assignment for Instructors. */
+  availableCamps: Camp[];
   activeCamp: Camp | null;
+  selectCamp: (campId: string) => void;
   campInstructorIds: Record<string, string[]>;
   groups: Group[];
   students: Student[];
@@ -561,6 +565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mfaEnrollment: null,
   });
 
+  const [selectedCampId, setSelectedCampId] = useState<string>('');
   const [adminRoute, setAdminRoute] = useState<AdminRouteId>('dashboard');
   const [instructorRoute, setInstructorRoute] = useState<InstructorRouteId>('dashboard');
   const [instructorAttendanceLectureId, setInstructorAttendanceLectureId] = useState<string>('');
@@ -587,6 +592,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setVenues([]);
     setRooms([]);
     setCamps([]);
+    setSelectedCampId('');
     setCampInstructorIds({});
     setGroups([]);
     setStudents([]);
@@ -621,8 +627,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   const t = (en: string, ar: string) => (lang === 'ar' ? ar : en);
 
-  const activeCamp: Camp | null =
-    camps.find((c) => c.status === CampStatus.ACTIVE) || camps[0] || null;
+  const availableCamps = campsAvailableToUser({
+    camps,
+    role: auth.currentProfile.role,
+    instructorId: auth.activeInstructorId,
+    campInstructorIds,
+    lectures,
+    backupSessions: financeSnapshot.backups,
+  });
+  const activeCamp: Camp | null = resolveCampSelection(availableCamps, selectedCampId);
+
+  const selectCamp = (campId: string) => {
+    // UI must not switch into an unrelated Instructor Camp, even while
+    // loading or when a saved selection is stale. Server RLS is authoritative.
+    if (!availableCamps.some(camp => camp.id === campId)) return;
+    if (activeCamp?.id === campId) return;
+    setSelectedCampId(campId);
+    setInstructorAttendanceLectureId('');
+    setAdminRoute('dashboard');
+    setInstructorRoute('dashboard');
+  };
 
   const hydrateFromSnapshot = useCallback(async (ctx: SupabaseAuthContext) => {
     setIsLoadingData(true);
@@ -1218,6 +1242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const signOut = async () => {
+    setSelectedCampId('');
     pendingRecoveryFlowRef.current = false;
     setDataError(deploymentConfigError);
     if (isSupabaseMode) {
@@ -1239,6 +1264,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const switchDemoIdentity = (role: UserRole, instructorId?: string, profileId?: string) => {
     // Demo identity switching is available only in a local development sandbox.
     if (!isSandboxMode) return;
+    setSelectedCampId('');
 
     if (role === UserRole.ADMIN) {
       const adminProf =
@@ -1392,7 +1418,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseMode) {
       try {
-        await createDraftCampInDb({
+        const createdCampId = await createDraftCampInDb({
           code: input.code.toUpperCase(),
           nameEn: input.nameEn,
           nameAr: input.nameAr || input.nameEn,
@@ -1406,6 +1432,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdBy: auth.currentProfile.id,
         });
         await refreshOperationalData();
+        setSelectedCampId(createdCampId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Failed creating camp.' };
@@ -1437,6 +1464,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     };
     setCamps((prev) => [newCamp, ...prev]);
+    setSelectedCampId(id);
     appendSandboxAudit(
       'CAMP_CREATED_DRAFT',
       'camps',
@@ -1531,6 +1559,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await activateCampInDb(campId);
         await refreshOperationalData();
+        setSelectedCampId(campId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Activation failed.' };
@@ -1540,6 +1569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCamps((prev) =>
       prev.map((c) => (c.id === campId ? { ...c, status: CampStatus.ACTIVE } : c))
     );
+    setSelectedCampId(campId);
     appendSandboxAudit(
       'CAMP_ACTIVATED',
       'camps',
@@ -3833,7 +3863,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         venues,
         rooms,
         camps,
+        availableCamps,
         activeCamp,
+        selectCamp,
         campInstructorIds,
         groups,
         students,
