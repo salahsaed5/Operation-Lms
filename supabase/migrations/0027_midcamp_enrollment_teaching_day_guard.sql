@@ -104,6 +104,5 @@ BEGIN
   );
   RETURN v_student_id;
 END;
-$function$
-
+$function$;
 COMMIT;
