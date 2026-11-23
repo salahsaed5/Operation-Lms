@@ -94,6 +94,34 @@ BEFORE INSERT OR UPDATE OF camp_id,lecture_date,start_time,end_time,instructor_i
   substitute_instructor_id,room_id,status ON public.lectures
 FOR EACH ROW EXECUTE FUNCTION public.enforce_cross_camp_schedule_conflicts();
 
+-- Backup-only Instructors can be assigned without having their own lectures
+-- or groups. Their Camp list must still be scoped to their own backup work.
+CREATE OR REPLACE FUNCTION public.is_instructor_assigned_to_camp(p_camp_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $assigned$
+  SELECT public.current_instructor_id() IS NOT NULL AND (
+    EXISTS (
+      SELECT 1 FROM public.camp_instructors ci
+      WHERE ci.camp_id=p_camp_id
+        AND ci.instructor_id=public.current_instructor_id()
+        AND ci.is_active=true
+    ) OR EXISTS (
+      SELECT 1 FROM public.lectures l
+      WHERE l.camp_id=p_camp_id
+        AND (l.instructor_id=public.current_instructor_id()
+          OR l.substitute_instructor_id=public.current_instructor_id())
+    ) OR EXISTS (
+      SELECT 1 FROM public.camp_backup_sessions b
+      WHERE b.camp_id=p_camp_id
+        AND b.instructor_id=public.current_instructor_id()
+    )
+  );
+$assigned$;
+REVOKE ALL ON FUNCTION public.is_instructor_assigned_to_camp(uuid)
+ FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.is_instructor_assigned_to_camp(uuid)
+ TO authenticated;
+
 -- Internal trigger helper, not a callable public RPC.
 REVOKE ALL ON FUNCTION public.enforce_cross_camp_schedule_conflicts()
   FROM PUBLIC,anon,authenticated;
