@@ -72,7 +72,8 @@ const STAGING_PREVIEW_ORIGINS = [
 // The live Hostinger URL is allowed only against the actual Production project.
 // Do not trust an arbitrary caller Origin or grant wildcard access.
 const PRODUCTION_HOSTINGER_ORIGINS = [
-  'https://gleaming-skyblue-heron-54.hostingersite.com',
+  'https://gleaming-skyblue-heron-54.hostingersite.com', // previous deployment origin retained for safe transition
+  'https://astute-whitesmoke-guanaco-84.hostingersite.com',
 ];
 
 function productionHostingerOrigins(): string[] {

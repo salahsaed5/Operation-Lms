@@ -13,7 +13,7 @@ an independent backend from Staging. Do **not** copy test data, staging tokens, 
 - Build script: `build` (runs `vite build`)
 - Output directory: `dist`
 - No persistent Node server / entry file required: Vite builds a static frontend.
-- Hosting domain: `https://gleaming-skyblue-heron-54.hostingersite.com`
+- Hosting domain: `https://astute-whitesmoke-guanaco-84.hostingersite.com`
 
 If Hostinger offers only static hosting for the purchased tier, upload the contents
 of the built `dist` folder. The React frontend does not require an Express server.
@@ -22,7 +22,7 @@ of the built `dist` folder. The React frontend does not require an Express serve
 
 | Key | Value |
 | --- | --- |
-| `APP_URL` | `https://gleaming-skyblue-heron-54.hostingersite.com` |
+| `APP_URL` | `https://astute-whitesmoke-guanaco-84.hostingersite.com` |
 | `VITE_SUPABASE_URL` | `https://wdmlxsgbjkboadkeekdq.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Production **public publishable** (`sb_publishable_`) or legacy anon key from Supabase API Keys |
 | `VITE_DEFAULT_CAMP_DAYS` | `10` |

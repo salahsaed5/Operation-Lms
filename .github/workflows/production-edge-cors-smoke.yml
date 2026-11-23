@@ -18,7 +18,7 @@ jobs:
       - name: Verify exact Hostinger Origin for Production Edge Functions
         env:
           PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
-          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+          HOSTINGER_ORIGIN: https://astute-whitesmoke-guanaco-84.hostingersite.com
         shell: bash
         run: |
           set -euo pipefail
@@ -42,7 +42,7 @@ jobs:
       - name: Validate Production auth-login fails closed for fake credentials
         env:
           PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
-          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+          HOSTINGER_ORIGIN: https://astute-whitesmoke-guanaco-84.hostingersite.com
         shell: bash
         run: |
           set -euo pipefail
@@ -60,7 +60,7 @@ jobs:
       - name: Verify Instructor provisioning requires authentication
         env:
           PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
-          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+          HOSTINGER_ORIGIN: https://astute-whitesmoke-guanaco-84.hostingersite.com
         shell: bash
         run: |
           set -euo pipefail
