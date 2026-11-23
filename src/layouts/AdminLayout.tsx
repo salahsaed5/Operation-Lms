@@ -106,16 +106,16 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         />
       )}
 
-      {/* Left Sidebar Navigation — Clean White Floating Card on Desktop, Slide Drawer on Mobile */}
+      {/* Sidebar takes real width on hover so Header and Dashboard never sit underneath it. Mobile stays a drawer. */}
       <aside
-        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseEnter={() => { if (window.innerWidth >= 1024) setSidebarHovered(true); }}
         onMouseLeave={() => setSidebarHovered(false)}
         aria-label={t('Admin modules navigation', 'قائمة وحدات الإدارة')}
-        className={`fixed inset-y-0 start-0 z-50 lg:sticky lg:top-2.5 lg:h-[calc(100vh-1.25rem)] lg:z-30 flex flex-col bg-white dark:bg-[#1D2023] border-e lg:border border-slate-200/80 dark:border-[#353A3F] lg:rounded-xl shadow-lg lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 shrink-0 ${
+        className={`fixed inset-y-0 start-0 z-50 lg:sticky lg:top-2.5 lg:h-[calc(100vh-1.25rem)] lg:z-30 flex flex-col bg-white dark:bg-[#1D2023] border-e lg:border border-slate-200/80 dark:border-[#353A3F] lg:rounded-xl shadow-lg lg:shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[width] duration-200 ease-out shrink-0 ${
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full lg:translate-x-0 lg:rtl:translate-x-0'
-        } ${sidebarCollapsed ? 'w-60 lg:w-[72px]' : 'w-60'}`}
+        } ${sidebarExpanded ? 'w-60' : 'w-60 lg:w-[72px]'}`}
       >
-        <div className={`flex flex-col justify-between h-full min-h-0 rounded-xl bg-white dark:bg-[#1D2023] ${sidebarCollapsed && sidebarHovered ? 'lg:absolute lg:inset-y-0 lg:start-0 lg:w-60 lg:z-50 lg:border lg:border-[#353A3F] lg:shadow-xl' : 'w-full'}`}>
+        <div className="flex flex-col justify-between h-full min-h-0 w-full rounded-xl bg-white dark:bg-[#1D2023]">
         {/* Top Brand + Nav List */}
         <div className="flex flex-col min-h-0 flex-1">
           <div
