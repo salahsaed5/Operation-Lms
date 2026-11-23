@@ -76,12 +76,12 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sidebarHovered, setSidebarHovered] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const sidebarExpanded = !sidebarCollapsed || sidebarHovered;
-  const showSidebarLabels = sidebarExpanded || mobileNavOpen;
   useEffect(() => {
     try { window.localStorage.setItem('operation-lms-admin-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded'); }
     catch { /* local storage is unavailable in private browsing contexts */ }
   }, [sidebarCollapsed]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const showSidebarLabels = sidebarExpanded || mobileNavOpen;
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   const myNotifications = notifications.filter(
