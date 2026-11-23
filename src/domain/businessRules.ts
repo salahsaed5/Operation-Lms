@@ -48,14 +48,17 @@ export function validateCampWeekdays(startDateIso: string, weekdays: readonly nu
 export function calculateCampDayDate(
   startDateIso: string, campDay: number, weekdays: readonly number[] = ALL_CAMP_WEEKDAYS
 ): string {
-  if (!Number.isSafeInteger(campDay) || campDay < 1 || campDay > 365) {
-    throw new Error('Camp teaching day must be between 1 and 365.');
+  // Preserve legacy day=0 / negative callers as Day 1; persisted Camp/lecture
+  // writes still enforce strict 1..duration in AppContext and database triggers.
+  if (!Number.isSafeInteger(campDay) || campDay > 365) {
+    throw new Error('Invalid camp teaching day.');
   }
+  const safeDay = Math.max(1, campDay);
   const error = validateCampWeekdays(startDateIso, weekdays);
   if (error) throw new Error(error);
   const date = new Date(`${startDateIso}T00:00:00Z`);
   const selected = new Set(weekdays);
-  let remaining = campDay - 1;
+  let remaining = safeDay - 1;
   while (remaining > 0) {
     date.setUTCDate(date.getUTCDate() + 1);
     if (selected.has(date.getUTCDay())) remaining--;
