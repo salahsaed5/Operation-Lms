@@ -250,7 +250,38 @@ export const CampFinanceManager:React.FC=()=>{
             placeholder={t('Name or instructor code','اسم أو كود المحاضر')} className={`${INPUT_CLASS} ps-9`}/>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="md:hidden space-y-2" aria-label={t('Instructor account cards','كروت حسابات المحاضرين')}>
+        {visible.map(({inst,stat})=>(
+          <button key={inst.id} type="button"
+            onClick={()=>setSelected(selected===inst.id?null:inst.id)}
+            aria-expanded={selected===inst.id}
+            aria-label={t('Open instructor account','فتح كشف المحاضر')+': '+t(inst.fullNameEn,inst.fullNameAr)}
+            className={`w-full text-start p-4 rounded-xl border transition-colors ${selected===inst.id
+              ? 'border-[#7196B9] bg-[#EDF4F9] dark:bg-[#293747]'
+              : 'border-slate-200 dark:border-[#353A3F] bg-slate-50 dark:bg-[#25292D]/45 hover:border-[#7196B9]'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">{t(inst.fullNameEn,inst.fullNameAr)}</p>
+                <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">{inst.instructorCode}</p>
+              </div>
+              <span className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] shrink-0">
+                {t('View details','التفاصيل')} {selected===inst.id?'−':'+'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-[#353A3F]">
+              <div><p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">{t('Confirmed total','المستحق المؤكد')}</p>
+                <p className="text-sm font-bold tabular-nums mt-1">{fmt(stat.confirmedTotalEgp)}</p></div>
+              <div><p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">{t('Remaining','المتبقي')}</p>
+                <p className="text-sm font-bold tabular-nums mt-1">{fmt(stat.balanceEgp)}</p></div>
+              <div><p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">{t('Paid','المدفوع')}</p>
+                <p className="text-xs tabular-nums mt-1">{fmt(stat.paidEgp)}</p></div>
+              <div><p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">{t('Main / Backup / Transport','أساسي / باك أب / انتقالات')}</p>
+                <p className="text-xs tabular-nums mt-1">{stat.confirmedMain} / {stat.approvedBackup} / {stat.transportDays}</p></div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-[980px] w-full text-xs" aria-label={t('Instructor payment statement','كشف المستحقات والمدفوعات')}>
           <thead className="bg-slate-50 dark:bg-[#25292D] text-slate-600 dark:text-[#C0C5C9]">
             <tr>{[t('Instructor','المحاضر'),t('Main verified','أساسي مؤكد'),t('Backup approved','باك أب معتمد'),t('Transport days','أيام انتقالات'),
