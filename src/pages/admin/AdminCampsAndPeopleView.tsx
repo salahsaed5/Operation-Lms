@@ -109,6 +109,8 @@ type InstructorFilter = 'all' | 'active' | 'disabled';
 export const AdminCampsView: React.FC = () => {
   const {
     camps,
+    activeCamp,
+    selectCamp,
     venues,
     createVenue,
     createRoom,
@@ -372,8 +374,8 @@ export const AdminCampsView: React.FC = () => {
       <PageHeader
         title={t('Camp Management & Archives', 'إدارة المعسكرات والأرشيف')}
         subtitle={t(
-          'Only one camp can be active at a time. Default duration is 10 days and archived camps become read-only.',
-          'يُسمح بمعسكر نشط واحد فقط في نفس الوقت. المدة الافتراضية 10 أيام والمعسكرات المؤرشفة للقراءة فقط.'
+          'Multiple Camps can run in parallel. Select the Camp you want to manage; archives remain read-only.',
+          'ممكن كذا كامب يشتغلوا بالتوازي. اختار الكامب اللي بتديره؛ والكامبات المؤرشفة للقراءة فقط.'
         )}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -895,6 +897,11 @@ export const AdminCampsView: React.FC = () => {
 
                   {camp.status !== CampStatus.ARCHIVED && (
                     <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button type="button" disabled={activeCamp?.id===camp.id}
+                        onClick={() => selectCamp(camp.id)}
+                        className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                        {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Work on this Camp','إدارة هذا الكامب')}
+                      </button>
                       <button
                         type="button"
                         disabled={isBusy}
@@ -991,6 +998,11 @@ export const AdminCampsView: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-5 text-end">
                         <div className="inline-flex items-center gap-2">
+                          <button type="button" disabled={activeCamp?.id===camp.id}
+                            onClick={() => selectCamp(camp.id)}
+                            className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                            {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Manage','إدارة')}
+                          </button>
                           {camp.status !== CampStatus.ARCHIVED && (
                             <button
                               type="button"
