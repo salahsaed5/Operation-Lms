@@ -78,16 +78,18 @@ test('2. Concurrent Admin creation protection: serializes concurrent requests an
   assert.equal(batch.results[2].allowed, false); // Max 2 reached
 });
 
-test('3. Single active camp & archived camp read-only protection', () => {
+test('3. Parallel active camps & archived camp read-only protection', () => {
   const camps = [
     { id: 'c1', nameEn: 'Cairo Spring Camp', status: CampStatus.ACTIVE },
     { id: 'c2', nameEn: 'Alexandria Summer Camp', status: CampStatus.DRAFT },
     { id: 'c3', nameEn: 'Winter Archive 2025', status: CampStatus.ARCHIVED },
   ];
-  // Cannot activate c2 while c1 is active
+  // Separate Camps may be active at the same time.
   const res = validateCampActivation(camps, 'c2');
-  assert.equal(res.allowed, false);
-  assert.ok(res.error?.includes('Cairo Spring Camp'));
+  assert.equal(res.allowed, true);
+  assert.equal(validateCampActivation(camps, 'c1').allowed, true);
+  assert.equal(validateCampActivation(camps, 'missing-camp').allowed, false);
+  assert.equal(validateCampActivation(camps, 'c3').allowed, false);
 
   // Archived camp is strictly read-only
   const archiveCheck = validateCampNotArchived(camps[2]);
