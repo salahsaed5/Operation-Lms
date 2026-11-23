@@ -32,12 +32,18 @@ For `start_date = 2026-11-29` (Sunday):
 - The finance ledger and transportation are still based on actual `camp_day` rows, not the number of elapsed calendar dates.
 - SQL acceptance is rollback-only and existing shared Draft Camp remains unchanged.
 
-## Independent known limitation
-The current broader app intentionally allows **only one Active Camp at a time** and derives `activeCamp` globally. Choosing different schedules for different Camps is supported, but **simultaneously Active Camps** needs a separate scoped project: Admin Camp selector, per-Instructor context, routing, auth checks, batch reports, and cross-Camp RLS before activation policy can be relaxed. Do not remove the single-active guard in isolation.
+## Parallel Active Camp support (Staging migrations 0029–0030)
+- Multiple Camps may be **Active concurrently**. The former single-active unique index and trigger restriction were removed on Staging.
+- Both Admin and Instructor have a **Working Camp** selector. Instructor choices are restricted to assignments, past lectures and Backup work, with Supabase RLS enforcing access separately. Switching Camp resets stale attendance navigation.
+- Each Camp has its own operating-weekday calendar, current operational day, room/group schedule, check-in, attendance, student records, and **Camp-scoped Finance ledger**.
+- Real calendar date/time, NOT Camp Day or period number, determines resource collisions between Camps.
+- Migrations 0029–0030 block overlapping Primary/Primary, Primary/Backup, and Backup/Backup Instructor work; lecture room conflicts are also prevented across Camps.
+- Historical archived work remains readable only to authorized accounts; it cannot be edited.
+- This has passed rollback-only synthetic QA on Staging. A real protected browser Admin + Instructor multi-Camp test is still required before production release.
 
 ## Release gates
 - Staging SQL regression suites, Web unit/typecheck/build, local Chromium CI all green at reviewed head commit.
 - Protected latest Vercel Preview READY, SHA matched, stable Staging alias updated (do not reassign stale deploy).
 - Live authenticated Admin and Instructor verify Sat/Mon/Wed (10) and Sun/Tue/Thu (15) create/lecture/attendance/check-in/late-enrolment/Excel examples.
-- Multi-Active-Camp operation, if needed, must be explicitly scoped and independently verified.
+- Parallel Active-Camp tests must verify two real user-role sessions, cross-Camp isolation, Backup conflicts and final Finance statements.
 - No automatic Production migration, merge, or deployment.
