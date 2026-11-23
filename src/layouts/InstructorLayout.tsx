@@ -63,7 +63,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
   const unreadCount = myNotifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-[#f4f6f9] dark:bg-[#121416] text-slate-900 dark:text-[#F0F1F2] flex flex-col pb-20 md:pb-8">
+    <div className="min-h-screen w-full overflow-x-clip bg-[var(--bg-canvas)] dark:bg-[var(--bg-canvas)] text-slate-900 dark:text-[#F0F1F2] flex flex-col pb-28 md:pb-8">
       {isSandboxMode && (
         <div role="status" aria-live="polite" className="px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200">
           <strong>{t('LOCAL SANDBOX PREVIEW', 'معاينة محلية تجريبية')}</strong>
@@ -71,7 +71,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         </div>
       )}
       {/* Slim Sticky White Top Header */}
-      <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-[#1D2023]/95 backdrop-blur-md border-b border-slate-200/90 dark:border-[#353A3F] px-4 sm:px-6 flex items-center justify-between gap-4 relative">
+      <header className="sticky top-0 z-30 h-14 app-glass-header px-4 sm:px-6 flex items-center justify-between gap-4 relative">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -240,7 +240,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
       </header>
 
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-blue-50/50 dark:bg-[#293747]/20 border-b border-slate-200 dark:border-[#353A3F] text-xs">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-slate-50/70 dark:bg-[#25292D]/70 border-b border-slate-200 dark:border-[#353A3F] text-xs">
         <span className="font-semibold shrink-0">{t('My Camp:', 'الكامب الخاص بي:')}</span>
         <CampSwitcher />
         <span className="hidden md:inline text-slate-500 dark:text-[#A0A5AA]">
@@ -272,7 +272,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       {/* Fixed Light Mobile Bottom Tab Bar */}
       <nav
         aria-label={t('Mobile bottom navigation', 'التنقل السفلي للمحاضر')}
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 bg-white/95 dark:bg-[#1D2023]/95 backdrop-blur-md border-t border-slate-200/90 dark:border-[#353A3F] grid grid-cols-5 items-center px-1"
+        className="mobile-glass-nav md:hidden"
       >
         {INSTRUCTOR_TABS.map((tab) => {
           const Icon = tab.icon;
@@ -283,14 +283,10 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
               type="button"
               onClick={() => setInstructorRoute(tab.id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`min-h-[44px] min-w-[44px] flex flex-col items-center justify-center rounded-lg transition-colors cursor-pointer ${
-                isActive
-                  ? 'text-[#355F82] dark:text-[#88A9CC] font-semibold'
-                  : 'text-slate-500 dark:text-[#A0A5AA]'
-              }`}
+              className="mobile-glass-item cursor-pointer"
             >
-              <Icon className="w-[18px] h-[18px]" />
-              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
+              <Icon className="w-5 h-5" />
+              <span className="tracking-tight">
                 {t(tab.labelEn, tab.labelAr)}
               </span>
             </button>
