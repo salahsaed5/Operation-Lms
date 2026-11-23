@@ -220,7 +220,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           </div>
         )}
         {/* Single Slim White Top Bar (Restrained Translucent Glass on Sticky Scroll) */}
-        <header className="sticky top-0 z-30 h-14 px-4 sm:px-6 app-glass-header flex items-center justify-between gap-3 shrink-0 relative">
+        <header className="sticky top-0 z-30 h-14 px-4 sm:px-6 app-glass-header flex items-center justify-between gap-3 shrink-0">
           {/* Left Zone: Sidebar Toggle + Concise Camp Context */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -423,7 +423,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           </div>
         </>
       )}
-      <nav aria-label={t('Mobile bottom navigation','شريط التنقل السفلي')} className="mobile-glass-nav lg:hidden">
+      <nav aria-label={t('Mobile bottom navigation','شريط التنقل السفلي')} className="mobile-glass-nav admin-mobile-only lg:hidden">
         {([
           { id:'dashboard', icon:LayoutDashboard, en:'Home', ar:'الرئيسية' },
           { id:'schedule', icon:CalendarClock, en:'Schedule', ar:'الجدول' },

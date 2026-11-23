@@ -94,3 +94,7 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .ui-surface-elevated{background:var(--bg-surface);border:1px solid var(--border-subtle);}
 .dark .ui-surface-elevated{box-shadow:0 1px 2px rgba(0,0,0,.18);}
 @media(prefers-reduced-motion:reduce){.mobile-glass-item{transition:none;}}
+
+/* Unlayered glass styles must respect the responsive breakpoint of each portal. */
+@media (min-width:768px){.mobile-glass-nav.instructor-mobile-only{display:none;}}
+@media (min-width:1024px){.mobile-glass-nav.admin-mobile-only{display:none;}}

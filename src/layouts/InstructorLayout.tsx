@@ -71,7 +71,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         </div>
       )}
       {/* Slim Sticky White Top Header */}
-      <header className="sticky top-0 z-30 h-14 app-glass-header px-4 sm:px-6 flex items-center justify-between gap-4 relative">
+      <header className="sticky top-0 z-30 h-14 app-glass-header px-4 sm:px-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -272,7 +272,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       {/* Fixed Light Mobile Bottom Tab Bar */}
       <nav
         aria-label={t('Mobile bottom navigation', 'التنقل السفلي للمحاضر')}
-        className="mobile-glass-nav md:hidden"
+        className="mobile-glass-nav instructor-mobile-only md:hidden"
       >
         {INSTRUCTOR_TABS.map((tab) => {
           const Icon = tab.icon;
