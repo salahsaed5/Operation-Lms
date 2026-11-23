@@ -3,6 +3,7 @@ import type {
 } from '../types/database';
 import { AttendanceMark, AttendanceSheetStatus } from '../types/database';
 import { buildCampToDateReport } from '../domain/campCumulativeAttendance';
+import { calculateCampDayDate } from '../domain/businessRules';
 import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../domain/campAttendanceExcelGrid';
 import { createXlsxWorkbook, excelCell as c, excelFormula as f, type ExcelCell, type ExcelSheet } from './tinyXlsxWorkbook';
 
@@ -108,7 +109,7 @@ export function buildCampAttendanceWorkbook(input: {
     subheadingRow('P = Present | L = Late | A = Absent | E = Excused | Pending = Not Final | — = Not Applicable',dailyWidth),
     [
       c('Student Code',3),c('Full Name',3),c('Home Group',3),c('Join Day',3),
-      ...Array.from({length:dayCount},(_,i)=>c('Day '+(i+1),3)),
+      ...Array.from({length:dayCount},(_,i)=>c('Day '+(i+1)+' · '+calculateCampDayDate(camp.startDate,i+1,camp.operatingWeekdays),3)),
       c('Days Attended',3),c('Late Days',3),c('Absent Days',3),c('Attendance %',3),
     ],
   ];
