@@ -314,12 +314,21 @@ test('Admin sidebar opens on hover, pins on demand, and persists the preference'
   const navigate = sidebar.getByRole('button', { name: 'Students & Groups', exact: true });
   await expect(navigate).toBeVisible();
   await page.getByRole('button', { name: 'Toggle sidebar' }).click();
-  // Collapse to icons; hover overlays instead of shifting main content.
+  // Collapse to icons; hover expands within the layout without covering content.
   await expect(sidebar).toHaveCSS('width', '72px');
   await page.mouse.move(1000, 600);
   await expect(navigate.getByText('Students & Groups')).toHaveCount(0);
+  const main = page.locator('main').first();
+  const before = await main.boundingBox();
   await sidebar.hover();
+  await expect(sidebar).toHaveCSS('width', '240px');
   await expect(navigate.getByText('Students & Groups')).toBeVisible();
+  const sidebarRect = await sidebar.boundingBox();
+  const mainRect = await main.boundingBox();
+  expect(before && sidebarRect && mainRect).toBeTruthy();
+  // No overlay: left-to-right workspace starts after the expanded sidebar.
+  expect(sidebarRect!.x + sidebarRect!.width).toBeLessThanOrEqual(mainRect!.x + 2);
+  expect(mainRect!.x).toBeGreaterThan(before!.x + 140);
   await sidebar.getByRole('button', { name: 'Pin sidebar open' }).click();
   await page.mouse.move(1000, 600);
   await expect(navigate.getByText('Students & Groups')).toBeVisible();
@@ -392,12 +401,50 @@ test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload ne
   // Returning to RTL after reload also exercises the collapsed persisted state.
   await page.getByRole('button', { name: 'Switch Language' }).click();
   await page.getByRole('button', { name: 'تبديل المظهر الفاتح أو الداكن' }).click();
-  // Hover overlays the navigation; pin restores expanded layout.
+  // Hover expands within layout; verify no intersection in RTL as well.
   await sidebar.hover();
+  await expect(sidebar).toHaveCSS('width','240px');
+  const sidebarRect = await sidebar.boundingBox();
+  const mainRect = await main.boundingBox();
+  expect(sidebarRect && mainRect).toBeTruthy();
+  expect(mainRect!.x + mainRect!.width).toBeLessThanOrEqual(sidebarRect!.x + 2);
   await expect(sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' })).toBeVisible();
   await sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' }).click();
   await page.mouse.move(250, 500);
   await expect(sidebar).toHaveCSS('width', '240px');
   await expect(main).toBeVisible();
   expect(jsErrors).toEqual([]);
+});
+
+
+test('desktop Sidebar expanded content never obscures the header in English and RTL', async ({ page }) => {
+  const runtimeErrors:string[] = [];
+  page.on('pageerror',error=>runtimeErrors.push(error.message));
+  await page.setViewportSize({width:1366,height:900});
+  await page.goto('/');
+  const sidebar=page.getByRole('complementary',{name:/Admin modules navigation|قائمة وحدات الإدارة/});
+  const header=page.locator('header').first();
+  const checkSeparate=async()=>{
+    const s=await sidebar.boundingBox(), h=await header.boundingBox();
+    expect(s && h).toBeTruthy();
+    const separated=(s!.x+s!.width<=h!.x+2)||(h!.x+h!.width<=s!.x+2);
+    expect(separated).toBeTruthy();
+    await expect(page.locator('main').first()).toBeVisible();
+  };
+  await checkSeparate();
+  await page.getByRole('button',{name:'Toggle sidebar'}).click();
+  await page.mouse.move(900,500);
+  await expect(sidebar).toHaveCSS('width','72px');
+  await sidebar.hover();
+  await expect(sidebar).toHaveCSS('width','240px');
+  await checkSeparate();
+  await page.mouse.move(900,500);
+  await expect(sidebar).toHaveCSS('width','72px');
+  await checkSeparate();
+  await page.getByRole('button',{name:'Switch Language'}).click();
+  await expect(page.locator('html')).toHaveAttribute('dir','rtl');
+  await sidebar.hover();
+  await expect(sidebar).toHaveCSS('width','240px');
+  await checkSeparate();
+  expect(runtimeErrors).toEqual([]);
 });
