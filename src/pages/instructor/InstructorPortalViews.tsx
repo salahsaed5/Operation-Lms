@@ -462,7 +462,7 @@ export const InstructorScheduleView: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
                       {t(`Day ${lec.campDay}`, `اليوم ${lec.campDay}`)} · P{lec.periodNumber} (
-                      {lec.startTime}–{lec.endTime}) · {room?.code}
+                      {lec.startTime}–{lec.endTime}) · {lec.lectureDate} · {room?.code}
                     </span>
                     {isSubstitute && (
                       <StatusBadge tone="info">{t('Substitute', 'محاضر بديل')}</StatusBadge>
@@ -1616,7 +1616,7 @@ export const InstructorAttendanceView: React.FC = () => {
             >
               {myLectures.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {groups.find(g => g.id === l.groupId)?.code || t('Unknown group', 'جروب غير معروف')} · D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
+                  {groups.find(g => g.id === l.groupId)?.code || t('Unknown group', 'جروب غير معروف')} · D{l.campDay} ({l.lectureDate}) P{l.periodNumber} ({l.startTime}) · {l.topic}
                 </option>
               ))}
             </select>
@@ -1648,7 +1648,7 @@ export const InstructorAttendanceView: React.FC = () => {
                   {' · '}{selectedLecture.topic}
                 </h2>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  <span>D{selectedLecture.campDay} · P{selectedLecture.periodNumber}</span>
+                  <span>D{selectedLecture.campDay} · {selectedLecture.lectureDate} · P{selectedLecture.periodNumber}</span>
                   <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
                   <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
                     lecture: selectedLecture, students, transfers: studentTransfers,
