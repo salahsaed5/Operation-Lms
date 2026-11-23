@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   CheckCircle2,
@@ -9,8 +9,10 @@ import {
   Tent,
   AlertCircle,
   Plus,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { supabase } from '../../lib/supabase';
 import { calculateCampDayDate } from '../../domain/businessRules';
 import {
   AttendanceMark,
@@ -45,12 +47,51 @@ export const AdminDashboardView: React.FC = () => {
     entitlements,
     requests,
     setAdminRoute,
+    refreshOperationalData,
+    isSupabaseMode,
     t,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sheetFilter, setSheetFilter] = useState<SheetFilter>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
+
+  // Live when Supabase Realtime replication is enabled; 45s refresh and tab-focus fallback.
+  // Subscriptions run only while the Admin dashboard is mounted.
+  useEffect(() => {
+    if (!isSupabaseMode || !supabase || !activeCamp) return;
+    const client = supabase;
+    let disposed = false;
+    let refreshTimer: number | undefined;
+    let refreshInFlight = false;
+    const sync = () => {
+      if (disposed || document.hidden || refreshInFlight) return;
+      refreshInFlight = true;
+      void refreshOperationalData().then(() => {
+        if (!disposed) setLastRefreshAt(new Date());
+      }).finally(() => { refreshInFlight = false; });
+    };
+    const queueSync = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(sync, 1000);
+    };
+    const channel = client.channel('camp-dashboard-' + activeCamp.id)
+      .on('postgres_changes', { event:'*', schema:'public', table:'daily_checkins', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .on('postgres_changes', { event:'*', schema:'public', table:'attendance_sheets', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .on('postgres_changes', { event:'*', schema:'public', table:'lectures', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .subscribe();
+    const interval = window.setInterval(sync, 45000);
+    const onVisibility = () => { if (!document.hidden) sync(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      void client.removeChannel(channel);
+    };
+  }, [activeCamp?.id, isSupabaseMode, refreshOperationalData]);
   const selectedTeachingDate = activeCamp
     ? calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays)
     : null;
@@ -199,6 +240,8 @@ export const AdminDashboardView: React.FC = () => {
   const syncedCount = sessionRows.filter((r) => r.isSynced).length;
   const pendingCount = sessionRows.length - syncedCount;
   const lateCheckinsCount = todayCheckins.filter((c) => c.arrivedLateFirstLecture).length;
+  const scheduledInstructorIds = new Set(todayLectures.map(l => l.substituteInstructorId || l.instructorId));
+  const checkedInScheduledCount = new Set(todayCheckins.filter(c => scheduledInstructorIds.has(c.instructorId)).map(c => c.instructorId)).size;
   const totalActionItems =
     pendingExceptions.length + pendingReviewEntitlements.length + pendingRequests.length;
 
@@ -288,6 +331,17 @@ export const AdminDashboardView: React.FC = () => {
         }
       />
 
+      <div className="flex flex-wrap gap-2 items-center justify-between text-xs text-slate-500 dark:text-[#A0A5AA]">
+        <span>{t('Overview of the selected Camp teaching day', 'متابعة يوم الدراسة المحدد داخل الكامب')}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+          {isSupabaseMode
+            ? t('Auto-sync · every 45 seconds', 'تحديث تلقائي · كل 45 ثانية')
+            : t('Local preview', 'معاينة محلية')}
+          {lastRefreshAt && <span className="tabular-nums">· {lastRefreshAt.toLocaleTimeString()}</span>}
+        </span>
+      </div>
+
       {/* Expandable Lightweight Filter Bar */}
       {showFilters && (
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-slate-200/90 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#1D2023]/60 text-xs">
@@ -361,22 +415,21 @@ export const AdminDashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 2: Students & Groups */}
+          {/* Card 2: Finalized attendance sheets */}
           <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
-                {t('Enrolled Students', 'الطلاب المسجلون')}
+                {t('Finalized Attendance', 'كشوف الحضور المكتملة')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {campStudents.length}
+                {syncedCount}/{todayLectures.length}
               </p>
-              <p className="text-[11px] tabular-nums text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
-                {campGroups.length} {t('Groups', 'مجموعات')} · {campInstructors.length}{' '}
-                {t('Instructors', 'محاضرين')}
+              <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5">
+                {pendingCount} {t('pending sheets', 'كشوف معلقة')}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-[#293747]/60 border border-indigo-100 dark:border-[#425A70]/60 text-indigo-600 dark:text-[#88A9CC] flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-[#A0A5AA] flex items-center justify-center shrink-0">
+              <ClipboardCheck className="w-5 h-5" />
             </div>
           </div>
 
@@ -387,7 +440,7 @@ export const AdminDashboardView: React.FC = () => {
                 {t('Instructor Check-ins', 'وصول المحاضرين')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {todayCheckins.length}/{campInstructors.length}
+                {checkedInScheduledCount}/{scheduledInstructorIds.size}
               </p>
               <p className="text-[11px] tabular-nums mt-0.5 truncate">
                 {lateCheckinsCount > 0 ? (
@@ -407,26 +460,32 @@ export const AdminDashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 4: Verified Entitlements */}
+          {/* Card 4: Action queue */}
           <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
-                {t('Verified Entitlements', 'المستحقات المعتمدة')}
+                {t('Needs Attention', 'تحتاج متابعة')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {totalEligibleEgp.toLocaleString()} EGP
+                {totalActionItems}
               </p>
-              <p className="text-[11px] tabular-nums text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
-                {pendingReviewEntitlements.length} {t('In review', 'قيد المراجعة')} ·{' '}
-                {totalActionItems} {t('alerts', 'تنبيهات')}
+              <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
+                {pendingReviewEntitlements.length} {t('finance reviews', 'مراجعات مالية')} · {pendingExceptions.length} {t('check-in exceptions', 'استثناءات وصول')}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-100 dark:border-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Clock className="w-4 h-4" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-[#A0A5AA] flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5" />
             </div>
           </div>
         </div>
       </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 rounded-xl border border-slate-200 dark:border-[#353A3F] bg-slate-50/80 dark:bg-[#25292D]/50 text-xs text-slate-600 dark:text-[#C0C5C9]">
+        <span>{t('Camp snapshot', 'ملخص الكامب')}: <strong className="tabular-nums">{campStudents.length}</strong> {t('students','طالب')} · <strong>{campGroups.length}</strong> {t('groups','مجموعات')} · <strong>{campInstructors.length}</strong> {t('instructors','محاضرين')}</span>
+        <button type="button" className="font-semibold text-[#355F82] dark:text-[#88A9CC] hover:underline" onClick={() => setAdminRoute('finance')}>
+          {t('Verified financial entitlements','المستحقات المالية المعتمدة')}: {totalEligibleEgp.toLocaleString()} EGP
+        </button>
+      </div>
 
       {/* Compact Attention Banner when actionable queues need admin review */}
       {totalActionItems > 0 && (
