@@ -229,14 +229,14 @@ export const AdminScheduleView: React.FC = () => {
         )}
         actions={
           <div className="flex items-center gap-2 text-xs">
-            <label htmlFor="sched-day-select" className="text-slate-600 dark:text-slate-300 font-medium">
+            <label htmlFor="sched-day-select" className="text-slate-600 dark:text-[#C0C5C9] font-medium">
               {t('Camp Day:', 'يوم المعسكر:')}
             </label>
             <select
               id="sched-day-select"
               value={selectedDay}
               onChange={(e) => setSelectedDay(Number(e.target.value))}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono font-semibold text-xs"
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] font-mono font-semibold text-xs"
             >
               {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map((day) => (
                 <option key={day} value={day}>
@@ -252,7 +252,7 @@ export const AdminScheduleView: React.FC = () => {
       {/* Add Lecture Slot Form */}
       <form onSubmit={handleCreateSlot} className={`${SURFACE_CARD} p-5 space-y-4`}>
         <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <Plus className="w-4 h-4 text-blue-600" />
+          <Plus className="w-4 h-4 text-[#355F82]" />
           <span>
             {t(`Add Lecture — Day ${selectedDay}`, `إضافة محاضرة — اليوم ${selectedDay}`)} · {selectedTeachingDate}
           </span>
@@ -381,11 +381,11 @@ export const AdminScheduleView: React.FC = () => {
       {editingLec && (
         <form
           onSubmit={handleSaveLectureEdit}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
         >
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Edit Lecture / Assign Substitute:', 'تعديل المحاضرة أو تعيين بديل:')}{' '}
-            <span className="font-mono text-blue-600 dark:text-blue-400">
+            <span className="font-mono text-[#355F82] dark:text-[#88A9CC]">
               P{editingLec.periodNumber}
             </span>
           </h2>
@@ -458,7 +458,7 @@ export const AdminScheduleView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setEditingLec(null)}
@@ -495,7 +495,7 @@ export const AdminScheduleView: React.FC = () => {
                 <div key={lec.id} className="p-4 space-y-2.5 text-xs">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+                      <p className="font-mono font-semibold text-[#355F82] dark:text-[#88A9CC]">
                         P{lec.periodNumber} · {lec.startTime}–{lec.endTime} · {grp?.code || lec.groupId}
                       </p>
                       <p className="font-semibold text-sm text-slate-900 dark:text-white mt-0.5">
@@ -510,14 +510,14 @@ export const AdminScheduleView: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between pt-1">
-                    <span className="font-mono tabular-nums font-semibold text-slate-800 dark:text-slate-200">
+                    <span className="font-mono tabular-nums font-semibold text-slate-800 dark:text-[#DEE1E4]">
                       {lec.frozenRateEgp} EGP ·{' '}
                       {t('Auto Assigned', 'إسناد تلقائي')}
                     </span>
                     <button
                       type="button"
                       onClick={() => openEditLecture(lec)}
-                      className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Pencil className="w-3 h-3" />
                       <span>{t('Edit', 'تعديل')}</span>
@@ -532,7 +532,7 @@ export const AdminScheduleView: React.FC = () => {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-start border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                   <th className="py-3 px-5 font-semibold text-start">{t('Period & Time', 'الفترة والوقت')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Group & Room', 'المجموعة والقاعة')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Topic & Instructor', 'الموضوع والمحاضر')}</th>
@@ -556,7 +556,7 @@ export const AdminScheduleView: React.FC = () => {
                       key={lec.id}
                       className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
                     >
-                      <td className="py-3.5 px-5 font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                      <td className="py-3.5 px-5 font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC] whitespace-nowrap">
                         P{lec.periodNumber} · {lec.startTime}–{lec.endTime}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -586,7 +586,7 @@ export const AdminScheduleView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => openEditLecture(lec)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Pencil className="w-3 h-3" />
                           <span>{t('Edit', 'تعديل')}</span>
@@ -810,11 +810,11 @@ export const AdminAttendanceView: React.FC = () => {
 
       {/* Overview: counts are server-saved records, not presumed student attendance. */}
       <section aria-label={t('Attendance overview', 'ملخص الحضور')}
-        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4 shadow-sm">
+        className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 space-y-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">{t('Camp attendance overview', 'ملخص حضور المعسكر')}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
               {t('Server-saved attendance only. Drafts are not final.', 'بيانات الحضور المحفوظة على السيرفر فقط. المسودات ليست نهائية.')}
             </p>
           </div>
@@ -829,8 +829,8 @@ export const AdminAttendanceView: React.FC = () => {
             { label: t('Draft sheets', 'كشوف مسودة'), count: draftSheetCount },
             { label: t('Server-saved rows', 'سجلات محفوظة'), count: savedRecordCount },
           ].map(stat => (
-            <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 px-3.5 py-3">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
+            <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-3.5 py-3">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{stat.label}</p>
               <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white mt-1">{stat.count}</p>
             </div>
           ))}
@@ -848,7 +848,7 @@ export const AdminAttendanceView: React.FC = () => {
       {campExceptions.length > 0 && (
         <section className={`${SURFACE_CARD} p-5 space-y-4`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
+            <ShieldCheck className="w-4 h-4 text-[#355F82]" />
             <span>{t('Check-in Exceptions Queue', 'مراجعة استثناءات تسجيل الوصول')}</span>
           </h2>
           <div className="space-y-3 text-xs">
@@ -875,7 +875,7 @@ export const AdminAttendanceView: React.FC = () => {
                         {inst ? t(inst.fullNameEn, inst.fullNameAr) : ex.instructorId} ·{' '}
                         <span className="font-mono">{t(`Day ${ex.campDay}`, `اليوم ${ex.campDay}`)}</span>
                       </p>
-                      <p className="text-slate-600 dark:text-slate-400 mt-0.5">{ex.reason}</p>
+                      <p className="text-slate-600 dark:text-[#A0A5AA] mt-0.5">{ex.reason}</p>
                       {chk && (
                         <p className="font-mono text-slate-500 mt-0.5">
                           {chk.distanceFromVenueMeters}m · +{chk.minutesAfterFirstLecture}m · {chk.selfieSizeKb}KB
@@ -888,7 +888,7 @@ export const AdminAttendanceView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleLoadSelfie(chk.id, chk.selfieStoragePath!)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-medium cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] font-medium cursor-pointer"
                         >
                           {t('View Selfie', 'عرض الصورة')}
                         </button>
@@ -901,7 +901,7 @@ export const AdminAttendanceView: React.FC = () => {
                     <img
                       src={selfiePreviews[chk.id]}
                       alt={t('Check-in selfie preview', 'صورة التحقق')}
-                      className="w-36 h-36 object-cover rounded-lg border border-slate-200 dark:border-slate-800"
+                      className="w-36 h-36 object-cover rounded-lg border border-slate-200 dark:border-[#353A3F]"
                     />
                   )}
 
@@ -943,7 +943,7 @@ export const AdminAttendanceView: React.FC = () => {
 
       {/* Search and filter are visually separate from the lecture cards. */}
       <section aria-label={t('Find lecture attendance sheets', 'البحث في كشوف الحضور')}
-        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-3">
+        className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
           <div className="w-full lg:max-w-md space-y-2">
             <label htmlFor="admin-attendance-search" className="text-sm font-bold text-slate-900 dark:text-white">{t('Find a lecture', 'البحث عن محاضرة')}</label>
@@ -961,7 +961,7 @@ export const AdminAttendanceView: React.FC = () => {
             </div>
           </div>
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t('Sheet status', 'حالة الكشف')}</p>
+            <p className="text-xs font-semibold text-slate-600 dark:text-[#C0C5C9]">{t('Sheet status', 'حالة الكشف')}</p>
             <div role="group" aria-label={t('Filter attendance sheets by status', 'فلترة كشوف الحضور حسب الحالة')} className="flex flex-wrap gap-2">
               {([
                 { id: 'all', en: 'All', ar: 'الكل', count: campSheets.length },
@@ -971,8 +971,8 @@ export const AdminAttendanceView: React.FC = () => {
                 <button key={tab.id} type="button" aria-pressed={statusFilter === tab.id}
                   onClick={() => setStatusFilter(tab.id)}
                   className={`min-h-[40px] px-3.5 py-2 rounded-xl border inline-flex items-center gap-2 text-xs font-semibold transition-colors ${statusFilter === tab.id
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'}`}>
+                    ? 'bg-[#355F82] border-[#355F82] text-white'
+                    : 'bg-white dark:bg-[#25292D] border-slate-200 dark:border-[#42474D] text-slate-700 dark:text-[#DEE1E4]'}`}>
                   <span>{t(tab.en, tab.ar)}</span>
                   <span className={`rounded-full px-1.5 py-0.5 min-w-5 text-center tabular-nums ${statusFilter === tab.id
                     ? 'bg-white/20 text-white'
@@ -982,7 +982,7 @@ export const AdminAttendanceView: React.FC = () => {
             </div>
           </div>
         </div>
-        <p role="status" className="text-xs text-slate-500 dark:text-slate-400">
+        <p role="status" className="text-xs text-slate-500 dark:text-[#A0A5AA]">
           {t(`Showing ${filteredSheets.length} of ${campSheets.length} lecture sheets`,
             `عرض ${filteredSheets.length} من ${campSheets.length} كشف محاضرة`)}
         </p>
@@ -991,12 +991,12 @@ export const AdminAttendanceView: React.FC = () => {
       {/* Condensed lecture cards; server-only counts are not misrepresented as final. */}
       <section aria-label={t('Lecture attendance sheets', 'كشوف حضور المحاضرات')} className="space-y-3">
         {filteredSheets.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-7 text-center space-y-3">
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] p-7 text-center space-y-3">
+            <p className="text-sm font-medium text-slate-600 dark:text-[#C0C5C9]">
               {t('No lecture sheets match your search.', 'مفيش كشوف محاضرات مطابقة للبحث.')}
             </p>
             <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
-              className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+              className="text-sm font-semibold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
               {t('Clear filters', 'مسح الفلاتر')}
             </button>
           </div>
@@ -1022,24 +1022,24 @@ export const AdminAttendanceView: React.FC = () => {
             <article key={sheet.id}
               aria-label={t(`Attendance sheet: ${lec?.topic || sheet.lectureId}`,
                 `كشف حضور: ${lec?.topic || sheet.lectureId}`)}
-              className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
+              className="overflow-hidden rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-sm"
             >
               <div className="p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-                      <span className="rounded-md bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 text-blue-700 dark:text-blue-300">
+                      <span className="rounded-md bg-blue-50 dark:bg-[#293747]/40 px-2.5 py-1 text-blue-700 dark:text-blue-300">
                         {t(`Day ${sheet.campDay} · Period ${sheet.periodNumber}`,
                            `اليوم ${sheet.campDay} · الفترة ${sheet.periodNumber}`)}
                       </span>
-                      <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-slate-600 dark:text-slate-300">
+                      <span className="rounded-md bg-slate-100 dark:bg-[#25292D] px-2.5 py-1 text-slate-600 dark:text-[#C0C5C9]">
                         {grp?.code || t('Unknown group', 'جروب غير معروف')}
                       </span>
                     </div>
                     <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
                       {lec?.topic || sheet.lectureId}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
                       {inst ? t(inst.fullNameEn, inst.fullNameAr) : sheet.instructorId}
                       {lec && <span className="ms-3">{lec.startTime}–{lec.endTime}</span>}
                     </p>
@@ -1052,7 +1052,7 @@ export const AdminAttendanceView: React.FC = () => {
                       aria-expanded={isExpanded}
                       aria-controls={`admin-roster-${sheet.id}`}
                       onClick={() => setExpandedSheetId(isExpanded ? null : sheet.id)}
-                      className="inline-flex items-center gap-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      className="inline-flex items-center gap-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-[#42474D] px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-[#DEE1E4] bg-white dark:bg-[#25292D] hover:bg-slate-50 dark:hover:bg-slate-700"
                     >
                       <Eye className="w-4 h-4" />
                       <span>{isExpanded ? t('Close details', 'إغلاق التفاصيل') : t('View details', 'عرض التفاصيل')}</span>
@@ -1066,33 +1066,33 @@ export const AdminAttendanceView: React.FC = () => {
                       { label: t('Present', 'حاضر'), count: presentCount, color: 'text-emerald-700 dark:text-emerald-300' },
                       { label: t('Late', 'متأخر'), count: lateCount, color: 'text-amber-700 dark:text-amber-300' },
                       { label: t('Absent', 'غائب'), count: absentCount, color: 'text-rose-700 dark:text-rose-300' },
-                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount, color: 'text-slate-700 dark:text-slate-300' },
+                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount, color: 'text-slate-700 dark:text-[#C0C5C9]' },
                       { label: t('Excused', 'بعذر'), count: excusedCount, color: 'text-violet-700 dark:text-violet-300' },
                     ].map(stat => (
-                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 px-3 py-2.5">
-                        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
+                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-3 py-2.5">
+                        <p className="text-[11px] font-medium text-slate-500 dark:text-[#A0A5AA]">{stat.label}</p>
                         <p className={`text-xl font-bold tabular-nums mt-0.5 ${stat.color}`}>{stat.count}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/30 px-3.5 py-3 flex flex-wrap items-center gap-2">
+                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-[#42474D] bg-slate-50/70 dark:bg-[#121416]/30 px-3.5 py-3 flex flex-wrap items-center gap-2">
                     <ClipboardCheck className="w-4 h-4 shrink-0 text-slate-400" />
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <span className="text-xs font-medium text-slate-600 dark:text-[#C0C5C9]">
                       {t('No server-saved marks yet — this does not mean all students are absent.',
                         'مفيش حضور محفوظ للطلاب على السيرفر لسه — ده مش معناه إنهم غايبين.')}
                     </span>
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-slate-800 pt-3 text-xs">
-                  <span className="text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-[#353A3F] pt-3 text-xs">
+                  <span className="text-slate-500 dark:text-[#A0A5AA]">
                     {t('Instructor check-in', 'وصول المحاضر')}:
                   </span>
                   {chk && chkDisplay
                     ? <StatusBadge tone={chkDisplay.tone}>{chkDisplay.label}</StatusBadge>
-                    : <span className="font-semibold text-slate-500 dark:text-slate-400">{t('Not recorded', 'لم يُسجل')}</span>}
+                    : <span className="font-semibold text-slate-500 dark:text-[#A0A5AA]">{t('Not recorded', 'لم يُسجل')}</span>}
                   {!isFinalized && (
-                    <span className="ms-auto text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="ms-auto text-[11px] text-slate-500 dark:text-[#A0A5AA]">
                       {t('Draft · Not final', 'مسودة · ليست نهائية')}
                     </span>
                   )}
@@ -1101,14 +1101,14 @@ export const AdminAttendanceView: React.FC = () => {
 
               {isExpanded && (
                 <div id={`admin-roster-${sheet.id}`}
-                  className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 p-4 sm:p-5 space-y-4"
+                  className="border-t border-slate-200 dark:border-[#353A3F] bg-slate-50/50 dark:bg-[#121416]/20 p-4 sm:p-5 space-y-4"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                         {t('Student attendance records', 'سجلات حضور الطلاب')}
                       </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
                         {t(`${sheet.records.length} rows saved on server`,
                           `${sheet.records.length} سجل محفوظ على السيرفر`)}
                       </p>
@@ -1123,9 +1123,9 @@ export const AdminAttendanceView: React.FC = () => {
                   </div>
                   {hasSavedRows ? (
                     <>
-                      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 space-y-2">
+                      <div className="rounded-xl border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] p-3.5 space-y-2">
                         <label htmlFor={`corr-note-${sheet.id}`}
-                          className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          className="block text-xs font-semibold text-slate-700 dark:text-[#DEE1E4]">
                           {t('Reason for audited corrections', 'سبب التعديل المسجل في التدقيق')}
                         </label>
                         <input id={`corr-note-${sheet.id}`} type="text"
@@ -1134,7 +1134,7 @@ export const AdminAttendanceView: React.FC = () => {
                           placeholder={t('Reason for correcting attendance', 'سبب تعديل حضور الطالب')}
                           className={`${INPUT_CLASS} min-h-[42px]`}
                         />
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">
                           {t('This reason is logged whenever a student mark is changed.',
                             'السبب ده بيتسجل مع أي تعديل لحضور طالب.')}
                         </p>
@@ -1142,11 +1142,11 @@ export const AdminAttendanceView: React.FC = () => {
                       <div className="space-y-2">
                         {sheet.records.map(rec => (
                           <div key={rec.studentId}
-                            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                            className="rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
                           >
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">{rec.studentName}</p>
-                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-[#A0A5AA]">
                                 <span className="font-mono">{rec.studentCode}</span>
                                 {rec.isCrossGroup && <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>}
                               </div>
@@ -1163,7 +1163,7 @@ export const AdminAttendanceView: React.FC = () => {
                                   onClick={() => handleCorrectMark(sheet.id, sheet.lectureId, rec.studentId, opt.mk)}
                                   className={`min-h-[40px] rounded-lg border px-2 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${rec.mark === opt.mk
                                     ? opt.active
-                                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50'}`}>
+                                    : 'border-slate-200 dark:border-[#42474D] text-slate-700 dark:text-[#DEE1E4] bg-white dark:bg-[#25292D] hover:bg-slate-50'}`}>
                                   {t(opt.en, opt.ar)}
                                 </button>
                               ))}
@@ -1173,7 +1173,7 @@ export const AdminAttendanceView: React.FC = () => {
                       </div>
                     </>
                   ) : (
-                    <p className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                    <p className="rounded-xl bg-white dark:bg-[#1D2023] border border-slate-200 dark:border-[#353A3F] p-4 text-xs leading-relaxed text-slate-600 dark:text-[#C0C5C9]">
                       {t('This draft has no student rows saved on the server. Instructor offline edits are not visible until synchronized. Do not interpret empty records as absences.',
                         'المسودة مفيهاش سجلات طلاب محفوظة على السيرفر. تعديلات المحاضر المحلية مش بتظهر قبل المزامنة. متعتبرش النتيجة دي غياب.')}
                     </p>

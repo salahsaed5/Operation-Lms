@@ -83,7 +83,7 @@ function CampWeekdayPicker(props: {
       </div>
       <div className="flex flex-wrap gap-2">
         {CAMP_WEEKDAYS.map(day => (
-          <label key={day.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs">
+          <label key={day.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-[#42474D] px-3 py-2 text-xs">
             <input type="checkbox" checked={weekdays.includes(day.id)}
               onChange={e => onChange(
                 e.target.checked ? [...weekdays,day.id].sort((a,b)=>a-b) : weekdays.filter(d=>d!==day.id)
@@ -549,8 +549,8 @@ export const AdminCampsView: React.FC = () => {
               onClick={() => setStatusFilter(tab.id)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                 statusFilter === tab.id
-                  ? 'bg-blue-600 text-white'
-                  : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-[#355F82] text-white'
+                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9] hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
               {t(tab.en, tab.ar)}
@@ -561,7 +561,7 @@ export const AdminCampsView: React.FC = () => {
 
       {showNewCampForm && (
         <form onSubmit={handleCreateCamp} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('Create New Draft Camp', 'إعداد معسكر جديد (مسودة)')}
             </h2>
@@ -687,7 +687,7 @@ export const AdminCampsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setShowNewCampForm(false)}
@@ -705,12 +705,12 @@ export const AdminCampsView: React.FC = () => {
       {editingCamp && (
         <form
           onSubmit={handleSaveEdit}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 sm:p-6 space-y-4`}
+          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 sm:p-6 space-y-4`}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('Edit Camp Settings:', 'تعديل إعدادات المعسكر:')}{' '}
-              <span className="font-mono text-blue-600 dark:text-blue-400">{editingCamp.code}</span>
+              <span className="font-mono text-[#355F82] dark:text-[#88A9CC]">{editingCamp.code}</span>
             </h2>
           </div>
 
@@ -829,7 +829,7 @@ export const AdminCampsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setEditingCamp(null)}
@@ -885,7 +885,7 @@ export const AdminCampsView: React.FC = () => {
                     </StatusBadge>
                   </div>
 
-                  <div className="text-slate-600 dark:text-slate-400 space-y-1">
+                  <div className="text-slate-600 dark:text-[#A0A5AA] space-y-1">
                     <p>
                       {venue ? t(venue.nameEn, venue.nameAr) : camp.venueId} ·{' '}
                       <span className="font-mono">{camp.settings.geofenceRadiusMeters}m</span>
@@ -899,14 +899,14 @@ export const AdminCampsView: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <button type="button" disabled={activeCamp?.id===camp.id}
                         onClick={() => selectCamp(camp.id)}
-                        className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                        className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-[#425A70] text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
                         {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Work on this Camp','إدارة هذا الكامب')}
                       </button>
                       <button
                         type="button"
                         disabled={isBusy}
                         onClick={() => startEdit(camp)}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Pencil className="w-3 h-3" />
                         <span>{t('Edit', 'تعديل')}</span>
@@ -916,7 +916,7 @@ export const AdminCampsView: React.FC = () => {
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleActivate(camp.id)}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-[#355F82] text-white text-xs font-semibold cursor-pointer"
                         >
                           {t('Activate', 'تفعيل')}
                         </button>
@@ -926,7 +926,7 @@ export const AdminCampsView: React.FC = () => {
                           type="button"
                           disabled={isBusy}
                           onClick={() => setArchiveTarget(camp)}
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Archive className="w-3.5 h-3.5" />
                           <span>{t('Archive', 'أرشفة')}</span>
@@ -943,7 +943,7 @@ export const AdminCampsView: React.FC = () => {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-start border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                   <th className="py-3 px-5 font-semibold text-start">{t('Camp', 'المعسكر')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Venue & Geofence', 'المقر والنطاق')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Dates & Progress', 'التواريخ والتقدم')}</th>
@@ -966,7 +966,7 @@ export const AdminCampsView: React.FC = () => {
                         <p className="text-slate-500 font-mono tabular-nums mt-0.5">{camp.code}</p>
                       </td>
                       <td className="py-3.5 px-4">
-                        <p className="text-slate-800 dark:text-slate-200">
+                        <p className="text-slate-800 dark:text-[#DEE1E4]">
                           {venue ? t(venue.nameEn, venue.nameAr) : camp.venueId}
                         </p>
                         <p className="text-slate-500 font-mono tabular-nums mt-0.5">
@@ -974,7 +974,7 @@ export const AdminCampsView: React.FC = () => {
                           {camp.settings.defaultLectureRateEgp} EGP
                         </p>
                       </td>
-                      <td className="py-3.5 px-4 font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      <td className="py-3.5 px-4 font-mono tabular-nums text-slate-700 dark:text-[#C0C5C9]">
                         <div>{camp.startDate} → {camp.endDate}</div>
                         <div className="text-slate-500 mt-0.5">
                           {t(
@@ -1000,7 +1000,7 @@ export const AdminCampsView: React.FC = () => {
                         <div className="inline-flex items-center gap-2">
                           <button type="button" disabled={activeCamp?.id===camp.id}
                             onClick={() => selectCamp(camp.id)}
-                            className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                            className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-[#425A70] text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
                             {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Manage','إدارة')}
                           </button>
                           {camp.status !== CampStatus.ARCHIVED && (
@@ -1008,7 +1008,7 @@ export const AdminCampsView: React.FC = () => {
                               type="button"
                               disabled={isBusy}
                               onClick={() => startEdit(camp)}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium inline-flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-[#C0C5C9] font-medium inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Pencil className="w-3 h-3" />
                               <span>{t('Edit', 'تعديل')}</span>
@@ -1019,7 +1019,7 @@ export const AdminCampsView: React.FC = () => {
                               type="button"
                               disabled={isBusy}
                               onClick={() => handleActivate(camp.id)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer"
+                              className="px-3 py-1.5 rounded-lg bg-[#355F82] hover:bg-[#2D516F] text-white font-semibold cursor-pointer"
                             >
                               {t('Activate', 'تفعيل')}
                             </button>
@@ -1029,7 +1029,7 @@ export const AdminCampsView: React.FC = () => {
                               type="button"
                               disabled={isBusy}
                               onClick={() => setArchiveTarget(camp)}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium inline-flex items-center gap-1 cursor-pointer"
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-[#C0C5C9] font-medium inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Archive className="w-3.5 h-3.5" />
                               <span>{t('Archive Camp', 'أرشفة المعسكر')}</span>
@@ -1529,13 +1529,13 @@ export const AdminInstructorsView: React.FC = () => {
                 setOneTimeHandoff(null);
                 setCopiedSecret(false);
               }}
-              className="px-2.5 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-xs font-medium text-amber-900 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 cursor-pointer shrink-0"
+              className="px-2.5 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-[#1D2023] text-xs font-medium text-amber-900 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 cursor-pointer shrink-0"
             >
               {t('Dismiss & Clear', 'إغلاق ومسح')}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-900/60 rounded-lg p-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white dark:bg-[#1D2023] border border-amber-200/80 dark:border-amber-900/60 rounded-lg p-3.5">
             <div>
               <p className="text-slate-500">{t('Instructor', 'المحاضر')}</p>
               <p className="font-semibold text-slate-900 dark:text-white mt-0.5">
@@ -1553,14 +1553,14 @@ export const AdminInstructorsView: React.FC = () => {
               <div className="flex items-center gap-2 mt-0.5">
                 <code
                   data-testid="one-time-temp-password"
-                  className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-900 dark:text-white font-semibold select-all"
+                  className="px-2 py-1 rounded bg-slate-100 dark:bg-[#25292D] font-mono text-slate-900 dark:text-white font-semibold select-all"
                 >
                   {oneTimeHandoff.temporaryPassword}
                 </code>
                 <button
                   type="button"
                   onClick={handleCopyTempPassword}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-slate-200 cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-[#DEE1E4] cursor-pointer"
                 >
                   {copiedSecret ? (
                     <>
@@ -1590,7 +1590,7 @@ export const AdminInstructorsView: React.FC = () => {
                 `حسابات المسؤولين المعتمدة (الحد الأقصى ${adminAccounts.length} / 2)`
               )}
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
               {t(
                 'Admin accounts are server-bootstrapped only (max 2 slots) and require verified TOTP MFA (AAL2).',
                 'يتم تهيئة حسابات الإدارة من الخادم فقط (بحد أقصى حسابين) مع مصادقة ثنائية إلزامية TOTP (AAL2).'
@@ -1642,14 +1642,14 @@ export const AdminInstructorsView: React.FC = () => {
         <form
           onSubmit={handleProvisionSubmit}
           noValidate
-          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                 {t('Provision New Instructor Account', 'إنشاء حساب محاضر جديد')}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
                 {t(
                   'Creates the Supabase Auth account, linked profile (must change password on first login), and instructor record atomically.',
                   'ينشئ حساب المصادقة والملف الشخصي المرتبط (مع تغيير إلزامي لكلمة المرور عند أول دخول) وسجل المحاضر بشكل متكامل.'
@@ -1824,22 +1824,22 @@ export const AdminInstructorsView: React.FC = () => {
             </div>
 
             <div className="sm:col-span-2 lg:col-span-1 flex flex-col justify-end gap-2.5 pb-1">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-[#C0C5C9]">
                 <input
                   type="checkbox"
                   checked={newIsActive}
                   onChange={(e) => setNewIsActive(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500"
+                  className="rounded text-[#355F82] focus:ring-blue-500"
                 />
                 <span>{t('Account Active Immediately', 'تفعيل الحساب فوراً')}</span>
               </label>
               {activeCamp && activeCamp.status !== CampStatus.ARCHIVED && (
-                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-[#C0C5C9]">
                   <input
                     type="checkbox"
                     checked={newAssignToActiveCamp}
                     onChange={(e) => setNewAssignToActiveCamp(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500"
+                    className="rounded text-[#355F82] focus:ring-blue-500"
                   />
                   <span>{t(`Assign to ${activeCamp.code}`, `تعيين في معسكر ${activeCamp.code}`)}</span>
                 </label>
@@ -1878,8 +1878,8 @@ export const AdminInstructorsView: React.FC = () => {
               <label
                 className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
                   deliveryMode === 'invite_email'
-                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-[#293747]/30'
+                    : 'border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023]'
                 }`}
               >
                 <input
@@ -1888,14 +1888,14 @@ export const AdminInstructorsView: React.FC = () => {
                   value="invite_email"
                   checked={deliveryMode === 'invite_email'}
                   onChange={() => setDeliveryMode('invite_email')}
-                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 text-[#355F82] focus:ring-blue-500"
                 />
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
-                    <Mail className="w-3.5 h-3.5 text-blue-600" />
+                    <Mail className="w-3.5 h-3.5 text-[#355F82]" />
                     <span>{t('Send Invite Email (Recommended)', 'إرسال دعوة عبر البريد الإلكتروني (موصى به)')}</span>
                   </div>
-                  <p className="text-slate-500 dark:text-slate-400">
+                  <p className="text-slate-500 dark:text-[#A0A5AA]">
                     {t(
                       'Supabase sends a secure one-time invite link to the instructor’s email to set their own password.',
                       'يرسل النظام رابط دعوة آمن لمرة واحدة إلى بريد المحاضر لتعيين كلمة مروره بنفسه.'
@@ -1907,8 +1907,8 @@ export const AdminInstructorsView: React.FC = () => {
               <label
                 className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
                   deliveryMode === 'temporary_password'
-                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-[#293747]/30'
+                    : 'border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023]'
                 }`}
               >
                 <input
@@ -1917,14 +1917,14 @@ export const AdminInstructorsView: React.FC = () => {
                   value="temporary_password"
                   checked={deliveryMode === 'temporary_password'}
                   onChange={() => setDeliveryMode('temporary_password')}
-                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 text-[#355F82] focus:ring-blue-500"
                 />
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
-                    <Lock className="w-3.5 h-3.5 text-blue-600" />
+                    <Lock className="w-3.5 h-3.5 text-[#355F82]" />
                     <span>{t('One-Time Temporary Password', 'كلمة مرور مؤقتة لمرة واحدة')}</span>
                   </div>
-                  <p className="text-slate-500 dark:text-slate-400">
+                  <p className="text-slate-500 dark:text-[#A0A5AA]">
                     {t(
                       'Generates a strong one-time password displayed once to the admin. Mandatory password change enforced on first login.',
                       'تُنشأ كلمة مرور قوية لمرة واحدة تُعرض للمسؤول مرة واحدة فقط مع إلزام المحاضر بتغييرها عند أول دخول.'
@@ -1960,7 +1960,7 @@ export const AdminInstructorsView: React.FC = () => {
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => {
@@ -1987,7 +1987,7 @@ export const AdminInstructorsView: React.FC = () => {
       {editingInst && (
         <form
           onSubmit={handleSaveInst}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -2074,22 +2074,22 @@ export const AdminInstructorsView: React.FC = () => {
               />
             </div>
             <div className="flex flex-col justify-end gap-2 pb-1">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-[#C0C5C9]">
                 <input
                   type="checkbox"
                   checked={isActive}
                   onChange={(e) => setIsActive(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500"
+                  className="rounded text-[#355F82] focus:ring-blue-500"
                 />
                 <span>{t('Account Active (Can Sign In)', 'الحساب نشط (يمكنه الدخول)')}</span>
               </label>
               {activeCamp && (
-                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-[#C0C5C9]">
                   <input
                     type="checkbox"
                     checked={assignedToCamp}
                     onChange={(e) => setAssignedToCamp(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500"
+                    className="rounded text-[#355F82] focus:ring-blue-500"
                   />
                   <span>{t(`Assigned to ${activeCamp.code}`, `معين في ${activeCamp.code}`)}</span>
                 </label>
@@ -2110,7 +2110,7 @@ export const AdminInstructorsView: React.FC = () => {
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setEditingInst(null)}
@@ -2160,8 +2160,8 @@ export const AdminInstructorsView: React.FC = () => {
               onClick={() => setStatusFilter(tab.id)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                 statusFilter === tab.id
-                  ? 'bg-blue-600 text-white'
-                  : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                  ? 'bg-[#355F82] text-white'
+                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
               }`}
             >
               {t(tab.en, tab.ar)}
@@ -2215,7 +2215,7 @@ export const AdminInstructorsView: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400">{inst.specialization}</p>
+                  <p className="text-slate-600 dark:text-[#A0A5AA]">{inst.specialization}</p>
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <div className="flex items-center gap-2">
                       <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
@@ -2233,7 +2233,7 @@ export const AdminInstructorsView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setViewingInst(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Eye className="w-3 h-3" />
                         <span>{t('View', 'عرض')}</span>
@@ -2241,7 +2241,7 @@ export const AdminInstructorsView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => openEdit(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Pencil className="w-3 h-3" />
                         <span>{t('Edit', 'تعديل')}</span>
@@ -2249,7 +2249,7 @@ export const AdminInstructorsView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setToggleStatusTarget(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 font-medium inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Power className="w-3 h-3" />
                         <span>
@@ -2267,7 +2267,7 @@ export const AdminInstructorsView: React.FC = () => {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-start border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                   <th className="py-3 ps-4 pe-3 font-semibold text-start">{t('Instructor', 'المحاضر')}</th>
                   <th className="py-3 px-3 font-semibold text-start">{t('Account', 'الحساب')}</th>
                   <th className="py-3 px-3 font-semibold text-start">{t('Specialization', 'التخصص')}</th>
@@ -2295,13 +2295,13 @@ export const AdminInstructorsView: React.FC = () => {
                           {inst.instructorCode}
                         </p>
                       </td>
-                      <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300 max-w-[190px]">
+                      <td className="py-3 px-3 font-mono text-slate-600 dark:text-[#C0C5C9] max-w-[190px]">
                         <div className="truncate">{inst.username}</div>
                         <div className="text-[11px] text-slate-400 truncate" title={inst.email}>
                           {inst.email}
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-slate-700 dark:text-slate-300 max-w-[180px]">
+                      <td className="py-3 px-3 text-slate-700 dark:text-[#C0C5C9] max-w-[180px]">
                         <span className="line-clamp-2">{inst.specialization}</span>
                       </td>
                       <td className="py-3 px-3">
@@ -2344,7 +2344,7 @@ export const AdminInstructorsView: React.FC = () => {
                             type="button"
                             onClick={() => setViewingInst(inst)}
                             title={t('View Details', 'عرض التفاصيل')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
                           >
                             <Eye className="w-3 h-3" />
                             <span>{t('View', 'عرض')}</span>
@@ -2353,7 +2353,7 @@ export const AdminInstructorsView: React.FC = () => {
                             type="button"
                             onClick={() => openEdit(inst)}
                             title={t('Edit Instructor', 'تعديل بيانات المحاضر')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
                           >
                             <Pencil className="w-3 h-3" />
                             <span>{t('Edit', 'تعديل')}</span>
@@ -2362,7 +2362,7 @@ export const AdminInstructorsView: React.FC = () => {
                             type="button"
                             onClick={() => setResetTarget(inst)}
                             title={t('Reset Password', 'استعادة كلمة المرور')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
                           >
                             <KeyRound className="w-3 h-3" />
                             <span>{t('Reset', 'استعادة')}</span>
@@ -2372,8 +2372,8 @@ export const AdminInstructorsView: React.FC = () => {
                             onClick={() => setToggleStatusTarget(inst)}
                             className={`px-2 py-1 rounded-md border font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer ${
                               inst.isActive
-                                ? 'border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/30'
-                                : 'border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                ? 'border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/30'
+                                : 'border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-[#1D2023] hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
                             }`}
                           >
                             <Power className="w-3 h-3" />
@@ -2414,10 +2414,10 @@ export const AdminInstructorsView: React.FC = () => {
           onClick={() => setViewingInst(null)}
         >
           <div
-            className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-lg space-y-4"
+            className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-5 shadow-lg space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-[#353A3F] pb-3">
               <div>
                 <h2
                   id="view-instructor-title"
@@ -2505,7 +2505,7 @@ export const AdminInstructorsView: React.FC = () => {
                         <span className="text-slate-400">—</span>
                       )}
                       {assignedGroups.length > 0 && (
-                        <p className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                        <p className="text-[11px] font-mono text-slate-600 dark:text-[#C0C5C9]">
                           {assignedGroups.map((g) => g.code).join(', ')}
                         </p>
                       )}
@@ -2514,7 +2514,7 @@ export const AdminInstructorsView: React.FC = () => {
                   {viewingInst.bio && (
                     <div className={`${SURFACE_SUBTLE} p-3 sm:col-span-2`}>
                       <dt className="text-slate-500">{t('Bio / Notes', 'نبذة / ملاحظات')}</dt>
-                      <dd className="text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">
+                      <dd className="text-slate-700 dark:text-[#C0C5C9] mt-0.5 whitespace-pre-wrap">
                         {viewingInst.bio}
                       </dd>
                     </div>
@@ -2523,7 +2523,7 @@ export const AdminInstructorsView: React.FC = () => {
               );
             })()}
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
               <button
                 type="button"
                 onClick={() => setViewingInst(null)}
@@ -2894,7 +2894,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               }}
               className={BTN_SECONDARY}
             >
-              <Plus className="w-3.5 h-3.5 text-blue-600" />
+              <Plus className="w-3.5 h-3.5 text-[#355F82]" />
               <span>{t('New Group', 'مجموعة جديدة')}</span>
             </button>
             <button
@@ -3031,7 +3031,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setShowGroupForm(false)}
@@ -3112,7 +3112,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setShowStudentForm(false)}
@@ -3130,10 +3130,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
       {transferTargetStuId && (
         <form
           onSubmit={handleSubmitTransfer}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-blue-900/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
         >
           <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+            <ArrowRightLeft className="w-4 h-4 text-[#355F82]" />
             <span>
               {t(
                 'Transfer Student Between Groups (Preserves Prior Day History)',
@@ -3189,7 +3189,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
               onClick={() => setTransferTargetStuId(null)}
@@ -3209,12 +3209,12 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Upload className="w-4 h-4 text-blue-600" />
+              <Upload className="w-4 h-4 text-[#355F82]" />
               <span>
                 {t('Batch Student Import & Smart Update', 'استيراد دفعات الطلاب والتحديث الذكي')}
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
               {t(
                 'Upload one Excel (.xlsx) or CSV roster per group: Full Name, Student Code, University. Review before importing. Any invalid student cancels the entire batch.',
                 'ارفع ملف Excel أو CSV واحدًا لكل مجموعة، بالأعمدة: الاسم الكامل، كود الطالب، الجامعة. راجع الكشف قبل الاستيراد؛ أي خطأ يوقف الدفعة بالكامل.'
@@ -3227,7 +3227,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               aria-label={t('Target Group for Import', 'المجموعة المستهدفة للاستيراد')}
               value={importGroupId}
               onChange={(e) => setImportGroupId(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-medium"
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] text-xs font-medium"
             >
               {campGroups.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -3240,7 +3240,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               aria-label={t('Import Validation Mode', 'وضع التحقق من الاستيراد')}
               value={importMode}
               onChange={(e) => setImportMode(e.target.value as 'smart_update' | 'strict_insert')}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-medium"
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] text-xs font-medium"
             >
               <option value="smart_update">{t('Smart Update Mode', 'وضع التحديث الذكي')}</option>
               <option value="strict_insert">{t('Strict New Only', 'إضافة جديدة فقط')}</option>
@@ -3263,16 +3263,16 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             }}
             className={`${INPUT_CLASS} file:me-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:font-semibold file:text-blue-700`}
           />
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
             {t(
               'First worksheet only. Columns: Full Name, Student Code, University. Maximum 1000 rows / 2 MB. File is read locally; no roster is saved until you confirm.',
               'أول ورقة فقط. الأعمدة: Full Name وStudent Code وUniversity. بحد أقصى 1000 طالب و2 ميجابايت. الملف يُقرأ على جهازك ولا تُحفظ بيانات الطلاب إلا بعد التأكيد.'
             )}
           </p>
-          {rosterParsing && <p className="text-xs text-blue-600">{t('Reading file…', 'جاري قراءة الملف…')}</p>}
+          {rosterParsing && <p className="text-xs text-[#355F82]">{t('Reading file…', 'جاري قراءة الملف…')}</p>}
           {rosterFileError && <InlineBanner type="error" message={rosterFileError} />}
           {rosterRows && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20 p-3 space-y-2">
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 dark:border-[#425A70] dark:bg-[#293747]/20 p-3 space-y-2">
               <p className="text-xs font-semibold text-slate-900 dark:text-white">
                 {t(
                   `Ready to import ${rosterRows.length} students from ${rosterFileName} into ${campGroups.find(g => g.id === (importGroupId || campGroups[0]?.id))?.code || 'selected group'}.`,
@@ -3289,7 +3289,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                   </tr></thead>
                   <tbody>
                     {rosterRows.slice(0, 5).map((student, i) => (
-                      <tr key={i} className="border-b border-slate-100 dark:border-slate-800">
+                      <tr key={i} className="border-b border-slate-100 dark:border-[#353A3F]">
                         <td className="py-1 pe-2">{student.rowNumber}</td>
                         <td className="py-1 pe-2">{student.studentName}</td>
                         <td className="py-1 pe-2">{student.studentCode}</td>
@@ -3382,8 +3382,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             onClick={() => setSelectedGroupId('all')}
             className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
               selectedGroupId === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                ? 'bg-[#355F82] text-white'
+                : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
             }`}
           >
             {t('All Groups', 'كل المجموعات')} ({allCampStudents.length})
@@ -3395,8 +3395,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               onClick={() => setSelectedGroupId(grp.id)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                 selectedGroupId === grp.id
-                  ? 'bg-blue-600 text-white'
-                  : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                  ? 'bg-[#355F82] text-white'
+                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
               }`}
             >
               {grp.code}
@@ -3432,7 +3432,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               return (
                 <div key={stu.id} className="p-4 flex items-center justify-between gap-3 text-xs">
                   <div className="min-w-0">
-                    <p className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+                    <p className="font-mono font-semibold text-[#355F82] dark:text-[#88A9CC]">
                       {stu.studentCode}
                     </p>
                     <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
@@ -3457,7 +3457,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                       setTransferToGroupId(otherGroup?.id || '');
                       setTransferDay(activeCamp.currentCampDay);
                     }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 disabled:opacity-40 inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] disabled:opacity-40 inline-flex items-center gap-1 shrink-0 cursor-pointer"
                   >
                     <ArrowRightLeft className="w-3 h-3" />
                     <span>{t('Transfer', 'نقل')}</span>
@@ -3471,7 +3471,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-start border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                   <th className="py-3 px-5 font-semibold text-start">{t('Student Code', 'كود الطالب')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Full Name', 'اسم الطالب')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Assigned Group', 'المجموعة')}</th>
@@ -3488,19 +3488,19 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                       key={stu.id}
                       className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
                     >
-                      <td className="py-3 px-5 font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
+                      <td className="py-3 px-5 font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
                         {stu.studentCode}
                       </td>
                       <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">
                         {stu.fullName}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                      <td className="py-3 px-4 text-slate-600 dark:text-[#C0C5C9]">
                         {grp ? `${grp.code} · ${t(grp.nameEn, grp.nameAr)}` : stu.groupId}
                       </td>
-                      <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
+                      <td className="py-3 px-4 text-slate-500 dark:text-[#A0A5AA]">
                         {stu.university}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                      <td className="py-3 px-4 text-slate-600 dark:text-[#C0C5C9]">
                         {stu.enrollmentOrigin === 'instructor_late_join' ? (
                           <div className="space-y-1 text-xs">
                             <p className="font-semibold text-amber-800 dark:text-amber-300">
@@ -3522,7 +3522,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                             setTransferToGroupId(otherGroup?.id || '');
                             setTransferDay(activeCamp.currentCampDay);
                           }}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 inline-flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 inline-flex items-center gap-1 cursor-pointer"
                         >
                           <ArrowRightLeft className="w-3 h-3" />
                           <span>{t('Transfer', 'نقل')}</span>

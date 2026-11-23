@@ -272,15 +272,15 @@ export const AdminFinanceView: React.FC = () => {
       {/* 4 Summary Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <div className={`${SURFACE_CARD} px-4 py-3.5`}>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
             {t('Verified Entitlements', 'إجمالي المستحقات المعتمدة')}
           </p>
-          <p className="text-xl font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400 mt-1">
+          <p className="text-xl font-bold font-mono tabular-nums text-[#355F82] dark:text-[#88A9CC] mt-1">
             {totalEligibleEgp.toLocaleString()} EGP
           </p>
         </div>
         <div className={`${SURFACE_CARD} px-4 py-3.5`}>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
             {t('Eligible / Approved Lectures', 'المحاضرات المستحقة')}
           </p>
           <p className="text-xl font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
@@ -288,7 +288,7 @@ export const AdminFinanceView: React.FC = () => {
           </p>
         </div>
         <div className={`${SURFACE_CARD} px-4 py-3.5`}>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
             {t('Pending Admin Review', 'بانتظار المراجعة')}
           </p>
           <p className="text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-1">
@@ -296,10 +296,10 @@ export const AdminFinanceView: React.FC = () => {
           </p>
         </div>
         <div className={`${SURFACE_CARD} px-4 py-3.5`}>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
             {t('Excluded Records', 'سجلات مستبعدة')}
           </p>
-          <p className="text-xl font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300 mt-1">
+          <p className="text-xl font-bold font-mono tabular-nums text-slate-700 dark:text-[#C0C5C9] mt-1">
             {excludedItems.length}
           </p>
         </div>
@@ -317,7 +317,7 @@ export const AdminFinanceView: React.FC = () => {
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                 {t('Instructor financial statements', 'كشف حساب المحاضرين')}
               </h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-[#A0A5AA]">
                 {t('Confirmed lectures are eligible/approved entitlements. Pending amounts are estimates, not payable yet. Scheduled count is separate from verified attendance.',
                   'المحاضرات المؤكدة هي المستحقة أو المعتمدة. المبالغ المعلّقة تقديرية وليست مستحقة حاليًا. عدد المحاضرات المجدولة مختلف عن المؤكدة.')}
               </p>
@@ -332,7 +332,7 @@ export const AdminFinanceView: React.FC = () => {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 px-4 py-3">
+            <div className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-4 py-3">
               <p className="text-xs text-slate-500">{t('Instructors in camp', 'المحاضرون في المعسكر')}</p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">{instructorStatements.length}</p>
             </div>
@@ -348,14 +348,14 @@ export const AdminFinanceView: React.FC = () => {
         </div>
 
         {visibleInstructorStatements.length === 0 ? (
-          <p role="status" className="border-t border-slate-100 dark:border-slate-800 p-6 text-center text-sm text-slate-500">
+          <p role="status" className="border-t border-slate-100 dark:border-[#353A3F] p-6 text-center text-sm text-slate-500">
             {t('No instructors match this search.', 'مفيش محاضرين مطابقين للبحث.')}
           </p>
         ) : (
           <>
-            <div className="hidden lg:block overflow-x-auto border-t border-slate-100 dark:border-slate-800">
+            <div className="hidden lg:block overflow-x-auto border-t border-slate-100 dark:border-[#353A3F]">
               <table className="w-full min-w-[1080px] text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300">
+                <thead className="bg-slate-50 dark:bg-[#25292D]/70 text-slate-600 dark:text-[#C0C5C9]">
                   <tr>
                     <th scope="col" className="px-4 py-3 text-start font-semibold">{t('Instructor', 'المحاضر')}</th>
                     <th scope="col" className="px-2 py-3 text-center font-semibold">{t('Scheduled', 'مجدولة')}</th>
@@ -405,7 +405,7 @@ export const AdminFinanceView: React.FC = () => {
                 </tbody>
               </table>
             </div>
-            <div className="lg:hidden border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="lg:hidden border-t border-slate-100 dark:border-[#353A3F] divide-y divide-slate-100 dark:divide-slate-800">
               {visibleInstructorStatements.map(row => (
                 <div key={row.inst.id} className="p-4 space-y-3">
                   <div>
@@ -419,7 +419,7 @@ export const AdminFinanceView: React.FC = () => {
                       { en:'Pending',ar:'معلقة',n:row.pendingCount },
                       { en:'Excluded',ar:'مستبعدة',n:row.excludedCount },
                     ].map(item=>(
-                      <div key={item.en} className="rounded-lg bg-slate-50 dark:bg-slate-800 p-2">
+                      <div key={item.en} className="rounded-lg bg-slate-50 dark:bg-[#25292D] p-2">
                         <p className="text-xs text-slate-500">{t(item.en,item.ar)}</p>
                         <p className="text-base font-bold tabular-nums">{item.n}</p>
                       </div>
@@ -452,13 +452,13 @@ export const AdminFinanceView: React.FC = () => {
             const inst = instructors.find(i=>i.id===editingRateInstructorId);
             if(inst) void handleSaveRate(inst);
           }}
-            className="border-t border-slate-200 dark:border-slate-700 bg-blue-50/40 dark:bg-blue-950/20 p-4 sm:p-5 space-y-3"
+            className="border-t border-slate-200 dark:border-[#42474D] bg-blue-50/40 dark:bg-[#293747]/20 p-4 sm:p-5 space-y-3"
           >
             <div>
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                 {t('Edit default rate for future lectures', 'تعديل السعر الأساسي للمحاضرات القادمة')}
               </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+              <p className="text-xs text-slate-600 dark:text-[#A0A5AA] mt-1">
                 {t('Already scheduled lectures keep their frozen rate. This change does NOT change verified totals.',
                   'المحاضرات اللي اتجدولت بالفعل تحتفظ بالسعر المثبت، والتعديل مش هيغيّر المستحقات المؤكدة القديمة.')}
               </p>
@@ -479,14 +479,14 @@ export const AdminFinanceView: React.FC = () => {
             </div>
           </form>
         )}
-        <div className="border-t border-slate-100 dark:border-slate-800 p-4 sm:p-5 text-xs leading-relaxed text-slate-500 dark:text-slate-400 space-y-2">
+        <div className="border-t border-slate-100 dark:border-[#353A3F] p-4 sm:p-5 text-xs leading-relaxed text-slate-500 dark:text-[#A0A5AA] space-y-2">
           <p>{t('The default rate is for new lectures only. If a lecturer taught at different frozen rates, the total is calculated as the sum of those actual rates, not by multiplying the current rate.',
             'السعر الأساسي يخص المحاضرات الجديدة فقط. لو المحاضر عنده محاضرات بأسعار مختلفة، الإجمالي بيتحسب بجمع أسعار كل محاضرة الفعلية، مش ضرب العدد في السعر الحالي.')}</p>
           <div className="flex items-center flex-wrap gap-2">
             <span>{t('To change lecture count, add/cancel/correct the actual lecture in Schedule; do not type a fake attendance count.',
               'لتعديل عدد المحاضرات، أضف أو ألغِ أو صحّح المحاضرات نفسها من الجدول بدل تغيير عدد غير حقيقي.')}</span>
             <button type="button" onClick={() => setAdminRoute('schedule')}
-              className="font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+              className="font-bold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
               {t('Open Schedule', 'فتح الجدول')}
             </button>
           </div>
@@ -510,7 +510,7 @@ export const AdminFinanceView: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">{t('Individual lecture decisions', 'قرارات مستحقات كل محاضرة')}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
               {t('Approve or exclude individual entitlements with a recorded reason; this is not a payment ledger.',
                 'اعتماد أو استبعاد مستحق المحاضرة بسبب مسجل للمراجعة؛ ده مش سجل صرف مبالغ.')}
             </p>
@@ -526,7 +526,7 @@ export const AdminFinanceView: React.FC = () => {
         {showLectureLedger && (
           <div className="space-y-4">
             {ledgerInstructorId && (
-              <div className="flex items-center flex-wrap gap-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/30 p-3">
+              <div className="flex items-center flex-wrap gap-3 rounded-xl border border-blue-200 dark:border-[#425A70] bg-blue-50/60 dark:bg-[#293747]/30 p-3">
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                   {t('Viewing lectures for', 'تفاصيل محاضرات')}:
                   {' '}{t(
@@ -535,7 +535,7 @@ export const AdminFinanceView: React.FC = () => {
                   )}
                 </p>
                 <button type="button" onClick={()=>setLedgerInstructorId(null)}
-                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                  className="text-xs font-bold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
                   {t('Show all instructors', 'عرض كل المحاضرين')}
                 </button>
               </div>
@@ -569,8 +569,8 @@ export const AdminFinanceView: React.FC = () => {
               onClick={() => setStatusFilter(tab.id)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                 statusFilter === tab.id
-                  ? 'bg-blue-600 text-white'
-                  : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                  ? 'bg-[#355F82] text-white'
+                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
               }`}
             >
               {t(tab.en, tab.ar)}
@@ -607,7 +607,7 @@ export const AdminFinanceView: React.FC = () => {
                     <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                   </div>
 
-                  <p className="text-slate-700 dark:text-slate-300">{ent.eligibilityReason}</p>
+                  <p className="text-slate-700 dark:text-[#C0C5C9]">{ent.eligibilityReason}</p>
 
                   <div className="flex items-center justify-between font-mono tabular-nums">
                     <span className="text-slate-500">
@@ -659,7 +659,7 @@ export const AdminFinanceView: React.FC = () => {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-start border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                   <th className="py-3 px-5 font-semibold text-start">{t('Instructor & Lecture', 'المحاضر والمحاضرة')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Status', 'الحالة')}</th>
                   <th className="py-3 px-4 font-semibold text-start">{t('Eligibility & Notes', 'تفاصيل الاستحقاق')}</th>
@@ -690,14 +690,14 @@ export const AdminFinanceView: React.FC = () => {
                         <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                       </td>
                       <td className="py-3.5 px-4 max-w-sm">
-                        <p className="text-slate-800 dark:text-slate-200">{ent.eligibilityReason}</p>
+                        <p className="text-slate-800 dark:text-[#DEE1E4]">{ent.eligibilityReason}</p>
                         {ent.adminOverrideReason && (
-                          <p className="text-blue-600 dark:text-blue-400 mt-0.5">
+                          <p className="text-[#355F82] dark:text-[#88A9CC] mt-0.5">
                             {t('Note:', 'ملاحظة:')} {ent.adminOverrideReason}
                           </p>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-end font-mono tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                      <td className="py-3.5 px-4 text-end font-mono tabular-nums text-slate-600 dark:text-[#A0A5AA] whitespace-nowrap">
                         {ent.frozenRateEgp} EGP
                       </td>
                       <td className="py-3.5 px-4 text-end font-mono tabular-nums font-bold text-slate-900 dark:text-white whitespace-nowrap">
@@ -713,7 +713,7 @@ export const AdminFinanceView: React.FC = () => {
                             onChange={(e) =>
                               setOverrideReasons((prev) => ({ ...prev, [ent.id]: e.target.value }))
                             }
-                            className="w-56 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:border-blue-500"
+                            className="w-56 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] focus:outline-none focus:border-[#7196B9]"
                           />
                           <div className="flex items-center gap-1.5">
                             <button
@@ -936,11 +936,11 @@ export const AdminReportsView: React.FC = () => {
                 onClick={() => setAttendanceCategory(metric.id)}
                 className={`text-start rounded-lg border p-3 cursor-pointer transition-colors ${
                   attendanceCategory === metric.id
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                    : 'border-slate-200 dark:border-slate-800 hover:border-blue-300'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-[#293747]/30'
+                    : 'border-slate-200 dark:border-[#353A3F] hover:border-blue-300'
                 }`}>
                 <span className="block text-xl font-bold tabular-nums text-slate-900 dark:text-white">{metric.count}</span>
-                <span className="block text-xs text-slate-600 dark:text-slate-300 mt-1">{t(metric.en,metric.ar)}</span>
+                <span className="block text-xs text-slate-600 dark:text-[#C0C5C9] mt-1">{t(metric.en,metric.ar)}</span>
               </button>
             ))}
           </div>
@@ -959,7 +959,7 @@ export const AdminReportsView: React.FC = () => {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-start">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+              <thead className="bg-slate-100 dark:bg-[#25292D] text-slate-700 dark:text-[#DEE1E4]">
                 <tr>
                   <th className="p-2.5 text-start">{t('Student / Code', 'الطالب / الكود')}</th>
                   <th className="p-2.5 text-start">{t('Home Group', 'المجموعة الأصلية')}</th>
@@ -971,7 +971,7 @@ export const AdminReportsView: React.FC = () => {
               </thead>
               <tbody>
                 {drilldownStudents.map(row => (
-                  <tr key={row.studentId} className="border-b border-slate-100 dark:border-slate-800">
+                  <tr key={row.studentId} className="border-b border-slate-100 dark:border-[#353A3F]">
                     <td className="p-2.5">
                       <span className="block font-semibold text-slate-900 dark:text-white">{row.fullName}</span>
                       <span className="block text-slate-500 font-mono">{row.studentCode}</span>
@@ -1000,9 +1000,9 @@ export const AdminReportsView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className={`${SURFACE_CARD} p-5 space-y-4`}>
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <BarChart3 className="w-4 h-4 text-[#355F82]" />
               <span>{t('Group Enrollment & Capacity', 'إشغال وسعة المجموعات')}</span>
             </h2>
             <span className="text-xs font-mono text-slate-500">{filteredGroups.length}</span>
@@ -1026,13 +1026,13 @@ export const AdminReportsView: React.FC = () => {
                         </p>
                         <p className="text-slate-500 truncate">{grp.track}</p>
                       </div>
-                      <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-200 shrink-0">
+                      <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-[#DEE1E4] shrink-0">
                         {count} / {grp.capacity} ({pct}%)
                       </span>
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                    <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-[#25292D] overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-blue-600 transition-all"
+                        className="h-full rounded-full bg-[#355F82] transition-all"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -1044,7 +1044,7 @@ export const AdminReportsView: React.FC = () => {
         </div>
 
         <div className={`${SURFACE_CARD} p-5 space-y-4`}>
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('Student Evaluation Surveys', 'نتائج تقييم المحاضرين')}
             </h2>
@@ -1204,7 +1204,7 @@ export const AdminOperationsView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {/* Daily Checklist */}
         <div className={`${SURFACE_CARD} p-5 space-y-4`}>
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {activeCamp
                 ? t(
@@ -1227,19 +1227,19 @@ export const AdminOperationsView: React.FC = () => {
               campChecklists.map((item) => (
                 <label
                   key={item.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer text-xs"
+                  className="flex items-start gap-3 p-3 rounded-lg border border-slate-200/80 dark:border-[#353A3F] hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer text-xs"
                 >
                   <input
                     type="checkbox"
                     checked={item.isCompleted}
                     onChange={() => handleToggleChecklist(item.id)}
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                    className="mt-0.5 rounded text-[#355F82] focus:ring-blue-500"
                   />
                   <span
                     className={
                       item.isCompleted
-                        ? 'line-through text-slate-400 dark:text-slate-500'
-                        : 'text-slate-800 dark:text-slate-200 font-medium'
+                        ? 'line-through text-slate-400 dark:text-[#848B91]'
+                        : 'text-slate-800 dark:text-[#DEE1E4] font-medium'
                     }
                   >
                     {t(item.titleEn, item.titleAr)}
@@ -1284,7 +1284,7 @@ export const AdminOperationsView: React.FC = () => {
                           : t('Pending', 'معلق')}
                       </StatusBadge>
                     </div>
-                    <p className="text-slate-600 dark:text-slate-400">{req.details}</p>
+                    <p className="text-slate-600 dark:text-[#A0A5AA]">{req.details}</p>
                     {req.status === RequestStatus.PENDING && (
                       <div className="flex items-center gap-2 pt-1">
                         <button
@@ -1311,7 +1311,7 @@ export const AdminOperationsView: React.FC = () => {
                               'Rejected by Admin Operations'
                             )
                           }
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] font-semibold cursor-pointer"
                         >
                           {t('Reject', 'رفض')}
                         </button>
@@ -1379,7 +1379,7 @@ export const AdminOperationsView: React.FC = () => {
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleResolveIssue(iss.id)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium cursor-pointer"
                         >
                           {t('Resolve', 'إنهاء')}
                         </button>
@@ -1504,7 +1504,7 @@ export const AdminSettingsAndAuditView: React.FC = () => {
         <div className={`${SURFACE_CARD} p-5`}>
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span>{t('Active Camp Scope', 'نطاق المعسكر النشط')}</span>
-            <Tent className="w-4 h-4 text-blue-600" />
+            <Tent className="w-4 h-4 text-[#355F82]" />
           </div>
           <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-2">
             {activeCamp ? activeCamp.code : t('No Active Camp', 'لا يوجد معسكر نشط')}
@@ -1535,7 +1535,7 @@ export const AdminSettingsAndAuditView: React.FC = () => {
         <div className={`${SURFACE_CARD} p-5`}>
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span>{t('Operational Records Tracked', 'السجلات التشغيلية الموثقة')}</span>
-            <Database className="w-4 h-4 text-blue-600" />
+            <Database className="w-4 h-4 text-[#355F82]" />
           </div>
           <p className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-2">
             {totalOperationalRecords.toLocaleString()}
@@ -1548,9 +1548,9 @@ export const AdminSettingsAndAuditView: React.FC = () => {
 
       {/* Audit Log Search & Table */}
       <div className={`${SURFACE_CARD} overflow-hidden`}>
-        <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#353A3F] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-[#355F82] shrink-0" />
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('Operational & Financial Audit Log', 'سجل التدقيق الإداري والمالي')}
             </h2>
@@ -1587,10 +1587,10 @@ export const AdminSettingsAndAuditView: React.FC = () => {
                       {new Date(log.createdAt).toISOString().replace('T', ' ').slice(0, 16)}
                     </span>
                   </div>
-                  <p className="font-mono text-blue-600 dark:text-blue-400">
+                  <p className="font-mono text-[#355F82] dark:text-[#88A9CC]">
                     {log.action} ({log.entityType})
                   </p>
-                  <p className="text-slate-600 dark:text-slate-300">{log.reason}</p>
+                  <p className="text-slate-600 dark:text-[#C0C5C9]">{log.reason}</p>
                 </div>
               ))}
             </div>
@@ -1599,7 +1599,7 @@ export const AdminSettingsAndAuditView: React.FC = () => {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-start border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                  <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
                     <th className="py-3 px-5 font-semibold text-start">{t('Timestamp (UTC)', 'التوقيت')}</th>
                     <th className="py-3 px-4 font-semibold text-start">{t('Actor', 'المنفذ')}</th>
                     <th className="py-3 px-4 font-semibold text-start">{t('Action & Entity', 'الإجراء والكيان')}</th>
@@ -1621,11 +1621,11 @@ export const AdminSettingsAndAuditView: React.FC = () => {
                         </span>
                         <span className="text-slate-500"> · {log.actorRole}</span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                      <td className="py-3 px-4 font-mono text-[#355F82] dark:text-[#88A9CC] whitespace-nowrap">
                         {log.action} ({log.entityType})
                       </td>
                       <td className="py-3 px-4">
-                        <p className="text-slate-800 dark:text-slate-200">{log.reason}</p>
+                        <p className="text-slate-800 dark:text-[#DEE1E4]">{log.reason}</p>
                         <p className="font-mono text-[11px] text-slate-500 truncate max-w-md">
                           {log.previousValue} → {log.newValue}
                         </p>

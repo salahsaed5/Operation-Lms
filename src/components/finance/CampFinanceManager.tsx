@@ -201,14 +201,14 @@ export const CampFinanceManager:React.FC=()=>{
     popup.document.close();popup.focus();popup.print();
   };
   if(!activeCamp)return null;
-  const inputLabel='text-xs font-semibold text-slate-600 dark:text-slate-300';
+  const inputLabel='text-xs font-semibold text-slate-600 dark:text-[#C0C5C9]';
 
   return <section aria-label={t('Complete instructor finance and settlements','الحسابات الكاملة وتسوية المحاضرين')} className="space-y-5">
     <div className={`${SURFACE_CARD} p-4 sm:p-6 space-y-4`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t('Final camp instructor accounts','حسابات المحاضرين للمعسكر بالكامل')}</h2>
-          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-[#A0A5AA]">
             {t('Verified primary lectures + approved backup sessions + transport on primary days (once per day) − posted payments. Pending sessions are excluded from payable totals.',
               'المحاضرات الأساسية المؤكدة + باك أب معتمد + انتقالات أيام الأساسي (مرة واحدة يوميًا) − الدفعات. المعلق مش بيتحسب ضمن المستحق المؤكد.')}
           </p>
@@ -223,8 +223,8 @@ export const CampFinanceManager:React.FC=()=>{
           {en:'Payments made',ar:'إجمالي المدفوع',v:totals.paid},
           {en:'Still owed',ar:'المتبقي للمحاضرين',v:totals.balance},
           {en:'Pending estimate',ar:'مبالغ معلقة تقديرية',v:totals.pending},
-        ].map(x=><div key={x.en} className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3.5">
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t(x.en,x.ar)}</p>
+        ].map(x=><div key={x.en} className="rounded-xl border border-slate-100 dark:border-[#353A3F] bg-slate-50 dark:bg-[#121416]/40 p-3.5">
+          <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{t(x.en,x.ar)}</p>
           <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-1">{fmt(x.v)}</p>
         </div>)}
       </div>
@@ -252,7 +252,7 @@ export const CampFinanceManager:React.FC=()=>{
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-[980px] w-full text-xs" aria-label={t('Instructor payment statement','كشف المستحقات والمدفوعات')}>
-          <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+          <thead className="bg-slate-50 dark:bg-[#25292D] text-slate-600 dark:text-[#C0C5C9]">
             <tr>{[t('Instructor','المحاضر'),t('Main verified','أساسي مؤكد'),t('Backup approved','باك أب معتمد'),t('Transport days','أيام انتقالات'),
               t('Main EGP','أجر الأساسي'),t('Backup EGP','أجر الباك أب'),t('Transport EGP','الانتقالات'),
               t('Total EGP','الإجمالي'),t('Paid','المدفوع'),t('Balance','المتبقي'),t('Details','التفاصيل')]
@@ -272,7 +272,7 @@ export const CampFinanceManager:React.FC=()=>{
               <td className={`p-3 font-bold tabular-nums whitespace-nowrap ${s.balanceEgp<0?'text-red-600':'text-emerald-700 dark:text-emerald-300'}`}>{fmt(s.balanceEgp)}</td>
               <td className="p-3">
                 <button type="button" onClick={()=>setSelected(selected===inst.id?null:inst.id)}
-                  aria-expanded={selected===inst.id} className="text-blue-600 dark:text-blue-400 font-semibold underline underline-offset-2 whitespace-nowrap">
+                  aria-expanded={selected===inst.id} className="text-[#355F82] dark:text-[#88A9CC] font-semibold underline underline-offset-2 whitespace-nowrap">
                   {t('View account','كشف الحساب')}
                 </button>
               </td>
@@ -303,7 +303,7 @@ export const CampFinanceManager:React.FC=()=>{
           {label:t('Backup approved','باك أب معتمد'),value:fmt(selectedRow.stat.backupEgp)},
           {label:t('Transportation','انتقالات'),value:fmt(selectedRow.stat.transportEgp)},
           {label:t('Unpaid balance','المتبقي'),value:fmt(selectedRow.stat.balanceEgp)},
-        ].map(x=><div key={x.label} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
+        ].map(x=><div key={x.label} className="bg-slate-50 dark:bg-[#25292D] rounded-xl p-3">
           <p className="text-slate-500">{x.label}</p><p className="font-bold mt-1">{x.value}</p></div>)}
       </div>
       <p className="text-xs text-slate-500">{t(
@@ -312,11 +312,11 @@ export const CampFinanceManager:React.FC=()=>{
       )}</p>
       <div className="space-y-1 text-xs">
         <h4 className="font-bold">{t('Transportation, once per eligible main day','الانتقالات مرة واحدة في اليوم الأساسي')}</h4>
-        <p className="text-slate-600 dark:text-slate-400">{selectedRow.stat.transportationBreakdown.map(x=>`Day ${x.day}: ${fmt(x.rateEgp)}`).join(' · ')||t('No verified main days','لا توجد أيام أساسي مؤكدة')}</p>
+        <p className="text-slate-600 dark:text-[#A0A5AA]">{selectedRow.stat.transportationBreakdown.map(x=>`Day ${x.day}: ${fmt(x.rateEgp)}`).join(' · ')||t('No verified main days','لا توجد أيام أساسي مؤكدة')}</p>
       </div>
       <div className="space-y-2 text-xs">
         <h4 className="font-bold">{t('Payment history — immutable','سجل الدفعات — غير قابل للتعديل')}</h4>
-        {campPayments.filter(p=>p.instructorId===selectedRow.inst.id).map(p=><div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border border-slate-100 dark:border-slate-800 p-3 rounded-lg">
+        {campPayments.filter(p=>p.instructorId===selectedRow.inst.id).map(p=><div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border border-slate-100 dark:border-[#353A3F] p-3 rounded-lg">
           <div><strong>{fmt(p.amountEgp)}</strong> · {p.method} · {p.reference}<p className="text-slate-500 mt-1">{p.note}</p></div>
           <span className="text-slate-500">{new Date(p.createdAt).toLocaleString()}</span>
         </div>)}
@@ -331,12 +331,12 @@ export const CampFinanceManager:React.FC=()=>{
           <button type="button" className={BTN_SECONDARY} onClick={()=>setShowRates(v=>!v)}
             aria-expanded={showRates}>{showRates?t('Close','إغلاق'):t('Set rates','تحديد الأسعار')}</button>
         </div>
-        {currentPolicy && <p className="text-sm text-slate-600 dark:text-slate-300">
+        {currentPolicy && <p className="text-sm text-slate-600 dark:text-[#C0C5C9]">
           {t('Backup rate','سعر الباك أب')}: <strong>{fmt(currentPolicy.backupRateEgp)}</strong>
           {' · '}{t('Daily primary transport','انتقال يوم الأساسي')}: <strong>{fmt(currentPolicy.transportPerDayEgp)}</strong>
           {' · '}{t('Since day','من يوم')} {currentPolicy.effectiveFromDay}
         </p>}
-        {showRates && <form onSubmit={onSetRates} className="space-y-3 border-t pt-3 border-slate-100 dark:border-slate-800">
+        {showRates && <form onSubmit={onSetRates} className="space-y-3 border-t pt-3 border-slate-100 dark:border-[#353A3F]">
           <p className="text-xs text-amber-700 dark:text-amber-300">{t(
             `Rates take effect from Day ${effectiveDay}. Initial rates from Day 1; later changes only future days.`,
             `الأسعار تسري من يوم ${effectiveDay}. أول تسعير من أول يوم، والتعديل بعد كده للأيام الجاية بس.`
@@ -351,7 +351,7 @@ export const CampFinanceManager:React.FC=()=>{
             <input required minLength={3} value={rateReason} onChange={e=>setRateReason(e.target.value)} className={INPUT_CLASS}/></label>
           <button className={BTN_PRIMARY} type="submit" disabled={busy}>{t('Save rates','حفظ الأسعار')}</button>
         </form>}
-        <form onSubmit={editMain} className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+        <form onSubmit={editMain} className="space-y-2 border-t border-slate-100 dark:border-[#353A3F] pt-3">
           <h4 className="text-sm font-bold">{t('Edit primary default rate (future lectures only)','تعديل سعر الأساسي للمحاضرات الجديدة فقط')}</h4>
           <div className="flex flex-wrap gap-2">
             <select aria-label={t('Select instructor for primary rate edit','اختار محاضر تعديل سعر الأساسي')} value={mainEditInstId||''} onChange={e=>{
@@ -372,7 +372,7 @@ export const CampFinanceManager:React.FC=()=>{
 
       <div className={`${SURFACE_CARD} p-4 sm:p-5 space-y-4`}>
         <h3 className="text-base font-bold">{t('Record a backup instructor session','تسجيل محاضرة باك أب')}</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
           {t('No scheduled group is needed for the backup. Link the instructor to a real lecture; the session is pending until verified and approved.',
             'الباك أب مش محتاج جدول أو جروب باسمه. اربطه بمحاضرة فعلية، ويتحسب بعد مراجعة الإدارة واعتماد الحضور.')}
         </p>
@@ -392,13 +392,13 @@ export const CampFinanceManager:React.FC=()=>{
             <textarea rows={2} required minLength={3} value={backupReason} onChange={e=>setBackupReason(e.target.value)} className={INPUT_CLASS}/></label>
           <button type="submit" disabled={busy||!hasPolicy} className={BTN_PRIMARY}>{t('Record backup (pending)','تسجيل باك أب للمراجعة')}</button>
         </form>
-        <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-3">
+        <div className="border-t border-slate-100 dark:border-[#353A3F] pt-3 space-y-3">
           <h4 className="text-xs font-bold">{t('Backup review & approvals','مراجعة واعتماد محاضرات الباك أب')}</h4>
           {campBackups.length===0 && <p className="text-xs text-slate-500">{t('No backup sessions recorded yet','لا يوجد باك أب مسجل لسه')}</p>}
           {campBackups.map(b=>{
             const inst=instructors.find(i=>i.id===b.instructorId);
             const lec=lectures.find(l=>l.id===b.lectureId);
-            return <div key={b.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2 text-xs">
+            return <div key={b.id} className="rounded-xl border border-slate-200 dark:border-[#353A3F] p-3 space-y-2 text-xs">
               <div className="flex items-start justify-between gap-2">
                 <div><p className="font-bold">{inst?t(inst.fullNameEn,inst.fullNameAr):b.instructorId}</p>
                   <p className="text-slate-500">D{b.campDay} · {lec?.topic||b.lectureId} · {fmt(b.frozenRateEgp)}</p>
@@ -469,7 +469,7 @@ export const CampFinanceManager:React.FC=()=>{
         isBusy={busy} onConfirm={()=>void onPayment()} onCancel={()=>setPaymentConfirm(false)}/>
     </section>
 
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+    <div className="rounded-xl border border-slate-200 dark:border-[#353A3F] p-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
       <ShieldCheck className="w-5 h-5 text-emerald-600"/>
       <span className="flex-1">{t('Lecture counts are taken from actual Schedule/Entitlement records, not manually editable totals. Historical primary lecture prices stay frozen.',
         'عدد المحاضرات من الجدول والاستحقاق الفعلي، مش رقم قابل للتعديل يدويًا. أسعار الأساسي القديمة بتفضل ثابتة.')}</span>

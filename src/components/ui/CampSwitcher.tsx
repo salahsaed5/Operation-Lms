@@ -20,7 +20,7 @@ export const CampSwitcher: React.FC = () => {
       value={activeCamp?.id || ''}
       onChange={event => selectCamp(event.target.value)}
       disabled={availableCamps.length <= 1}
-      className="w-40 sm:w-52 lg:w-64 min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-70"
+      className="w-40 sm:w-52 lg:w-64 min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-[#42474D] bg-white dark:bg-[#1D2023] px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-[#F0F1F2] disabled:opacity-70"
     >
       {availableCamps.length === 0 && (
         <option value="">{t('No assigned Camps','لا يوجد كامبات متاحة')}</option>

@@ -147,9 +147,9 @@ export const AuthView: React.FC = () => {
     );
 
   return (
-    <div className="min-h-screen w-full bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 grid grid-cols-1 lg:grid-cols-12">
+    <div className="min-h-screen w-full bg-[#f4f6f9] dark:bg-[#121416] text-slate-900 dark:text-[#F0F1F2] grid grid-cols-1 lg:grid-cols-12">
       {/* Left Brand Architectural Panel (Clean Minimalist Technical Grid matching reference) */}
-      <aside className="hidden lg:flex lg:col-span-6 xl:col-span-7 relative overflow-hidden bg-[#f8fafc] dark:bg-slate-900/60 border-e border-slate-200/80 dark:border-slate-800 flex-col justify-between p-12">
+      <aside className="hidden lg:flex lg:col-span-6 xl:col-span-7 relative overflow-hidden bg-[#f8fafc] dark:bg-[#1D2023]/60 border-e border-slate-200/80 dark:border-[#353A3F] flex-col justify-between p-12">
         {/* Restrained Technical Line Pattern */}
         <svg
           aria-hidden="true"
@@ -165,14 +165,14 @@ export const AuthView: React.FC = () => {
         </svg>
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center tracking-tight">
+          <div className="w-9 h-9 rounded-lg bg-[#355F82] text-white text-sm font-bold flex items-center justify-center tracking-tight">
             CI
           </div>
           <div>
             <p className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
               CITS Camp Operations
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
               {t('Training Operations & Attendance Platform', 'منصة إدارة المعسكرات والحضور التدريبي')}
             </p>
           </div>
@@ -185,7 +185,7 @@ export const AuthView: React.FC = () => {
               'إدارة متكاملة لعمليات المعسكرات التدريبية والجدول والحضور اليومي.'
             )}
           </h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-600 dark:text-[#A0A5AA] leading-relaxed">
             {t(
               'Role-isolated portals for camp administrators and instructors—covering daily check-ins, roster tracking, conflict-checked scheduling, and transparent lecture entitlements.',
               'بوابات تشغيل مستقلة للمسؤولين والمحاضرين لمتابعة تسجيل الوصول، كشوف الحضور، الجداول الدراسية، ومستحقات المحاضرات.'
@@ -193,22 +193,22 @@ export const AuthView: React.FC = () => {
           </p>
 
           <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/85 dark:bg-slate-900/80 backdrop-blur-xs">
+            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white/85 dark:bg-[#1D2023]/80 backdrop-blur-xs">
               <p className="text-xs font-semibold text-slate-900 dark:text-white">
                 {t('Admin Console', 'لوحة الإدارة')}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
                 {t(
                   'Schedules, attendance audits, camp lifecycle, and entitlement reviews.',
                   'إدارة الجداول، مراجعة الكشوف، المعسكرات، واعتماد المستحقات.'
                 )}
               </p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/85 dark:bg-slate-900/80 backdrop-blur-xs">
+            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white/85 dark:bg-[#1D2023]/80 backdrop-blur-xs">
               <p className="text-xs font-semibold text-slate-900 dark:text-white">
                 {t('Instructor Workspace', 'بوابة المحاضر')}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
                 {t(
                   'Assigned schedule, venue check-in verification, and attendance rosters.',
                   'الجدول المخصص، توثيق الوصول اليومي، وكشوف حضور الطلاب.'
@@ -218,7 +218,7 @@ export const AuthView: React.FC = () => {
           </div>
         </div>
 
-        <p className="relative z-10 text-xs text-slate-400 dark:text-slate-500">
+        <p className="relative z-10 text-xs text-slate-400 dark:text-[#848B91]">
           {t(
             'Authorized personnel access only. Account provisioning is managed by your camp administrator.',
             'الدخول مصرح به للمستخدمين المعتمدين فقط عبر إدارة المعسكر.'
@@ -227,11 +227,11 @@ export const AuthView: React.FC = () => {
       </aside>
 
       {/* Right Clean White Sign-In Surface */}
-      <div className="lg:col-span-6 xl:col-span-5 bg-white dark:bg-slate-950 flex flex-col justify-between p-6 sm:p-10">
+      <div className="lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#121416] flex flex-col justify-between p-6 sm:p-10">
         {/* Unobtrusive Top Utility Header */}
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 lg:hidden">
-            <span className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+            <span className="w-7 h-7 rounded-lg bg-[#355F82] text-white text-xs font-bold flex items-center justify-center">
               CI
             </span>
             <span className="text-sm font-bold text-slate-900 dark:text-white">
@@ -245,7 +245,7 @@ export const AuthView: React.FC = () => {
               type="button"
               onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
               aria-label={t('Switch Language', 'تغيير اللغة')}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1.5 cursor-pointer"
             >
               <Globe className="w-3.5 h-3.5 text-slate-500" />
               <span>{lang === 'en' ? 'العربية' : 'English'}</span>
@@ -254,7 +254,7 @@ export const AuthView: React.FC = () => {
               type="button"
               onClick={toggleTheme}
               aria-label={t('Switch Light or Dark Theme', 'تبديل المظهر')}
-              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-[#C0C5C9] cursor-pointer"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -270,7 +270,7 @@ export const AuthView: React.FC = () => {
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                   {t('Sign in to your account', 'تسجيل الدخول')}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-sm text-slate-500 dark:text-[#A0A5AA] mt-1">
                   {t(
                     'Enter your assigned username or work email to continue.',
                     'أدخل اسم المستخدم أو البريد الإلكتروني المعتمد للمتابعة.'
@@ -298,7 +298,7 @@ export const AuthView: React.FC = () => {
                 <div>
                   <label
                     htmlFor="login-identifier"
-                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
                   >
                     {t('Username or Email', 'اسم المستخدم أو البريد الإلكتروني')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
@@ -314,14 +314,14 @@ export const AuthView: React.FC = () => {
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder={t('Enter username or email', 'أدخل اسم المستخدم أو البريد')}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
+                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 transition-colors"
                   />
                 </div>
 
                 <div>
                   <label
                     htmlFor="login-password"
-                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
                   >
                     {t('Password', 'كلمة المرور')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
@@ -338,7 +338,7 @@ export const AuthView: React.FC = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t('Enter your password', 'أدخل كلمة المرور')}
-                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
+                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 transition-colors"
                     />
                     <button
                       type="button"
@@ -358,7 +358,7 @@ export const AuthView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -373,7 +373,7 @@ export const AuthView: React.FC = () => {
                 </button>
               </form>
 
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] leading-relaxed">
                 {t(
                   'Need access or a credential reset? Contact your camp administrator.',
                   'هل تحتاج لتفعيل حسابك أو إعادة تعيين كلمة المرور؟ تواصل مع مسؤول المعسكر.'
@@ -383,13 +383,13 @@ export const AuthView: React.FC = () => {
               {isSandboxMode && (
                 <section
                   aria-label={t('Local sandbox account selector', 'اختيار حساب بيئة المعاينة المحلية')}
-                  className="pt-5 border-t border-slate-200/80 dark:border-slate-800 space-y-2.5"
+                  className="pt-5 border-t border-slate-200/80 dark:border-[#353A3F] space-y-2.5"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    <p className="text-xs font-medium text-slate-600 dark:text-[#A0A5AA]">
                       {t('Local Sandbox Accounts', 'حسابات المعاينة المحلية')}
                     </p>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-[#848B91]">
                       {t('Dev Preview', 'معاينة')}
                     </span>
                   </div>
@@ -402,12 +402,12 @@ export const AuthView: React.FC = () => {
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => switchDemoIdentity(UserRole.ADMIN, undefined, admin.id)}
-                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#1D2023]/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
                         >
-                          <span className="block text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                          <span className="block text-[11px] font-medium text-[#355F82] dark:text-[#88A9CC]">
                             {t('Admin', 'مسؤول')}
                           </span>
-                          <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          <span className="block text-xs font-semibold text-slate-800 dark:text-[#DEE1E4] truncate">
                             {t(admin.fullNameEn, admin.fullNameAr)}
                           </span>
                         </button>
@@ -422,12 +422,12 @@ export const AuthView: React.FC = () => {
                           onClick={() =>
                             switchDemoIdentity(UserRole.INSTRUCTOR, inst.id, inst.profileId)
                           }
-                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#1D2023]/60 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-800 text-start transition-colors cursor-pointer"
                         >
-                          <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          <span className="block text-[11px] font-medium text-slate-500 dark:text-[#A0A5AA]">
                             {t('Instructor', 'محاضر')}
                           </span>
-                          <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          <span className="block text-xs font-semibold text-slate-800 dark:text-[#DEE1E4] truncate">
                             {t(inst.fullNameEn, inst.fullNameAr)}
                           </span>
                         </button>
@@ -442,7 +442,7 @@ export const AuthView: React.FC = () => {
           {auth.pendingTotpProfileId && (
             <div className="space-y-5">
               <div>
-                <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-[#293747]/60 border border-blue-100 dark:border-[#425A70] text-[#355F82] dark:text-[#88A9CC] flex items-center justify-center mb-3">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
@@ -450,7 +450,7 @@ export const AuthView: React.FC = () => {
                     ? t('Set Up Two-Factor Authentication', 'تفعيل المصادقة الثنائية')
                     : t('Two-Factor Verification', 'التحقق بخطوتين')}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-sm text-slate-500 dark:text-[#A0A5AA] mt-1">
                   {auth.mfaNeedsEnrollment
                     ? t(
                         'Scan the QR code below with your authenticator app, then enter the 6-digit verification code.',
@@ -464,7 +464,7 @@ export const AuthView: React.FC = () => {
               </div>
 
               {isSupabaseMode && auth.mfaNeedsEnrollment && auth.mfaEnrollment && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-col items-center gap-3">
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-[#353A3F] bg-slate-50 dark:bg-[#1D2023] flex flex-col items-center gap-3">
                   <img
                     src={auth.mfaEnrollment.qrCode}
                     alt={t('Two-factor authentication QR code', 'رمز استجابة سريعة للمصادقة الثنائية')}
@@ -494,7 +494,7 @@ export const AuthView: React.FC = () => {
                 <div>
                   <label
                     htmlFor="totp-code-input"
-                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
                   >
                     {t('6-Digit Authenticator Code', 'رمز التحقق (6 أرقام)')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
@@ -512,13 +512,13 @@ export const AuthView: React.FC = () => {
                     value={totpCode}
                     onChange={(e) => setTotpCode(e.target.value)}
                     placeholder="000000"
-                    className="w-full px-3.5 py-2.5 text-lg font-mono tabular-nums tracking-widest text-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                    className="w-full px-3.5 py-2.5 text-lg font-mono tabular-nums tracking-widest text-center rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
                   <span>
@@ -535,7 +535,7 @@ export const AuthView: React.FC = () => {
                     type="button"
                     disabled={isSubmitting}
                     onClick={handleRegenerateQr}
-                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-[#355F82] dark:text-[#88A9CC] hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3" />
                     <span>{t('Regenerate QR Code', 'إعادة إنشاء الرمز')}</span>
@@ -564,7 +564,7 @@ export const AuthView: React.FC = () => {
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
                   {t('Create a New Password', 'تعيين كلمة مرور جديدة')}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-sm text-slate-500 dark:text-[#A0A5AA] mt-1">
                   {t(
                     'Update your temporary initial password before accessing your workspace.',
                     'يرجى استبدال كلمة المرور المؤقتة بكلمة مرور جديدة قبل المتابعة.'
@@ -585,7 +585,7 @@ export const AuthView: React.FC = () => {
                 <div>
                   <label
                     htmlFor="new-password-input"
-                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
                   >
                     {t(
                       'New Password (8+ chars, upper, lower, number)',
@@ -604,7 +604,7 @@ export const AuthView: React.FC = () => {
                       disabled={isSubmitting}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20"
                     />
                     <button
                       type="button"
@@ -624,7 +624,7 @@ export const AuthView: React.FC = () => {
                 <div>
                   <label
                     htmlFor="confirm-password-input"
-                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
                   >
                     {t('Confirm New Password', 'تأكيد كلمة المرور الجديدة')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
@@ -640,7 +640,7 @@ export const AuthView: React.FC = () => {
                       disabled={isSubmitting}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20"
                     />
                     <button
                       type="button"
@@ -660,7 +660,7 @@ export const AuthView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
                   <span>
@@ -685,7 +685,7 @@ export const AuthView: React.FC = () => {
         </main>
 
         {/* Quiet Minimal Footer */}
-        <footer className="text-xs text-slate-400 dark:text-slate-500 flex items-center justify-between gap-2">
+        <footer className="text-xs text-slate-400 dark:text-[#848B91] flex items-center justify-between gap-2">
           <span>CITS Camp Operations</span>
           <span>{t('Enterprise Training Operations', 'نظام إدارة العمليات التدريبية')}</span>
         </footer>
