@@ -3,7 +3,7 @@ import type {
 } from '../types/database';
 import { AttendanceMark, AttendanceSheetStatus } from '../types/database';
 import { buildCampToDateReport } from '../domain/campCumulativeAttendance';
-import { calculateCampDayDate } from '../domain/businessRules';
+import { calculateCampDayDate, resolveStudentOriginGroupForDay } from '../domain/businessRules';
 import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../domain/campAttendanceExcelGrid';
 import { createXlsxWorkbook, excelCell as c, excelFormula as f, type ExcelCell, type ExcelSheet } from './tinyXlsxWorkbook';
 
@@ -38,8 +38,13 @@ export function buildCampAttendanceWorkbook(input: {
   studentTransfers: StudentTransfer[];
   lectures: Lecture[];
   attendanceSheets: AttendanceSheet[];
+  groupId?: string;
 }): Blob {
-  const { camp, groups, students, studentTransfers, lectures, attendanceSheets } = input;
+  const { camp, groups, students, studentTransfers, lectures, attendanceSheets, groupId } = input;
+  if (groupId && !groups.some(g => g.id === groupId && g.campId === camp.id)) {
+    throw new Error('Requested export group does not belong to the selected Camp.');
+  }
+  const reportStudents = groupId ? students.filter(st => st.groupId === groupId) : students;
   if (!Number.isInteger(camp.durationDays) || camp.durationDays < 1 || camp.durationDays > 60) {
     throw new Error('Camp report duration must be between 1 and 60 teaching days.');
   }
@@ -51,20 +56,21 @@ export function buildCampAttendanceWorkbook(input: {
   const lastCol = excelColumn(8+dayCount);
   const dailyWidth = 8+dayCount;
   const official = buildCampToDateReport({
-    campId: camp.id, asOfDay: dayCount, students, lectures,
+    campId: camp.id, asOfDay: dayCount, students: reportStudents, lectures,
     attendanceSheets, studentTransfers,
   });
   const grid = buildCampAttendanceExcelGrid({
     campId: camp.id, durationDays: camp.durationDays,
-    students, studentTransfers, lectures, attendanceSheets,
+    students: reportStudents, studentTransfers, lectures, attendanceSheets,
   });
   const codeOf = (groupId:string) =>
     groups.find(g => g.id === groupId && g.campId === camp.id)?.code || 'Unknown';
   const generated = new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'});
+  const selectionLabel = groupId ? (' | Group ' + codeOf(groupId)) : ' | All groups';
   // A draft or active Camp is never represented as a signed final handover.
   const provisional = camp.status !== 'archived' || grid.pendingLectures > 0;
   const reportState = provisional ? 'PROVISIONAL — NOT FINAL' : 'FINAL';
-  const subtitle = camp.code + ' | ' + camp.nameEn + ' | ' + camp.startDate +
+  const subtitle = camp.code + selectionLabel + ' | ' + camp.nameEn + ' | ' + camp.startDate +
     ' to ' + camp.endDate + ' | ' + reportState + ' | Cairo generated ' + generated;
 
   const summaryRows:ExcelCell[][]=[
@@ -150,6 +156,64 @@ export function buildCampAttendanceWorkbook(input: {
     autoFilter:'A4:'+lastCol+Math.max(5,lastDataRow),
   };
 
+  // The reference report has a complete roster and separate attended/absent lists.
+  // Only submitted/locked lecture rows count. A late mark counts as attended;
+  // excused/pending and pre-enrollment lectures must never become false absences.
+  type LectureCounts = { attended: number; absent: number; eligible: number };
+  const lectureCounts = new Map<string,LectureCounts>();
+  const scopeLectureById = new Map(lectures.filter(l=>l.campId===camp.id && l.status!=='cancelled').map(l=>[l.id,l]));
+  for (const student of reportStudents.filter(st=>st.campId===camp.id)) {
+    const counts:LectureCounts={attended:0,absent:0,eligible:0};
+    for (const sheet of attendanceSheets) {
+      if (sheet.campId !== camp.id ||
+          (sheet.status!==AttendanceSheetStatus.SUBMITTED && sheet.status!==AttendanceSheetStatus.LOCKED)) continue;
+      const lecture=scopeLectureById.get(sheet.lectureId);
+      if(!lecture || lecture.campDay < (student.joinedCampDay??1))continue;
+      const row=sheet.records.find(rec=>rec.studentId===student.id);
+      const homeGroup=resolveStudentOriginGroupForDay({student,transfers:studentTransfers,campDay:lecture.campDay});
+      if(lecture.groupId!==homeGroup && !row)continue;
+      counts.eligible++;
+      if(row?.mark===AttendanceMark.PRESENT||row?.mark===AttendanceMark.LATE)counts.attended++;
+      else if(row?.mark===AttendanceMark.ABSENT)counts.absent++;
+    }
+    lectureCounts.set(student.id,counts);
+  }
+
+  const rosterSheet = (name:string, category?:'attended'|'never_attended'):ExcelSheet => {
+    const listed=official.students.filter(st=>category?st.category===category:true);
+    const rows:ExcelCell[][]=[
+      headingRow('OPERATION LMS  |  تقرير الحضور والغياب  |  '+reportState,8),
+      subheadingRow(subtitle,8),
+      Array.from({length:8},blank),
+      [
+        c('الطالب / Student',3),c('الكود / Code',3),c('المجموعة / Group',3),
+        c('يوم الانضمام',3),c('إجمالي المحاضرات المعتمدة',3),
+        c('محاضرات الحضور',3),c('محاضرات الغياب',3),c('الحالة',3),
+      ],
+    ];
+    for(const st of listed){
+      const counts=lectureCounts.get(st.studentId)||{attended:0,absent:0,eligible:0};
+      const status=st.category==='attended'?'حاضر':
+        st.category==='pending'?'لم تُحسم':
+        provisional?'لم يحضر حتى الآن':'غائب';
+      rows.push([
+        c(st.fullName,4),c(st.studentCode,4),c(codeOf(st.homeGroupId),4),
+        c(st.joinedCampDay,10),c(counts.eligible,10),c(counts.attended,5),
+        c(counts.absent,counts.absent>0?7:10),
+        c(status,st.category==='attended'?5:st.category==='never_attended'?7:9),
+      ]);
+    }
+    if(!listed.length)rows.push([c('لا يوجد طلاب في هذه الفئة',4)]);
+    return {
+      name,rows,widths:[32,20,21,18,23,21,20,25],
+      merges:['A1:H1','A2:H2'],freeze:{columns:2,rows:4,topLeft:'C5'},
+      autoFilter:'A4:H'+Math.max(5,rows.length),
+    };
+  };
+  const allRoster=rosterSheet('إجمالي الطلاب');
+  const attendedRoster=rosterSheet('الطلاب الحاضرون','attended');
+  const absentRoster=rosterSheet('الطلاب الغائبون','never_attended');
+
   const sheets = attendanceSheets.filter(sh=>sh.campId===camp.id);
   const byLecture=new Map(sheets.map(sh=>[sh.lectureId,sh]));
   const relevantLectures=lectures.filter(l=>l.campId===camp.id && l.status!=='cancelled')
@@ -186,5 +250,5 @@ export function buildCampAttendanceWorkbook(input: {
     freeze:{columns:0,rows:4,topLeft:'A5'},
     autoFilter:'A4:J'+Math.max(5,detailRows.length),
   };
-  return createXlsxWorkbook([summary,daily,detail]);
+  return createXlsxWorkbook([summary,allRoster,attendedRoster,absentRoster,daily,detail]);
 }

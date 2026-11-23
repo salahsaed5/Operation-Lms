@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   CheckCircle2,
@@ -9,8 +9,10 @@ import {
   Tent,
   AlertCircle,
   Plus,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { supabase } from '../../lib/supabase';
 import { calculateCampDayDate } from '../../domain/businessRules';
 import {
   AttendanceMark,
@@ -45,12 +47,51 @@ export const AdminDashboardView: React.FC = () => {
     entitlements,
     requests,
     setAdminRoute,
+    refreshOperationalData,
+    isSupabaseMode,
     t,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sheetFilter, setSheetFilter] = useState<SheetFilter>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
+
+  // Live when Supabase Realtime replication is enabled; 45s refresh and tab-focus fallback.
+  // Subscriptions run only while the Admin dashboard is mounted.
+  useEffect(() => {
+    if (!isSupabaseMode || !supabase || !activeCamp) return;
+    const client = supabase;
+    let disposed = false;
+    let refreshTimer: number | undefined;
+    let refreshInFlight = false;
+    const sync = () => {
+      if (disposed || document.hidden || refreshInFlight) return;
+      refreshInFlight = true;
+      void refreshOperationalData().then(() => {
+        if (!disposed) setLastRefreshAt(new Date());
+      }).finally(() => { refreshInFlight = false; });
+    };
+    const queueSync = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(sync, 1000);
+    };
+    const channel = client.channel('camp-dashboard-' + activeCamp.id)
+      .on('postgres_changes', { event:'*', schema:'public', table:'daily_checkins', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .on('postgres_changes', { event:'*', schema:'public', table:'attendance_sheets', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .on('postgres_changes', { event:'*', schema:'public', table:'lectures', filter:'camp_id=eq.' + activeCamp.id }, queueSync)
+      .subscribe();
+    const interval = window.setInterval(sync, 45000);
+    const onVisibility = () => { if (!document.hidden) sync(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      void client.removeChannel(channel);
+    };
+  }, [activeCamp?.id, isSupabaseMode, refreshOperationalData]);
   const selectedTeachingDate = activeCamp
     ? calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays)
     : null;
@@ -199,6 +240,8 @@ export const AdminDashboardView: React.FC = () => {
   const syncedCount = sessionRows.filter((r) => r.isSynced).length;
   const pendingCount = sessionRows.length - syncedCount;
   const lateCheckinsCount = todayCheckins.filter((c) => c.arrivedLateFirstLecture).length;
+  const scheduledInstructorIds = new Set(todayLectures.map(l => l.substituteInstructorId || l.instructorId));
+  const checkedInScheduledCount = new Set(todayCheckins.filter(c => scheduledInstructorIds.has(c.instructorId)).map(c => c.instructorId)).size;
   const totalActionItems =
     pendingExceptions.length + pendingReviewEntitlements.length + pendingRequests.length;
 
@@ -259,7 +302,7 @@ export const AdminDashboardView: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('Search topic or group...', 'ابحث بالعنوان أو المجموعة...')}
                 aria-label={t('Search selected Camp day sessions', 'البحث في جلسات يوم الدراسة المحدد')}
-                className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
+                className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 transition-colors"
               />
             </div>
 
@@ -269,8 +312,8 @@ export const AdminDashboardView: React.FC = () => {
               aria-expanded={showFilters}
               className={`px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 showFilters || sheetFilter !== 'all'
-                  ? 'border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-400'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'border-blue-300 bg-blue-50 text-[#355F82] dark:border-blue-800 dark:bg-[#293747]/50 dark:text-[#88A9CC]'
+                  : 'border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-slate-700 dark:text-[#DEE1E4] hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -288,11 +331,22 @@ export const AdminDashboardView: React.FC = () => {
         }
       />
 
+      <div className="flex flex-wrap gap-2 items-center justify-between text-xs text-slate-500 dark:text-[#A0A5AA]">
+        <span>{t('Overview of the selected Camp teaching day', 'متابعة يوم الدراسة المحدد داخل الكامب')}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+          {isSupabaseMode
+            ? t('Auto-sync · every 45 seconds', 'تحديث تلقائي · كل 45 ثانية')
+            : t('Local preview', 'معاينة محلية')}
+          {lastRefreshAt && <span className="tabular-nums">· {lastRefreshAt.toLocaleTimeString()}</span>}
+        </span>
+      </div>
+
       {/* Expandable Lightweight Filter Bar */}
       {showFilters && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-slate-200/90 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#1D2023]/60 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-500 dark:text-slate-400 font-medium me-1">
+            <span className="text-slate-500 dark:text-[#A0A5AA] font-medium me-1">
               {t('Sheet Status:', 'حالة الكشف:')}
             </span>
             {(
@@ -308,8 +362,8 @@ export const AdminDashboardView: React.FC = () => {
                 onClick={() => setSheetFilter(opt.id)}
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                   sheetFilter === opt.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                    ? 'bg-[#355F82] text-white'
+                    : 'bg-white dark:bg-[#25292D] border border-slate-200 dark:border-[#42474D] text-slate-600 dark:text-[#C0C5C9] hover:bg-slate-100'
                 }`}
               >
                 {opt.label}
@@ -324,7 +378,7 @@ export const AdminDashboardView: React.FC = () => {
                 setSheetFilter('all');
                 setSearchQuery('');
               }}
-              className="text-blue-600 dark:text-blue-400 hover:underline font-medium cursor-pointer"
+              className="text-[#355F82] dark:text-[#88A9CC] hover:underline font-medium cursor-pointer"
             >
               {t('Clear filters', 'إعادة ضبط')}
             </button>
@@ -336,15 +390,15 @@ export const AdminDashboardView: React.FC = () => {
       <section aria-label={t('Operational metrics summary', 'ملخص مؤشرات التشغيل')}>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
           {/* Card 1: Sessions */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+              <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Selected Day Sessions', 'جلسات يوم الدراسة المحدد')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {todayLectures.length}
               </p>
-              <p className="text-[11px] font-medium tabular-nums mt-0.5 text-slate-500 dark:text-slate-400 truncate">
+              <p className="text-[11px] font-medium tabular-nums mt-0.5 text-slate-500 dark:text-[#A0A5AA] truncate">
                 <span className="text-emerald-600 dark:text-emerald-400">
                   {t(`Synced ${syncedCount}`, `معتمد ${syncedCount}`)}
                 </span>
@@ -356,38 +410,37 @@ export const AdminDashboardView: React.FC = () => {
                 </span>
               </p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-[#293747]/60 border border-blue-100 dark:border-[#425A70]/60 text-[#355F82] dark:text-[#88A9CC] flex items-center justify-center shrink-0">
               <Calendar className="w-4 h-4" />
             </div>
           </div>
 
-          {/* Card 2: Students & Groups */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          {/* Card 2: Finalized attendance sheets */}
+          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-                {t('Enrolled Students', 'الطلاب المسجلون')}
+              <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
+                {t('Finalized Attendance', 'كشوف الحضور المكتملة')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {campStudents.length}
+                {syncedCount}/{todayLectures.length}
               </p>
-              <p className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                {campGroups.length} {t('Groups', 'مجموعات')} · {campInstructors.length}{' '}
-                {t('Instructors', 'محاضرين')}
+              <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5">
+                {pendingCount} {t('pending sheets', 'كشوف معلقة')}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-[#A0A5AA] flex items-center justify-center shrink-0">
+              <ClipboardCheck className="w-5 h-5" />
             </div>
           </div>
 
           {/* Card 3: Instructor Check-ins */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+              <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Instructor Check-ins', 'وصول المحاضرين')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {todayCheckins.length}/{campInstructors.length}
+                {checkedInScheduledCount}/{scheduledInstructorIds.size}
               </p>
               <p className="text-[11px] tabular-nums mt-0.5 truncate">
                 {lateCheckinsCount > 0 ? (
@@ -407,26 +460,32 @@ export const AdminDashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 4: Verified Entitlements */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          {/* Card 4: Action queue */}
+          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-                {t('Verified Entitlements', 'المستحقات المعتمدة')}
+              <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
+                {t('Needs Attention', 'تحتاج متابعة')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                {totalEligibleEgp.toLocaleString()} EGP
+                {totalActionItems}
               </p>
-              <p className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                {pendingReviewEntitlements.length} {t('In review', 'قيد المراجعة')} ·{' '}
-                {totalActionItems} {t('alerts', 'تنبيهات')}
+              <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
+                {pendingReviewEntitlements.length} {t('finance reviews', 'مراجعات مالية')} · {pendingExceptions.length} {t('check-in exceptions', 'استثناءات وصول')}
               </p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-100 dark:border-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Clock className="w-4 h-4" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-[#A0A5AA] flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5" />
             </div>
           </div>
         </div>
       </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 rounded-xl border border-slate-200 dark:border-[#353A3F] bg-slate-50/80 dark:bg-[#25292D]/50 text-xs text-slate-600 dark:text-[#C0C5C9]">
+        <span>{t('Camp snapshot', 'ملخص الكامب')}: <strong className="tabular-nums">{campStudents.length}</strong> {t('students','طالب')} · <strong>{campGroups.length}</strong> {t('groups','مجموعات')} · <strong>{campInstructors.length}</strong> {t('instructors','محاضرين')}</span>
+        <button type="button" className="font-semibold text-[#355F82] dark:text-[#88A9CC] hover:underline" onClick={() => setAdminRoute('finance')}>
+          {t('Verified financial entitlements','المستحقات المالية المعتمدة')}: {totalEligibleEgp.toLocaleString()} EGP
+        </button>
+      </div>
 
       {/* Compact Attention Banner when actionable queues need admin review */}
       {totalActionItems > 0 && (
@@ -445,7 +504,7 @@ export const AdminDashboardView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setAdminRoute('attendance')}
-                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-[#1D2023] border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
               >
                 {t(`Exceptions (${pendingExceptions.length})`, `الاستثناءات (${pendingExceptions.length})`)}
               </button>
@@ -454,7 +513,7 @@ export const AdminDashboardView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setAdminRoute('finance')}
-                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-[#1D2023] border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
               >
                 {t(`Finance (${pendingReviewEntitlements.length})`, `المستحقات (${pendingReviewEntitlements.length})`)}
               </button>
@@ -463,7 +522,7 @@ export const AdminDashboardView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setAdminRoute('operations')}
-                className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
+                className="px-2.5 py-1 rounded-md bg-white dark:bg-[#1D2023] border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold hover:bg-amber-50 cursor-pointer"
               >
                 {t(`Requests (${pendingRequests.length})`, `الطلبات (${pendingRequests.length})`)}
               </button>
@@ -475,7 +534,7 @@ export const AdminDashboardView: React.FC = () => {
       {/* Primary Operational Table (Desktop Table + Responsive Mobile Cards) */}
       <section aria-labelledby="daily-sessions-table-heading">
         <div className={`${SURFACE_CARD} overflow-hidden`}>
-          <div className="px-5 py-3 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+          <div className="px-5 py-3 border-b border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between gap-3">
             <div>
               <h2
                 id="daily-sessions-table-heading"
@@ -486,7 +545,7 @@ export const AdminDashboardView: React.FC = () => {
                   `الجلسات المجدولة لليوم ${activeCamp.currentCampDay}`
                 )}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
                 {t(
                   '4 periods · Conflict-protected assignments · Click any session to inspect roster & check-in',
                   '4 فترات دراسية · محمية ضد التعارض · اضغط على أي جلسة لفحص الكشف والوصول'
@@ -496,7 +555,7 @@ export const AdminDashboardView: React.FC = () => {
             <button
               type="button"
               onClick={() => setAdminRoute('attendance')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap cursor-pointer"
+              className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] hover:underline whitespace-nowrap cursor-pointer"
             >
               {t('All Attendance Sheets', 'كل كشوف الحضور')}
             </button>
@@ -504,10 +563,10 @@ export const AdminDashboardView: React.FC = () => {
 
           {filteredRows.length === 0 ? (
             <div className="py-12 px-6 text-center space-y-2.5">
-              <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+              <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-[#42474D] bg-slate-50 dark:bg-[#25292D] text-slate-400 flex items-center justify-center mx-auto">
                 <Calendar className="w-5 h-5" />
               </div>
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              <p className="text-sm font-medium text-slate-600 dark:text-[#C0C5C9]">
                 {todayLectures.length === 0
                   ? t('No lectures scheduled for selected teaching day', 'لا توجد محاضرات مجدولة ليوم الدراسة المحدد')
                   : t('No sessions match your current search or filter', 'لا توجد جلسات مطابقة لبحثك')}
@@ -536,13 +595,13 @@ export const AdminDashboardView: React.FC = () => {
                     <div key={lec.id} className="p-4 space-y-2.5 text-xs">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="font-mono tabular-nums text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                          <p className="font-mono tabular-nums text-[11px] font-semibold text-[#355F82] dark:text-[#88A9CC]">
                             {t(`P${lec.periodNumber}`, `ف${lec.periodNumber}`)} · {lec.startTime}–{lec.endTime} · {room?.code || lec.roomId}
                           </p>
                           <p className="font-semibold text-sm text-slate-900 dark:text-white mt-0.5">
                             {lec.topic}
                           </p>
-                          <p className="text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                          <p className="text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
                             {instName} · {groupLabel}
                           </p>
                         </div>
@@ -564,7 +623,7 @@ export const AdminDashboardView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setAdminRoute('attendance')}
-                          className="font-sans text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                          className="font-sans text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] hover:underline cursor-pointer"
                         >
                           {t('Inspect', 'فحص')}
                         </button>
@@ -578,38 +637,38 @@ export const AdminDashboardView: React.FC = () => {
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-start border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                  <tr className="border-b border-slate-200/80 dark:border-[#353A3F] bg-white dark:bg-[#1D2023]">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Session Topic', 'عنوان الجلسة')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Instructor', 'المحاضر')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Time', 'الوقت')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Group', 'المجموعة')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Room', 'القاعة')}
                     </th>
-                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-end">
+                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-[#848B91] text-end">
                       {t('Students', 'الطلاب')}
                     </th>
-                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-end">
+                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-[#848B91] text-end">
                       {t('Attended', 'حضر')}
                     </th>
-                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-end">
+                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-[#848B91] text-end">
                       {t('Absent', 'غاب')}
                     </th>
-                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-end">
+                    <th className="py-2.5 px-2.5 text-xs font-medium text-slate-400 dark:text-[#848B91] text-end">
                       {t('Rate', 'الفئة')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-start">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-start">
                       {t('Status', 'الحالة')}
                     </th>
-                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-slate-500 text-end">
+                    <th className="py-2.5 px-3 text-xs font-medium text-slate-400 dark:text-[#848B91] text-end">
                       {t('Action', 'إجراء')}
                     </th>
                   </tr>
@@ -629,7 +688,7 @@ export const AdminDashboardView: React.FC = () => {
                             type="button"
                             onClick={() => setAdminRoute('attendance')}
                             title={lec.topic}
-                            className="text-blue-600 dark:text-blue-400 hover:underline text-start font-medium leading-snug line-clamp-2 cursor-pointer"
+                            className="text-[#355F82] dark:text-[#88A9CC] hover:underline text-start font-medium leading-snug line-clamp-2 cursor-pointer"
                           >
                             {lec.topic}
                           </button>
@@ -637,33 +696,33 @@ export const AdminDashboardView: React.FC = () => {
 
                         <td className="py-3 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-6 h-6 rounded-full bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center shrink-0">
+                            <span className="w-6 h-6 rounded-full bg-slate-200/80 dark:bg-[#25292D] text-slate-700 dark:text-[#DEE1E4] text-[11px] font-semibold flex items-center justify-center shrink-0">
                               {instInitial}
                             </span>
-                            <span className="text-slate-800 dark:text-slate-200 font-medium truncate max-w-[140px]">
+                            <span className="text-slate-800 dark:text-[#DEE1E4] font-medium truncate max-w-[140px]">
                               {instName}
                             </span>
                           </div>
                         </td>
 
-                        <td className="py-3 px-3 text-slate-600 dark:text-slate-300 whitespace-nowrap tabular-nums">
-                          <div className="font-medium text-slate-800 dark:text-slate-200">
+                        <td className="py-3 px-3 text-slate-600 dark:text-[#C0C5C9] whitespace-nowrap tabular-nums">
+                          <div className="font-medium text-slate-800 dark:text-[#DEE1E4]">
                             {t(`P${lec.periodNumber}`, `ف${lec.periodNumber}`)} · {lec.startTime}–{lec.endTime}
                           </div>
                         </td>
 
                         <td
-                          className="py-3 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300 max-w-[145px]"
+                          className="py-3 px-3 font-mono text-[11px] text-slate-700 dark:text-[#C0C5C9] max-w-[145px]"
                           title={groupLabel}
                         >
                           <span className="block truncate">{groupLabel}</span>
                         </td>
 
-                        <td className="py-3 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-600 dark:text-[#A0A5AA] whitespace-nowrap">
                           {room?.code || lec.roomId}
                         </td>
 
-                        <td className="py-3 px-2.5 text-end font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                        <td className="py-3 px-2.5 text-end font-mono tabular-nums text-slate-700 dark:text-[#C0C5C9]">
                           {groupStudentsCount}
                         </td>
 
@@ -675,7 +734,7 @@ export const AdminDashboardView: React.FC = () => {
                           {isSynced ? absentCount : '—'}
                         </td>
 
-                        <td className="py-3 px-2.5 text-end font-mono tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        <td className="py-3 px-2.5 text-end font-mono tabular-nums text-slate-700 dark:text-[#C0C5C9] whitespace-nowrap">
                           {lec.frozenRateEgp}
                         </td>
 
@@ -695,7 +754,7 @@ export const AdminDashboardView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setAdminRoute('attendance')}
-                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                            className="text-xs font-medium text-[#355F82] dark:text-[#88A9CC] hover:underline cursor-pointer"
                           >
                             {t('View', 'عرض')}
                           </button>
@@ -716,16 +775,16 @@ export const AdminDashboardView: React.FC = () => {
         {/* Instructor Arrivals & Geofence Status */}
         <section
           aria-labelledby="arrivals-heading"
-          className="xl:col-span-6 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
+          className="xl:col-span-6 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
         >
-          <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+          <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between">
             <h2 id="arrivals-heading" className="text-sm font-semibold text-slate-900 dark:text-white">
               {t('Instructor Arrivals & Geofence', 'وصول المحاضرين والنطاق الجغرافي')}
             </h2>
             <button
               type="button"
               onClick={() => setAdminRoute('attendance')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] hover:underline cursor-pointer"
             >
               {t('Inspect', 'فحص')}
             </button>
@@ -758,7 +817,7 @@ export const AdminDashboardView: React.FC = () => {
                       <p className="font-semibold text-slate-900 dark:text-white truncate">
                         {t(inst.fullNameEn, inst.fullNameAr)}
                       </p>
-                      <p className="text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5 truncate">
+                      <p className="text-slate-500 dark:text-[#A0A5AA] font-mono tabular-nums mt-0.5 truncate">
                         {chk
                           ? `${new Date(chk.serverTimestamp).toISOString().slice(11, 16)} UTC · ${chk.distanceFromVenueMeters}m · ${chk.selfieSizeKb}KB`
                           : t('No GPS/Selfie check-in for selected teaching day', 'لا يوجد تسجيل وصول ليوم الدراسة المحدد')}
@@ -767,7 +826,7 @@ export const AdminDashboardView: React.FC = () => {
 
                     <div className="shrink-0">
                       {!chk && (
-                        <span className="text-slate-400 dark:text-slate-500 font-medium">
+                        <span className="text-slate-400 dark:text-[#848B91] font-medium">
                           {t('Not Checked In', 'لم يصل')}
                         </span>
                       )}
@@ -804,13 +863,13 @@ export const AdminDashboardView: React.FC = () => {
         {/* Action Required & Pending Reviews */}
         <section
           aria-labelledby="alerts-heading"
-          className="xl:col-span-6 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
+          className="xl:col-span-6 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
         >
-          <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+          <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between">
             <h2 id="alerts-heading" className="text-sm font-semibold text-slate-900 dark:text-white">
               {t('Action Required & Reviews', 'إجراءات ومراجعات مطلوبة')}
             </h2>
-            <span className="text-xs font-mono tabular-nums font-semibold text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-mono tabular-nums font-semibold text-slate-500 dark:text-[#A0A5AA]">
               {totalActionItems} {t('Items', 'عناصر')}
             </span>
           </div>
@@ -828,12 +887,12 @@ export const AdminDashboardView: React.FC = () => {
                       {t('Check-in Exception', 'طلب استثناء حضور')} ·{' '}
                       {inst ? t(inst.fullNameEn, inst.fullNameAr) : ex.instructorId}
                     </p>
-                    <p className="text-slate-500 dark:text-slate-400 mt-0.5 truncate">{ex.reason}</p>
+                    <p className="text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">{ex.reason}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setAdminRoute('attendance')}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-[#355F82] hover:bg-[#2D516F] text-white font-semibold shrink-0 cursor-pointer"
                   >
                     {t('Review', 'مراجعة')}
                   </button>
@@ -853,14 +912,14 @@ export const AdminDashboardView: React.FC = () => {
                       {inst ? t(inst.fullNameEn, inst.fullNameAr) : ent.instructorId} ·{' '}
                       {t(`Period ${ent.periodNumber}`, `الفترة ${ent.periodNumber}`)}
                     </p>
-                    <p className="text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    <p className="text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
                       {ent.eligibilityReason}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setAdminRoute('finance')}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-[#355F82] hover:bg-[#2D516F] text-white font-semibold shrink-0 cursor-pointer"
                   >
                     {t('Review', 'مراجعة')}
                   </button>
@@ -875,12 +934,12 @@ export const AdminDashboardView: React.FC = () => {
               >
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 dark:text-white truncate">{req.subject}</p>
-                  <p className="text-slate-500 dark:text-slate-400 mt-0.5 truncate">{req.details}</p>
+                  <p className="text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">{req.details}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setAdminRoute('operations')}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold shrink-0 cursor-pointer"
                 >
                   {t('Open', 'فتح')}
                 </button>

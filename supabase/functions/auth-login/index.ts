@@ -62,10 +62,29 @@ const IPV4_REGEX =
 const IPV6_REGEX = /^[0-9a-f:]{2,45}$/i;
 const CONTROL_CHAR_REGEX = /[\u0000-\u001f\u007f]/;
 
+// Staging-only, exact Vercel origins. Production keeps its configured CORS policy.
+const STAGING_PREVIEW_ORIGINS = [
+  'https://gleaming-skyblue-heron-54.hostingersite.com',
+  'https://operation-ca6y7khe0-salah-2543.vercel.app',
+  'https://operation-lms-git-design-graphite-glass-respo-56f62e-salah-2543.vercel.app',
+];
+
+function stagingPreviewOrigins(): string[] {
+  const stagingRef = 'uewhudbufykfkhimvqjj';
+  try {
+    const host = new URL(Deno.env.get('SUPABASE_URL') || '').hostname;
+    if (host === stagingRef + '.supabase.co') return STAGING_PREVIEW_ORIGINS;
+  } catch {
+    // No Supabase URL: fail closed instead of trusting the caller's Origin.
+  }
+  return Deno.env.get('SUPABASE_PROJECT_REF') === stagingRef
+    ? STAGING_PREVIEW_ORIGINS : [];
+}
+
 function resolveAllowedOrigins(): string[] {
   const raw = (Deno.env.get('ALLOWED_ORIGINS') || '').trim();
   if (!raw) {
-    return [...DEFAULT_PRODUCTION_ORIGINS];
+    return [...DEFAULT_PRODUCTION_ORIGINS, ...stagingPreviewOrigins()];
   }
 
   const parsed: string[] = [];
@@ -88,7 +107,7 @@ function resolveAllowedOrigins(): string[] {
     }
   }
 
-  return parsed.length > 0 ? parsed : [...DEFAULT_PRODUCTION_ORIGINS];
+  return [...new Set([...(parsed.length > 0 ? parsed : DEFAULT_PRODUCTION_ORIGINS), ...stagingPreviewOrigins()])];
 }
 
 function evaluateOriginPolicy(

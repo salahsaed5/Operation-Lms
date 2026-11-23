@@ -178,7 +178,7 @@ export const InstructorDashboardView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+              <span className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC]">
                 {t('1. Daily Venue Check-in', '1. تسجيل الوصول اليومي')}
               </span>
               {checkinDisplay ? (
@@ -209,7 +209,7 @@ export const InstructorDashboardView: React.FC = () => {
                   )}
             </h2>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] font-mono tabular-nums">
               {myCheckinToday
                 ? `${myCheckinToday.distanceFromVenueMeters}m ${t('from venue', 'عن المقر')} · ${myCheckinToday.selfieSizeKb}KB`
                 : t(
@@ -240,7 +240,7 @@ export const InstructorDashboardView: React.FC = () => {
         <section aria-labelledby="inst-priority-next-lecture" className={`${SURFACE_CARD} p-5`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 font-mono tabular-nums">
+              <p className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] font-mono tabular-nums">
                 {t('2. Next Assigned Lecture', '2. المحاضرة التالية')} · P
                 {nextLecture.periodNumber} ({nextLecture.startTime}–{nextLecture.endTime})
               </p>
@@ -250,10 +250,10 @@ export const InstructorDashboardView: React.FC = () => {
               >
                 {nextLecture.topic}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
                 {groups.find((g) => g.id === nextLecture.groupId)?.code} ·{' '}
                 {rooms.find((r) => r.id === nextLecture.roomId)?.code} ·{' '}
-                <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-300">
+                <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-[#C0C5C9]">
                   {nextLecture.frozenRateEgp} EGP
                 </span>
               </p>
@@ -264,7 +264,7 @@ export const InstructorDashboardView: React.FC = () => {
               onClick={() => openInstructorAttendance(nextLecture.id)}
               className={`${BTN_SECONDARY} min-h-[44px] px-4`}
             >
-              <ClipboardCheck className="w-4 h-4 text-blue-600" />
+              <ClipboardCheck className="w-4 h-4 text-[#355F82]" />
               <span>{t('Open Attendance Sheet', 'فتح كشف الحضور')}</span>
             </button>
           </div>
@@ -277,7 +277,7 @@ export const InstructorDashboardView: React.FC = () => {
           aria-labelledby="inst-daily-schedule"
           className={`lg:col-span-7 ${SURFACE_CARD} p-5 space-y-4`}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2
               id="inst-daily-schedule"
               className="text-sm font-bold text-slate-900 dark:text-white"
@@ -308,7 +308,7 @@ export const InstructorDashboardView: React.FC = () => {
                     className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
                     <div className="min-w-0">
-                      <p className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
+                      <p className="font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
                         P{lec.periodNumber} · {lec.startTime}–{lec.endTime} · {room?.code}
                       </p>
                       <p className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5 truncate">
@@ -346,7 +346,7 @@ export const InstructorDashboardView: React.FC = () => {
           aria-labelledby="inst-pending-actions"
           className={`lg:col-span-5 ${SURFACE_CARD} p-5 space-y-4`}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2
               id="inst-pending-actions"
               className="text-sm font-bold text-slate-900 dark:text-white"
@@ -371,7 +371,7 @@ export const InstructorDashboardView: React.FC = () => {
                       `مسودة كشف حضور — الفترة ${draft.periodNumber}`
                     )}
                   </p>
-                  <p className="text-slate-600 dark:text-slate-400 mt-0.5">
+                  <p className="text-slate-600 dark:text-[#A0A5AA] mt-0.5">
                     {t(
                       'Submit your attendance sheet once marking is complete.',
                       'يرجى اعتماد وإرسال كشف الحضور فور الانتهاء.'
@@ -452,7 +452,7 @@ export const InstructorScheduleView: React.FC = () => {
             onChange={(e) =>
               setDayFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
             }
-            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold"
+            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-xs font-semibold"
           >
             <option value="all">{t('All Camp Days', 'كل أيام المعسكر')}</option>
             {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map((d) => (
@@ -482,7 +482,7 @@ export const InstructorScheduleView: React.FC = () => {
               >
                 <div className="space-y-1 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
+                    <span className="font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
                       {t(`Day ${lec.campDay}`, `اليوم ${lec.campDay}`)} · P{lec.periodNumber} (
                       {lec.startTime}–{lec.endTime}) · {lec.lectureDate} · {room?.code}
                     </span>
@@ -495,7 +495,7 @@ export const InstructorScheduleView: React.FC = () => {
                   </h2>
                   <p className="text-slate-500">
                     {grp ? t(grp.nameEn, grp.nameAr) : lec.groupId} ·{' '}
-                    <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-300">
+                    <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-[#C0C5C9]">
                       {lec.frozenRateEgp} EGP
                     </span>
                   </p>
@@ -873,7 +873,7 @@ export const InstructorCheckinView: React.FC = () => {
               </span>
               <StatusBadge tone={existingDisplay.tone}>{existingDisplay.label}</StatusBadge>
             </div>
-            <p className="text-slate-600 dark:text-slate-300">
+            <p className="text-slate-600 dark:text-[#C0C5C9]">
               {t('Recorded at', 'تم التسجيل الساعة')}{' '}
               {new Date(existingCheckin.serverTimestamp).toLocaleTimeString()}
             </p>
@@ -882,7 +882,7 @@ export const InstructorCheckinView: React.FC = () => {
             <img
               src={signedReceiptUrl}
               alt={t('Uploaded check-in selfie', 'صورة التحقق المرفوعة')}
-              className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+              className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-[#42474D]"
             />
           )}
         </div>
@@ -898,11 +898,11 @@ export const InstructorCheckinView: React.FC = () => {
         )}
         <section className={`${SURFACE_SUBTLE} p-4 space-y-2`}>
           <p className="text-sm font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
+          <p className="text-sm text-slate-600 dark:text-[#C0C5C9]">
             {t('Open the camera, allow precise location access, and take a fresh selfie. Location verification happens automatically.',
                 'افتح الكاميرا، واسمح للموقع الدقيق، واتصور صورة جديدة. التحقق من الموقع بيتم تلقائيًا.')}
           </p>
-          {gpsMessage && <p className="text-xs text-slate-500 dark:text-slate-400">{gpsMessage}</p>}
+          {gpsMessage && <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{gpsMessage}</p>}
         </section>
 
         <section aria-live="polite" aria-label={t('Location verification result','نتيجة التحقق من الموقع')}
@@ -912,7 +912,7 @@ export const InstructorCheckinView: React.FC = () => {
               : displayQuality === 'outside'
                 ? 'border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20'
                 : displayQuality === 'missing'
-                  ? 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/40'
+                  ? 'border-slate-200 bg-slate-50 dark:border-[#353A3F] dark:bg-[#1D2023]/40'
                   : 'border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'
           }`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -927,7 +927,7 @@ export const InstructorCheckinView: React.FC = () => {
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${
               displayQuality === 'good' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' :
               displayQuality === 'outside' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200' :
-              displayQuality === 'missing' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200' :
+              displayQuality === 'missing' ? 'bg-slate-100 text-slate-600 dark:bg-[#25292D] dark:text-[#DEE1E4]' :
               'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
             }`}>
               {displayQuality === 'good' ? t('VERIFIED','تم التحقق') :
@@ -956,7 +956,7 @@ export const InstructorCheckinView: React.FC = () => {
                         : t('Take a live selfie to begin location verification.',
                             'التقط صورة مباشرة عشان يبدأ التحقق من موقعك.')}
             </p>
-            <p className="text-slate-600 dark:text-slate-300">
+            <p className="text-slate-600 dark:text-[#C0C5C9]">
               {displayQuality === 'good'
                 ? t('You can continue once the camp is active.',
                     'تقدر تكمل تسجيل الوصول بعد تفعيل المعسكر.')
@@ -993,10 +993,10 @@ export const InstructorCheckinView: React.FC = () => {
                 <img
                   src={selfiePreviewUrl}
                   alt={t('Captured verification selfie', 'صورة التحقق الملتقطة')}
-                  className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                  className="w-16 h-16 rounded-lg object-cover border border-slate-200 dark:border-[#42474D] shrink-0"
                 />
               ) : (
-                <Camera className="w-5 h-5 text-blue-600 shrink-0" />
+                <Camera className="w-5 h-5 text-[#355F82] shrink-0" />
               )}
               <div>
                 <p className="font-semibold text-slate-900 dark:text-white">
@@ -1540,7 +1540,7 @@ export const InstructorAttendanceView: React.FC = () => {
                   key={rec.studentId}
                   role="group"
                   aria-label={t(`Attendance for ${rec.studentName}`, `حضور ${rec.studentName}`)}
-                  className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-950/40"
+                  className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-slate-200 dark:border-[#42474D] bg-slate-50/60 dark:bg-[#121416]/40"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="grid grid-cols-3 gap-2 w-full md:w-[280px] shrink-0">
@@ -1552,7 +1552,7 @@ export const InstructorAttendanceView: React.FC = () => {
                           {t('Visitor from', 'زائر من')} {visitingGroupName(rec.studentId)}
                         </StatusBadge>
                       ) : (
-                        <span className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        <span className="rounded-md border border-slate-200 dark:border-[#42474D] px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-[#C0C5C9]">
                           {t('In this group', 'في الجروب ده')}
                         </span>
                       )}
@@ -1580,7 +1580,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.PRESENT
                           ? 'bg-emerald-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                          : 'border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-slate-700 dark:text-[#C0C5C9]'
                       }`}
                     >
                       {t('Present', 'حاضر')}
@@ -1593,7 +1593,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.LATE
                           ? 'bg-amber-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                          : 'border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-slate-700 dark:text-[#C0C5C9]'
                       }`}
                     >
                       {t('Late', 'متأخر')}
@@ -1606,7 +1606,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
                         rec.mark === AttendanceMark.ABSENT
                           ? 'bg-red-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                          : 'border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-slate-700 dark:text-[#C0C5C9]'
                       }`}
                     >
                       {t('Absent', 'غائب')}
@@ -1630,7 +1630,7 @@ export const InstructorAttendanceView: React.FC = () => {
           <div className="flex flex-col gap-1.5 w-full sm:w-[380px]">
             <label
               htmlFor="instructor-attendance-lecture"
-              className="text-xs font-bold text-slate-700 dark:text-slate-200"
+              className="text-xs font-bold text-slate-700 dark:text-[#DEE1E4]"
             >
               {t('Lecture & group', 'المحاضرة والجروب')}
             </label>
@@ -1651,7 +1651,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 setFeedback(null);
                 setComparisonRows(null);
               }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold max-w-full focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-sm font-semibold max-w-full focus:ring-2 focus:ring-blue-500"
             >
               {myLectures.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -1675,18 +1675,18 @@ export const InstructorAttendanceView: React.FC = () => {
         <div className="space-y-5">
           {/* Compact lecture summary — never duplicate the draft status panel. */}
           <section aria-label={t('Selected lecture summary', 'ملخص المحاضرة المختارة')}
-            className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
+            className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm"
           >
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="min-w-0 space-y-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[#355F82] dark:text-[#88A9CC]">
                   {t('Selected lecture', 'المحاضرة المختارة')}
                 </p>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
                   {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
                   {' · '}{selectedLecture.topic}
                 </h2>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
                   <span>D{selectedLecture.campDay} · {selectedLecture.lectureDate} · P{selectedLecture.periodNumber}</span>
                   <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
                   <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
@@ -1700,7 +1700,7 @@ export const InstructorAttendanceView: React.FC = () => {
                     ? t('Submitted · Locked', 'معتمد · مغلق')
                     : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
                 </StatusBadge>
-                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#A0A5AA]">
                   {existingSheet?.syncState === OfflineSyncState.SYNCED
                     ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                     : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
@@ -1715,7 +1715,7 @@ export const InstructorAttendanceView: React.FC = () => {
           {/* Single live search: home roster appears immediately below; the
               scoped RPC returns visitors without exposing unassigned rosters. */}
           <section aria-label={t('Find and mark student attendance', 'ابحث وسجل حضور طالب')}
-            className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
+            className="space-y-4 rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm"
           >
             <label htmlFor="attendance-student-search" className="block text-sm font-bold text-slate-900 dark:text-white">
               {t('Find student', 'البحث عن طالب')}
@@ -1741,13 +1741,13 @@ export const InstructorAttendanceView: React.FC = () => {
               />
             </div>
             {!studentSearch.trim() && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
                 {t('Search by student name or code in the roster and other groups.',
                   'ابحث بالاسم أو كود الطالب في الكشف والجروبات التانية.')}
               </p>
             )}
-            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-2">
-              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+            <div className="border-t border-slate-100 dark:border-[#353A3F] pt-4 space-y-2">
+              <p className="text-xs font-bold text-slate-600 dark:text-[#C0C5C9]">
                 {t('Filter attendance status', 'فلترة حسب حالة الحضور')}
               </p>
               <div role="group" aria-label={t('Filter attendance by status', 'فلترة الحضور حسب الحالة')}
@@ -1761,10 +1761,10 @@ export const InstructorAttendanceView: React.FC = () => {
                       onClick={() => setAttendanceStatusFilter(option.value)}
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold min-h-[38px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${active
                         ? option.activeClass
-                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                        : 'border-slate-200 dark:border-[#42474D] bg-slate-50 dark:bg-[#25292D] text-slate-700 dark:text-[#DEE1E4] hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                     >
                       <span>{t(option.en, option.ar)}</span>
-                      <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-center ${active ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200'}`}>
+                      <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-center ${active ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-[#DEE1E4]'}`}>
                         {attendanceFilterCount(option.value)}
                       </span>
                     </button>
@@ -1804,7 +1804,7 @@ export const InstructorAttendanceView: React.FC = () => {
                     'الطالب موجود، لكن فلتر حالة الحضور مخفيه.')}
                 </p>
                 <button type="button" onClick={() => setAttendanceStatusFilter('all')}
-                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                  className="text-xs font-bold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
                   {t('Show matching students', 'إظهار الطلاب المطابقين')}
                 </button>
               </div>
@@ -1826,12 +1826,12 @@ export const InstructorAttendanceView: React.FC = () => {
                   <div role="group" aria-label={t('Students from other groups', 'طلاب مجموعات أخرى')}
                     className="space-y-2"
                   >
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    <p className="text-xs font-bold text-slate-700 dark:text-[#DEE1E4]">
                       {t('Students in other groups', 'طلاب موجودين في جروبات تانية')}
                     </p>
-                    <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023]">
                       {visitingMatches.map(stu => (
-                        <div key={stu.studentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b last:border-b-0 border-slate-100 dark:border-slate-800">
+                        <div key={stu.studentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b last:border-b-0 border-slate-100 dark:border-[#353A3F]">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">{highlightAttendanceSearchMatch(stu.fullName, studentSearch)}</p>
                             <p className="text-xs text-slate-500">
@@ -1855,7 +1855,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 {!visitingSearchBusy && !visitingLookupError &&
                   lastCompletedVisitQuery === studentSearch.trim() &&
                   visitingMatches.length === 0 && nameMatchedRecords.length === 0 && (
-                    <p className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3 text-xs text-slate-600 dark:text-slate-300" role="status">
+                    <p className="rounded-lg border border-slate-200 dark:border-[#42474D] px-3 py-3 text-xs text-slate-600 dark:text-[#C0C5C9]" role="status">
                       {t('No student matched this name or code in the current sheet or other groups.',
                         'ملقيناش طالب بالاسم أو الكود ده في الكشف أو الجروبات التانية.')}
                     </p>
@@ -1868,24 +1868,24 @@ export const InstructorAttendanceView: React.FC = () => {
               displayed directly under the input rather than far below. */}
           {!studentSearch.trim() && (
             <section aria-label={t('Full attendance roster', 'كشف الحضور الكامل')}
-              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-3">
+              className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                   {t('Attendance roster', 'كشف حضور الطلاب')}
                 </h3>
-                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-200 tabular-nums">
+                <span className="rounded-full bg-slate-100 dark:bg-[#25292D] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-[#DEE1E4] tabular-nums">
                   {filteredRecords.length} / {baseRecords.length}
                 </span>
               </div>
               {filteredRecords.length > 0
                 ? renderAttendanceRows(filteredRecords, '')
-                : <div role="status" className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-5 text-center space-y-3">
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                : <div role="status" className="rounded-xl border border-dashed border-slate-200 dark:border-[#42474D] p-5 text-center space-y-3">
+                    <p className="text-sm font-medium text-slate-500 dark:text-[#A0A5AA]">
                       {t('No students with this attendance status.', 'مفيش طلاب بالحالة دي حاليًا.')}
                     </p>
                     {attendanceStatusFilter !== 'all' && (
                       <button type="button" onClick={() => setAttendanceStatusFilter('all')}
-                        className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                        className="text-sm font-semibold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
                         {t('Show all students', 'عرض كل الطلاب')}
                       </button>
                     )}
@@ -1895,7 +1895,7 @@ export const InstructorAttendanceView: React.FC = () => {
 
                     {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
           {!isLockedOrSubmitted && (
-            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-sm text-xs">
+            <section className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 space-y-3 shadow-sm text-xs">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-white">
@@ -1915,7 +1915,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 </button>
               </div>
               {showMidcampEnrollForm && (
-                <form id="midcamp-enrollment-form" onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+                <form id="midcamp-enrollment-form" onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3 border-t border-slate-100 dark:border-[#353A3F] pt-4">
                   <p className="text-blue-700 dark:text-blue-300">
                     {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
                     {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
@@ -1975,7 +1975,7 @@ export const InstructorAttendanceView: React.FC = () => {
           )}
 
           {!isLockedOrSubmitted && isSupabaseMode && (
-            <section className="space-y-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm">
+            <section className="space-y-3 rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1995,7 +1995,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 </button>
               </div>
               {comparisonRows !== null && (
-                <div role="status" className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div role="status" className="rounded-lg border border-slate-200 dark:border-[#42474D] overflow-hidden">
                   {comparisonRows.length === 0 ? (
                     <p className="p-3 text-xs text-emerald-700 dark:text-emerald-300">
                       {t('No differences found at the time of review. This does not finalize attendance.',
@@ -2009,7 +2009,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       </p>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs text-start">
-                          <thead className="bg-slate-100 dark:bg-slate-800">
+                          <thead className="bg-slate-100 dark:bg-[#25292D]">
                             <tr>
                               <th className="p-2 text-start">{t('Student / Code', 'الطالب / الكود')}</th>
                               <th className="p-2 text-start">{t('On this device', 'على الجهاز')}</th>
@@ -2018,7 +2018,7 @@ export const InstructorAttendanceView: React.FC = () => {
                           </thead>
                           <tbody>
                             {comparisonRows.map(row => (
-                              <tr key={row.studentId} className="border-t border-slate-200 dark:border-slate-700">
+                              <tr key={row.studentId} className="border-t border-slate-200 dark:border-[#42474D]">
                                 <td className="p-2"><strong>{row.studentName}</strong>
                                   <span className="block font-mono text-slate-500">{row.studentCode}</span>
                                 </td>
@@ -2045,7 +2045,7 @@ export const InstructorAttendanceView: React.FC = () => {
           )}
 
           {!isLockedOrSubmitted && (
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shadow-sm">
               <button
                 type="button"
                 disabled={isBusy || !canFinalizeAttendance}
@@ -2151,13 +2151,13 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
     <div className="space-y-5">
       <div className={`${SURFACE_CARD} p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
         <div>
-          <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
+          <p className="text-xs font-mono text-[#355F82] dark:text-[#88A9CC]">
             {currentInstructor.instructorCode} · {currentInstructor.username}
           </p>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-0.5">
             {t(currentInstructor.fullNameEn, currentInstructor.fullNameAr)}
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
             {currentInstructor.specialization} · {currentInstructor.email}
           </p>
         </div>
@@ -2185,8 +2185,8 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
             onClick={() => setSubTab(tab.id)}
             className={`min-h-[40px] px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer ${
               subTab === tab.id
-                ? 'bg-blue-600 text-white'
-                : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                ? 'bg-[#355F82] text-white'
+                : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
             }`}
           >
             {t(tab.en, tab.ar)}
@@ -2258,7 +2258,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
           </h2>
           {myFinance ? (
             <section aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t(
+              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{t(
                 'Only your own records are visible. Confirmed amounts include main, approved backup and once-daily primary transportation. Pending sums are not payable yet.',
                 'اللي ظاهر هنا حسابك إنت بس. المؤكد يشمل الأساسي والباك أب المعتمد وانتقالات أيام الأساسي مرة واحدة. المعلق مش ضمن المستحق.'
               )}</p>
@@ -2268,7 +2268,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
                   {en:'Paid',ar:'المدفوع',n:myFinance.paidEgp},
                   {en:'Remaining',ar:'المتبقي',n:myFinance.balanceEgp},
                   {en:'Pending estimate',ar:'المعلق تقديري',n:myFinance.pendingEstimateEgp},
-                ].map(x=><div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3" key={x.en}>
+                ].map(x=><div className="rounded-xl bg-slate-50 dark:bg-[#25292D] p-3" key={x.en}>
                   <p className="text-xs text-slate-500">{t(x.en,x.ar)}</p>
                   <p className="text-base font-bold tabular-nums mt-1">{x.n.toLocaleString()} EGP</p>
                 </div>)}
@@ -2278,7 +2278,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
                   {en:'Main',ar:'أساسي',n:myFinance.primaryEgp},
                   {en:'Backup',ar:'باك أب',n:myFinance.backupEgp},
                   {en:'Transport',ar:'انتقالات',n:myFinance.transportEgp},
-                ].map(x=><div key={x.en} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3">
+                ].map(x=><div key={x.en} className="rounded-lg border border-slate-200 dark:border-[#42474D] px-3 py-3">
                   <p className="text-slate-500">{t(x.en,x.ar)}</p>
                   <p className="font-bold mt-1 tabular-nums">{x.n.toLocaleString()} EGP</p>
                 </div>)}
@@ -2286,7 +2286,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
               <div className="space-y-2">
                 <h3 className="font-bold text-sm">{t('My backup sessions','محاضراتي كـ باك أب')}</h3>
                 {myBackupSessions.length===0 && <p className="text-slate-500">{t('No backup sessions recorded','لا يوجد باك أب مسجل')}</p>}
-                {myBackupSessions.map(b=><div key={b.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                {myBackupSessions.map(b=><div key={b.id} className="rounded-xl border border-slate-200 dark:border-[#42474D] p-3 flex flex-wrap items-center justify-between gap-2">
                   <span>{t('Day','يوم')} {b.campDay} · {lectures.find(l=>l.id===b.lectureId)?.topic||''}</span>
                   <span className="font-semibold">{b.frozenRateEgp} EGP · {b.status}</span>
                 </div>)}
@@ -2294,7 +2294,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
               <div className="space-y-2">
                 <h3 className="font-bold text-sm">{t('My recorded payments','الدفعات المسجلة لي')}</h3>
                 {myRecordedPayments.length===0&&<p className="text-slate-500">{t('No payments yet','مفيش دفعات مسجلة')}</p>}
-                {myRecordedPayments.map(p=><div key={p.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                {myRecordedPayments.map(p=><div key={p.id} className="rounded-xl border border-slate-200 dark:border-[#42474D] p-3 flex flex-wrap items-center justify-between gap-2">
                   <span>{new Date(p.createdAt).toLocaleDateString()} · {p.method}</span>
                   <strong>{p.amountEgp.toLocaleString()} EGP</strong>
                 </div>)}

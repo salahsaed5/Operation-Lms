@@ -383,7 +383,7 @@ interface AppContextValue {
   submitAndSyncAttendanceSheet: (lectureId: string) => Promise<ActionResult>;
 
   // Read-only side-by-side comparison. Never writes server attendance.
-  downloadTenDayAttendanceWorkbook: () => Promise<ActionResult>;
+  downloadTenDayAttendanceWorkbook: (groupId?: string) => Promise<ActionResult>;
 
   reviewAttendanceDraft: (lectureId: string) => Promise<{
     ok: boolean;
@@ -2830,7 +2830,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
-  const downloadTenDayAttendanceWorkbook = async (): Promise<ActionResult> => {
+  const downloadTenDayAttendanceWorkbook = async (groupId?: string): Promise<ActionResult> => {
     if (!activeCamp || !isSupabaseMode || !supabaseCtx) {
       return { ok: false, error: 'Official attendance export requires a connected server Camp.' };
     }
@@ -2846,16 +2846,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (camp.durationDays < 1 || camp.durationDays > 60) {
         return { ok: false, error: 'Invalid teaching day count for attendance workbook.' };
       }
+      if (groupId && !latest.groups.some(g => g.id === groupId && g.campId === camp.id)) {
+        return { ok: false, error: 'Selected group does not belong to this Camp.' };
+      }
       const workbook = buildCampAttendanceWorkbook({
         camp,
+        groupId,
         groups: latest.groups.filter(g => g.campId === camp.id),
         students: latest.students.filter(s => s.campId === camp.id),
         lectures: latest.lectures.filter(l => l.campId === camp.id),
         attendanceSheets: latest.attendanceSheets.filter(s => s.campId === camp.id),
         studentTransfers: latest.studentTransfers.filter(tr => tr.campId === camp.id),
       });
+      const groupSuffix = groupId
+        ? '-' + (latest.groups.find(g=>g.id===groupId)?.code||'group').replace(/[^A-Za-z0-9_-]/g,'_')
+        : '-all-groups';
       const fileName = 'Operation-LMS-' +
-        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-' + camp.durationDays + 'day-attendance.xlsx';
+        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + groupSuffix + '-' + camp.durationDays + 'day-attendance.xlsx';
       const url = URL.createObjectURL(workbook);
       const link = document.createElement('a');
       link.href = url;

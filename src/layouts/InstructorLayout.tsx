@@ -63,7 +63,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
   const unreadCount = myNotifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col pb-20 md:pb-8">
+    <div className="min-h-screen w-full overflow-x-clip bg-[var(--bg-canvas)] dark:bg-[var(--bg-canvas)] text-slate-900 dark:text-[#F0F1F2] flex flex-col pb-28 md:pb-8">
       {isSandboxMode && (
         <div role="status" aria-live="polite" className="px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200">
           <strong>{t('LOCAL SANDBOX PREVIEW', 'معاينة محلية تجريبية')}</strong>
@@ -71,14 +71,14 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         </div>
       )}
       {/* Slim Sticky White Top Header */}
-      <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4 relative">
+      <header className="sticky top-0 z-30 h-14 app-glass-header px-4 sm:px-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={() => setInstructorRoute('dashboard')}
             className="flex items-center gap-2.5 text-start cursor-pointer min-w-0"
           >
-            <span className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0 tracking-tight">
+            <span className="w-7 h-7 rounded-lg bg-[#355F82] text-white text-xs font-bold flex items-center justify-center shrink-0 tracking-tight">
               CI
             </span>
             <div className="min-w-0">
@@ -86,7 +86,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
                 {t('CITS Instructor', 'بوابة المحاضر')}
               </span>
               {activeCamp && (
-                <span className="hidden sm:block text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                <span className="hidden sm:block text-[11px] font-mono tabular-nums text-slate-500 dark:text-[#A0A5AA] truncate">
                   {activeCamp.code} ·{' '}
                   {t(
                     `Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,
@@ -114,8 +114,8 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
                 aria-current={isActive ? 'page' : undefined}
                 className={`px-3 py-1.5 rounded-lg text-[13px] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   isActive
-                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
+                    ? 'bg-blue-50 dark:bg-[#293747]/60 text-[#355F82] dark:text-[#88A9CC] font-semibold'
+                    : 'text-slate-600 dark:text-[#C0C5C9] font-medium hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -133,7 +133,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
               disabled={isLoadingData}
               onClick={() => refreshOperationalData()}
               aria-label={t('Refresh data', 'تحديث البيانات')}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
               <span className="hidden lg:inline">{t('Refresh', 'تحديث')}</span>
@@ -145,11 +145,11 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
             onClick={() => setShowNotifPanel((prev) => !prev)}
             aria-label={t('Notifications', 'الإشعارات')}
             aria-expanded={showNotifPanel}
-            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1 cursor-pointer"
+            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1 cursor-pointer"
           >
-            <Bell className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+            <Bell className="w-3.5 h-3.5 text-slate-600 dark:text-[#C0C5C9]" />
             {unreadCount > 0 && (
-              <span className="font-mono tabular-nums text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+              <span className="font-mono tabular-nums text-[11px] font-semibold text-[#355F82] dark:text-[#88A9CC]">
                 {unreadCount}
               </span>
             )}
@@ -159,7 +159,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
             type="button"
             onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
             aria-label={t('Switch Language', 'تغيير اللغة')}
-            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1 cursor-pointer"
+            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1 cursor-pointer"
           >
             <Globe className="w-3.5 h-3.5 text-slate-500" />
             <span>{lang === 'en' ? 'AR' : 'EN'}</span>
@@ -169,16 +169,16 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
             type="button"
             onClick={toggleTheme}
             aria-label={t('Toggle theme', 'تبديل المظهر')}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-[#C0C5C9] cursor-pointer"
           >
             {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
 
-          <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block shrink-0" />
+          <div className="h-4 w-px bg-slate-200 dark:bg-[#25292D] hidden sm:block shrink-0" />
 
           <div className="hidden sm:flex items-center gap-1.5 ps-0.5 max-w-[160px]">
             <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+            <span className="text-xs font-medium text-slate-700 dark:text-[#DEE1E4] truncate">
               {currentInstructor
                 ? t(currentInstructor.fullNameEn, currentInstructor.fullNameAr)
                 : t(auth.currentProfile.fullNameEn, auth.currentProfile.fullNameAr)}
@@ -190,7 +190,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
             onClick={() => signOut()}
             aria-label={t('Logout', 'تسجيل الخروج')}
             title={t('Logout', 'تسجيل الخروج')}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-600 dark:text-[#C0C5C9] hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
           </button>
@@ -198,7 +198,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
 
         {/* Notifications Popover */}
         {showNotifPanel && (
-          <div className="absolute end-4 sm:end-6 top-full mt-2 w-80 max-w-[90vw] z-40 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-lg p-4 space-y-3">
+          <div className="absolute end-4 sm:end-6 top-full mt-2 w-80 max-w-[90vw] z-40 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white/95 dark:bg-[#1D2023]/95 backdrop-blur-md shadow-lg p-4 space-y-3">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-900 dark:text-white">
               <span>{t('Notifications', 'الإشعارات')}</span>
               <button
@@ -227,7 +227,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
                       <button
                         type="button"
                         onClick={() => markNotificationRead(n.id)}
-                        className="text-blue-600 dark:text-blue-400 font-semibold shrink-0 cursor-pointer"
+                        className="text-[#355F82] dark:text-[#88A9CC] font-semibold shrink-0 cursor-pointer"
                       >
                         {t('Read', 'قرئت')}
                       </button>
@@ -240,10 +240,10 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         )}
       </header>
 
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-blue-50/50 dark:bg-blue-950/20 border-b border-slate-200 dark:border-slate-800 text-xs">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-slate-50/70 dark:bg-[#25292D]/70 border-b border-slate-200 dark:border-[#353A3F] text-xs">
         <span className="font-semibold shrink-0">{t('My Camp:', 'الكامب الخاص بي:')}</span>
         <CampSwitcher />
-        <span className="hidden md:inline text-slate-500 dark:text-slate-400">
+        <span className="hidden md:inline text-slate-500 dark:text-[#A0A5AA]">
           {t('Switch to view your assignments, check-ins and statement for each Camp.',
              'بدّل الكامب لعرض جدولك وحضورك وحساباتك الخاصة بكل كامب.')}
         </span>
@@ -272,7 +272,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       {/* Fixed Light Mobile Bottom Tab Bar */}
       <nav
         aria-label={t('Mobile bottom navigation', 'التنقل السفلي للمحاضر')}
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800 grid grid-cols-5 items-center px-1"
+        className="mobile-glass-nav instructor-mobile-only md:hidden"
       >
         {INSTRUCTOR_TABS.map((tab) => {
           const Icon = tab.icon;
@@ -283,14 +283,10 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
               type="button"
               onClick={() => setInstructorRoute(tab.id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`min-h-[44px] min-w-[44px] flex flex-col items-center justify-center rounded-lg transition-colors cursor-pointer ${
-                isActive
-                  ? 'text-blue-600 dark:text-blue-400 font-semibold'
-                  : 'text-slate-500 dark:text-slate-400'
-              }`}
+              className="mobile-glass-item cursor-pointer"
             >
-              <Icon className="w-[18px] h-[18px]" />
-              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
+              <Icon className="w-5 h-5" />
+              <span className="tracking-tight">
                 {t(tab.labelEn, tab.labelAr)}
               </span>
             </button>

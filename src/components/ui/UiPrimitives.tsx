@@ -9,28 +9,28 @@ import {
 } from 'lucide-react';
 
 export const SURFACE_CARD =
-  'rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)]';
+  'rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)]';
 
 export const SURFACE_SUBTLE =
-  'rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60';
+  'rounded-lg border border-slate-200/80 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#121416]/60';
 
 export const LABEL_CLASS =
-  'block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5';
+  'block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5';
 
 export const INPUT_CLASS =
-  'w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:opacity-60 transition-colors';
+  'w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 disabled:opacity-60 transition-colors';
 
 export const SELECT_CLASS =
-  'w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:opacity-60 transition-colors';
+  'w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] text-slate-900 dark:text-white focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 disabled:opacity-60 transition-colors';
 
 export const BTN_PRIMARY =
-  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
 
 export const BTN_SECONDARY =
-  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 text-slate-700 dark:text-[#DEE1E4] text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
 
 export const BTN_DANGER_OUTLINE =
-  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 dark:border-red-900/70 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 dark:border-red-900/70 bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
 
 export type BadgeTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
@@ -41,9 +41,9 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
     'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900',
   danger:
     'bg-red-50 text-red-700 border-red-200/80 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900',
-  info: 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900',
+  info: 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-[#293747]/50 dark:text-blue-300 dark:border-[#425A70]',
   neutral:
-    'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+    'bg-slate-100 text-slate-600 border-slate-200 dark:bg-[#25292D] dark:text-[#C0C5C9] dark:border-[#42474D]',
 };
 
 export const StatusBadge: React.FC<{
@@ -69,7 +69,7 @@ export const PageHeader: React.FC<{
         {title}
       </h1>
       {subtitle && (
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-[#A0A5AA] mt-0.5">
           {subtitle}
         </p>
       )}
@@ -92,7 +92,7 @@ export const InlineBanner: React.FC<{
       ? 'border-red-200 dark:border-red-900 bg-red-50/90 dark:bg-red-950/40 text-red-800 dark:text-red-200'
       : type === 'warning'
       ? 'border-amber-200 dark:border-amber-900 bg-amber-50/90 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200'
-      : 'border-blue-200 dark:border-blue-900 bg-blue-50/90 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200';
+      : 'border-blue-200 dark:border-[#425A70] bg-blue-50/90 dark:bg-[#293747]/40 text-blue-800 dark:text-blue-200';
 
   const Icon =
     type === 'success'
@@ -130,13 +130,13 @@ export const EmptyState: React.FC<{
   description?: string;
   action?: React.ReactNode;
 }> = ({ icon: Icon, title, description, action }) => (
-  <div className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 py-12 px-6 text-center space-y-2.5">
-    <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+  <div className="rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] py-12 px-6 text-center space-y-2.5">
+    <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-[#42474D] bg-slate-50 dark:bg-[#25292D] text-slate-400 flex items-center justify-center mx-auto">
       <Icon className="w-5 h-5" />
     </div>
-    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</p>
+    <p className="text-sm font-semibold text-slate-700 dark:text-[#DEE1E4]">{title}</p>
     {description && (
-      <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+      <p className="text-xs text-slate-500 dark:text-[#A0A5AA] max-w-md mx-auto">
         {description}
       </p>
     )}
@@ -157,9 +157,9 @@ export const PaginationBar: React.FC<{
   const end = Math.min(totalItems, page * pageSize);
 
   return (
-    <div className="px-4 py-3 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+    <div className="px-4 py-3 border-t border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#A0A5AA]">
       <span className="tabular-nums">
-        {labelShowing}: <strong className="text-slate-700 dark:text-slate-200">{start}–{end}</strong> / {totalItems}
+        {labelShowing}: <strong className="text-slate-700 dark:text-[#DEE1E4]">{start}–{end}</strong> / {totalItems}
       </span>
       <div className="flex items-center gap-1.5">
         <button
@@ -167,11 +167,11 @@ export const PaginationBar: React.FC<{
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
           aria-label="Previous page"
-          className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+          className="p-1.5 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
         >
           <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
         </button>
-        <span className="px-2 font-mono tabular-nums text-slate-700 dark:text-slate-200">
+        <span className="px-2 font-mono tabular-nums text-slate-700 dark:text-[#DEE1E4]">
           {page} / {totalPages}
         </span>
         <button
@@ -179,7 +179,7 @@ export const PaginationBar: React.FC<{
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
           aria-label="Next page"
-          className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+          className="p-1.5 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
         >
           <ChevronRight className="w-3.5 h-3.5 rtl:rotate-180" />
         </button>
@@ -229,7 +229,7 @@ export const ConfirmDialog: React.FC<{
       onClick={() => !isBusy && onCancel()}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl p-5 space-y-4"
+        className="w-full max-w-md rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-xl p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-1.5">
@@ -239,7 +239,7 @@ export const ConfirmDialog: React.FC<{
           >
             {title}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-[#A0A5AA] leading-relaxed">
             {description}
           </p>
         </div>
