@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/atomic-attendance-sync-20261122
+      - 'design/**'
   workflow_dispatch:
 
 permissions:
