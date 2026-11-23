@@ -19,17 +19,51 @@ import {
   UserRole,
 } from '../types/database';
 
-/**
- * Compute ISO YYYY-MM-DD date for a 1-indexed camp day from camp.startDate
+/** JS/PostgreSQL weekday convention: Sunday=0, Monday=1, ... Saturday=6.
+ * Existing Camps without a selected pattern retain their daily schedule.
  */
-export function calculateCampDayDate(startDateIso: string, campDay: number): string {
-  const safeDay = Math.max(1, Math.floor(campDay || 1));
-  const parsed = new Date(`${startDateIso}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toISOString().slice(0, 10);
+export const ALL_CAMP_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+export function validateCampWeekdays(startDateIso: string, weekdays: readonly number[]): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDateIso)) return 'Choose a valid first teaching date.';
+  const date = new Date(`${startDateIso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== startDateIso) {
+    return 'Choose a valid first teaching date.';
   }
-  parsed.setUTCDate(parsed.getUTCDate() + (safeDay - 1));
-  return parsed.toISOString().slice(0, 10);
+  if (!weekdays.length || weekdays.length > 7 ||
+      new Set(weekdays).size !== weekdays.length ||
+      weekdays.some(d => !Number.isInteger(d) || d < 0 || d > 6)) {
+    return 'Select one or more different teaching weekdays (Sunday–Saturday).';
+  }
+  if (!weekdays.includes(date.getUTCDay())) {
+    return 'The first teaching date must fall on one of the selected weekdays.';
+  }
+  return null;
+}
+
+/** 1-indexed teaching session date, NOT a calendar-day offset.
+ * UTC calendar arithmetic avoids local timezone/DST shifts in Egypt.
+ * Legacy daily camps remain identical when weekdays are omitted.
+ */
+export function calculateCampDayDate(
+  startDateIso: string, campDay: number, weekdays: readonly number[] = ALL_CAMP_WEEKDAYS
+): string {
+  // Preserve legacy day=0 / negative callers as Day 1; persisted Camp/lecture
+  // writes still enforce strict 1..duration in AppContext and database triggers.
+  if (!Number.isSafeInteger(campDay) || campDay > 365) {
+    throw new Error('Invalid camp teaching day.');
+  }
+  const safeDay = Math.max(1, campDay);
+  const error = validateCampWeekdays(startDateIso, weekdays);
+  if (error) throw new Error(error);
+  const date = new Date(`${startDateIso}T00:00:00Z`);
+  const selected = new Set(weekdays);
+  let remaining = safeDay - 1;
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    if (selected.has(date.getUTCDay())) remaining--;
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 /**
@@ -161,29 +195,20 @@ export function processConcurrentAdminCreations(
 }
 
 /**
- * 2. Enforce Single Active Camp Rule & Archived Camp Read-Only Protection
+ * Parallel Active Camps are allowed. Archived Camps cannot be reactivated.
+ * Membership, lecture resource conflicts, and per-Camp dates are enforced
+ * independently by database RLS and schedule triggers.
  */
 export function validateCampActivation(
   camps: Pick<Camp, 'id' | 'nameEn' | 'status'>[],
   targetCampId: string
 ): { allowed: boolean; error?: string } {
-  const target = camps.find((c) => c.id === targetCampId);
-  if (target?.status === CampStatus.ARCHIVED) {
-    return {
-      allowed: false,
-      error: `Camp "${target.nameEn}" is archived and strictly read-only.`,
-    };
+  const target = camps.find(c => c.id === targetCampId);
+  if (!target) return {allowed:false,error:'Selected Camp does not exist.'};
+  if (target.status === CampStatus.ARCHIVED) {
+    return {allowed:false,error:`Camp "${target.nameEn}" is archived and strictly read-only.`};
   }
-  const existingActive = camps.find(
-    (c) => c.status === CampStatus.ACTIVE && c.id !== targetCampId
-  );
-  if (existingActive) {
-    return {
-      allowed: false,
-      error: `Only one camp can be active at a time. "${existingActive.nameEn}" is currently active.`,
-    };
-  }
-  return { allowed: true };
+  return {allowed:true};
 }
 
 export function validateCampNotArchived(camp: Pick<Camp, 'id' | 'nameEn' | 'status'>): {
@@ -441,6 +466,45 @@ export function validateLectureScheduleSlot(params: {
     valid: conflicts.length === 0,
     conflicts,
   };
+}
+
+/** Parallel Camps cannot book the same real Instructor or room across
+ * overlapping dates/times. Camp-Day numbers and period numbers are local to
+ * each Camp; real lectureDate and actual time windows are authoritative.
+ */
+export function validateCrossCampLectureSlot(params: {
+  existingLectures: Lecture[];
+  candidate: Pick<Lecture,
+    'campId'|'lectureDate'|'startTime'|'endTime'|'instructorId'|'roomId'> & {
+      id?: string;
+      substituteInstructorId?: string | null;
+    };
+}): { valid: boolean; conflicts: string[] } {
+  const { existingLectures, candidate } = params;
+  const start = parseTimeMinutes(candidate.startTime);
+  const end = parseTimeMinutes(candidate.endTime);
+  const effectiveInstructor = candidate.substituteInstructorId || candidate.instructorId;
+  const conflicts: string[] = [];
+  for (const lec of existingLectures) {
+    if (lec.id === candidate.id || lec.campId === candidate.campId ||
+        lec.lectureDate !== candidate.lectureDate ||
+        lec.status === LectureStatus.CANCELLED) continue;
+    const lecStart = parseTimeMinutes(lec.startTime);
+    const lecEnd = parseTimeMinutes(lec.endTime);
+    if (start === null || end === null || lecStart === null || lecEnd === null ||
+        start >= lecEnd || end <= lecStart) continue;
+    if ((lec.substituteInstructorId || lec.instructorId) === effectiveInstructor) {
+      conflicts.push(
+        `Cross-Camp Instructor conflict: already teaching another Camp on ${candidate.lectureDate}.`
+      );
+    }
+    if (lec.roomId === candidate.roomId) {
+      conflicts.push(
+        `Cross-Camp Room conflict: room already occupied on ${candidate.lectureDate}.`
+      );
+    }
+  }
+  return {valid: conflicts.length === 0,conflicts};
 }
 
 /**

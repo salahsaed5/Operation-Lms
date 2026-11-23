@@ -56,7 +56,9 @@ import {
   INITIAL_VENUES,
 } from '../services/seedData';
 import {
+  ALL_CAMP_WEEKDAYS,
   calculateCampDayDate,
+  validateCampWeekdays,
   createValidatedAuditLogEntry,
   evaluateDailyCheckin,
   evaluateLectureEntitlement,
@@ -67,6 +69,7 @@ import {
   validateCampNotArchived,
   validateGpsCoordinates,
   validateLectureScheduleSlot,
+  validateCrossCampLectureSlot,
   validateStudentBatchImport,
 } from '../domain/businessRules';
 import {
@@ -81,9 +84,20 @@ import {
   getOfflineAttendanceDraft,
   saveOfflineAttendanceDraft,
 } from '../services/offlineDraftDB';
-import { compareAttendanceDraftRows } from '../domain/attendanceDraftDiff';
+import { compareAttendanceDraftRows, compareAttendanceServerRows, persistedAttendanceRows, unsafeAttendanceDraftConflicts } from '../domain/attendanceDraftDiff';
 import { buildCampAttendanceWorkbook } from '../services/campAttendanceWorkbookExport';
+import { campsAvailableToUser, resolveCampSelection } from '../domain/campSelection';
 import { getSupabaseStatusSummary, isSupabaseConfigured, supabase } from '../lib/supabase';
+import {
+  EMPTY_FINANCE_SNAPSHOT, financePolicyForDay,
+  calculateInstructorFinancialStatement,
+  type FinanceSnapshot, type FinancePaymentMethod,
+} from '../domain/instructorFinance';
+import {
+  fetchFinanceSnapshotInDb, setFinanceRatesInDb,
+  addBackupFinanceSessionInDb, reviewBackupFinanceSessionInDb,
+  postFinancePaymentInDb,
+} from '../services/financeRepository';
 import {
   acknowledgeLectureInDb,
   adminCorrectAttendanceRecordInDb,
@@ -111,10 +125,9 @@ import {
   resolveIssueInDb,
   reviewCheckinExceptionInDb,
   reviewInstructorRequestInDb,
-  saveAttendanceRecordsDraftToDb,
+  saveAttendanceDraftAtomicallyInDb,
   sendInstructorPasswordResetEmail,
   signOutSupabase,
-  submitAttendanceSheetInDb,
   submitDailyCheckinInDb,
   submitInstructorRequestInDb,
   SupabaseAuthContext,
@@ -185,6 +198,9 @@ interface AppContextValue {
   setAdminRoute: (r: AdminRouteId) => void;
   instructorRoute: InstructorRouteId;
   setInstructorRoute: (r: InstructorRouteId) => void;
+  instructorAttendanceLectureId: string;
+  setInstructorAttendanceLectureId: (lectureId: string) => void;
+  openInstructorAttendance: (lectureId: string) => void;
   isArchitectureDrawerOpen: boolean;
   setArchitectureDrawerOpen: (open: boolean) => void;
 
@@ -195,7 +211,10 @@ interface AppContextValue {
   venues: Venue[];
   rooms: Room[];
   camps: Camp[];
+  /** Camps this signed-in user may select. Always filtered by assignment for Instructors. */
+  availableCamps: Camp[];
   activeCamp: Camp | null;
+  selectCamp: (campId: string) => void;
   campInstructorIds: Record<string, string[]>;
   groups: Group[];
   students: Student[];
@@ -205,6 +224,20 @@ interface AppContextValue {
   checkinExceptions: CheckinExceptionItem[];
   attendanceSheets: AttendanceSheet[];
   entitlements: LectureEntitlement[];
+  financeSnapshot: FinanceSnapshot;
+  setCampFinanceRates: (input: {
+    campId: string; effectiveDay: number; backupRate: number; transportRate: number; reason: string;
+  }) => Promise<ActionResult>;
+  addFinanceBackup: (input: {
+    lectureId: string; instructorId: string; reason: string;
+  }) => Promise<ActionResult>;
+  reviewFinanceBackup: (input: {
+    backupId: string; decision: 'approved'|'excluded'; reason: string;
+  }) => Promise<ActionResult>;
+  recordFinancePayment: (input: {
+    instructorId: string; amountEgp: number; method: FinancePaymentMethod;
+    reference: string; note: string;
+  }) => Promise<ActionResult>;
   requests: InstructorRequestItem[];
   notifications: AppNotification[];
   issues: OperationalIssue[];
@@ -234,6 +267,7 @@ interface AppContextValue {
     venueId?: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
   }) => Promise<ActionResult>;
@@ -243,6 +277,7 @@ interface AppContextValue {
     nameAr: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     currentCampDay: number;
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
@@ -274,7 +309,7 @@ interface AppContextValue {
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
-    assignedToActiveCamp: boolean;
+    assignedToActiveCamp?: boolean;
   }) => Promise<ActionResult>;
 
   triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
@@ -479,6 +514,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [entitlements, setEntitlements] = useState<LectureEntitlement[]>(
     isSandboxMode ? INITIAL_ENTITLEMENTS : []
   );
+  // Mock records ONLY for offline Local Sandbox demo — never uploaded.
+  const [financeSnapshot, setFinanceSnapshot] = useState<FinanceSnapshot>(
+    isSandboxMode ? {
+      enabled:true,
+      policies:[{
+        id:'demo-policy-1',campId:'camp-2026-spring',
+        effectiveFromDay:1,backupRateEgp:150,transportPerDayEgp:100,
+        createdAt:'2026-11-13T08:00:00Z',
+      }],
+      backups:[{
+        id:'demo-backup-1',campId:'camp-2026-spring',
+        lectureId:'lec-d4-p1-g1',instructorId:'inst-3',
+        campDay:4,frozenRateEgp:150,status:'approved',
+        reason:'Confirmed onsite supporting instructor',
+        reviewedAt:'2026-11-16T12:00:00Z',
+      }],
+      payments:[{
+        id:'demo-finance-payment-1',campId:'camp-2026-spring',
+        instructorId:'inst-1',amountEgp:250,method:'cash',
+        reference:'SANDBOX-001',note:'Demo partial settlement',
+        createdAt:'2026-11-17T10:00:00Z',
+      }],
+    } : EMPTY_FINANCE_SNAPSHOT
+  );
   const [requests, setRequests] = useState<InstructorRequestItem[]>(
     isSandboxMode ? INITIAL_REQUESTS : []
   );
@@ -507,15 +566,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mfaEnrollment: null,
   });
 
+  const [selectedCampId, setSelectedCampId] = useState<string>('');
   const [adminRoute, setAdminRoute] = useState<AdminRouteId>('dashboard');
   const [instructorRoute, setInstructorRoute] = useState<InstructorRouteId>('dashboard');
+  const [instructorAttendanceLectureId, setInstructorAttendanceLectureId] = useState<string>('');
+  // Navigate with a particular lecture, not just the generic Attendance tab.
+  // This preserves the group-specific roster when the same instructor teaches
+  // more than one lecture in a day.
+  const openInstructorAttendance = (lectureId: string) => {
+    setInstructorAttendanceLectureId(lectureId);
+    setInstructorRoute('attendance');
+  };
   const [isArchitectureDrawerOpen, setArchitectureDrawerOpen] = useState(false);
 
   const loginInFlightRef = useRef<boolean>(false);
   const passwordUpdateInFlightRef = useRef<boolean>(false);
   const pendingRecoveryFlowRef = useRef<boolean>(false);
+  const serverAttendanceBaselinesRef = useRef<Record<string, AttendanceRecordItem[]>>({});
 
   const clearSupabaseOperationalState = useCallback(() => {
+    serverAttendanceBaselinesRef.current = {};
     setSupabaseCtx(null);
     setProfiles([]);
     setAdminAccounts([]);
@@ -523,6 +593,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setVenues([]);
     setRooms([]);
     setCamps([]);
+    setSelectedCampId('');
     setCampInstructorIds({});
     setGroups([]);
     setStudents([]);
@@ -532,6 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCheckinExceptions([]);
     setAttendanceSheets([]);
     setEntitlements([]);
+    setFinanceSnapshot(EMPTY_FINANCE_SNAPSHOT);
     setRequests([]);
     setNotifications([]);
     setIssues([]);
@@ -540,6 +612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs([]);
     setAdminRoute('dashboard');
     setInstructorRoute('dashboard');
+    setInstructorAttendanceLectureId('');
   }, []);
 
   useEffect(() => {
@@ -555,14 +628,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   const t = (en: string, ar: string) => (lang === 'ar' ? ar : en);
 
-  const activeCamp: Camp | null =
-    camps.find((c) => c.status === CampStatus.ACTIVE) || camps[0] || null;
+  const availableCamps = campsAvailableToUser({
+    camps,
+    role: auth.currentProfile.role,
+    instructorId: auth.activeInstructorId,
+    campInstructorIds,
+    lectures,
+    backupSessions: financeSnapshot.backups,
+  });
+  const activeCamp: Camp | null = resolveCampSelection(availableCamps, selectedCampId);
+
+  const selectCamp = (campId: string) => {
+    // UI must not switch into an unrelated Instructor Camp, even while
+    // loading or when a saved selection is stale. Server RLS is authoritative.
+    if (!availableCamps.some(camp => camp.id === campId)) return;
+    if (activeCamp?.id === campId) return;
+    setSelectedCampId(campId);
+    setInstructorAttendanceLectureId('');
+    setAdminRoute('dashboard');
+    setInstructorRoute('dashboard');
+  };
 
   const hydrateFromSnapshot = useCallback(async (ctx: SupabaseAuthContext) => {
     setIsLoadingData(true);
     setDataError(null);
     try {
       const snap = await fetchOperationalSnapshot(ctx);
+      const finance = await fetchFinanceSnapshotInDb();
+      // Capture server state BEFORE IndexedDB overlays. Unsynced drafts keep
+      // their original baseline in IndexedDB so reloads cannot erase conflicts.
+      serverAttendanceBaselinesRef.current = Object.fromEntries(
+        snap.attendanceSheets.map(sheet => [`${sheet.campId}:${sheet.lectureId}`, sheet.records])
+      );
 
       // Only the owning Instructor may overlay their own offline draft.
       // Admin must always see authoritative server rows; never let shared
@@ -576,7 +673,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (localDraft &&
               localDraft.instructorId === ctx.instructor.id &&
               localDraft.campId === sheet.campId &&
-              localDraft.records.length > 0) {
+              localDraft.syncState !== OfflineSyncState.SYNCED) {
             return {
               ...sheet,
               syncState: localDraft.syncState,
@@ -602,6 +699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCheckinExceptions(snap.checkinExceptions);
       setAttendanceSheets(mergedSheets);
       setEntitlements(snap.entitlements);
+      setFinanceSnapshot(finance);
       setRequests(snap.requests);
       setNotifications(snap.notifications);
       setIssues(snap.issues);
@@ -1145,6 +1243,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const signOut = async () => {
+    setSelectedCampId('');
     pendingRecoveryFlowRef.current = false;
     setDataError(deploymentConfigError);
     if (isSupabaseMode) {
@@ -1166,6 +1265,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const switchDemoIdentity = (role: UserRole, instructorId?: string, profileId?: string) => {
     // Demo identity switching is available only in a local development sandbox.
     if (!isSandboxMode) return;
+    setSelectedCampId('');
 
     if (role === UserRole.ADMIN) {
       const adminProf =
@@ -1297,6 +1397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     venueId?: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
   }): Promise<ActionResult> => {
@@ -1308,12 +1409,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { ok: false, error: 'At least one venue is required before creating a camp.' };
     }
 
-    const duration = Math.max(1, input.durationDays || 10);
-    const endDateStr = calculateCampDayDate(input.startDate, duration);
+    const duration = input.durationDays;
+    if (!Number.isInteger(duration) || duration < 1 || duration > 60) {
+      return { ok: false, error: 'Camp duration must be between 1 and 60 teaching days.' };
+    }
+    const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
+    if (calendarError) return { ok: false, error: calendarError };
+    const endDateStr = calculateCampDayDate(input.startDate, duration, input.operatingWeekdays);
 
     if (isSupabaseMode) {
       try {
-        await createDraftCampInDb({
+        const createdCampId = await createDraftCampInDb({
           code: input.code.toUpperCase(),
           nameEn: input.nameEn,
           nameAr: input.nameAr || input.nameEn,
@@ -1321,11 +1427,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           startDate: input.startDate,
           endDate: endDateStr,
           durationDays: duration,
+          operatingWeekdays: input.operatingWeekdays,
           geofenceRadiusMeters: input.geofenceRadiusMeters || 100,
           defaultRateEgp: Math.round(input.defaultRateEgp || 700),
           createdBy: auth.currentProfile.id,
         });
         await refreshOperationalData();
+        setSelectedCampId(createdCampId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Failed creating camp.' };
@@ -1343,6 +1451,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startDate: input.startDate,
       endDate: endDateStr,
       durationDays: duration,
+      operatingWeekdays: [...input.operatingWeekdays],
       currentCampDay: 1,
       settings: {
         campId: id,
@@ -1356,6 +1465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     };
     setCamps((prev) => [newCamp, ...prev]);
+    setSelectedCampId(id);
     appendSandboxAudit(
       'CAMP_CREATED_DRAFT',
       'camps',
@@ -1374,6 +1484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     nameAr: string;
     startDate: string;
     durationDays: number;
+    operatingWeekdays: number[];
     currentCampDay: number;
     geofenceRadiusMeters: number;
     defaultRateEgp: number;
@@ -1383,6 +1494,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!target) return { ok: false, error: 'Camp not found.' };
     const archiveCheck = validateCampNotArchived(target);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
+    if (!Number.isInteger(input.durationDays) || input.durationDays < 1 || input.durationDays > 60 ||
+        !Number.isInteger(input.currentCampDay) || input.currentCampDay < 1 || input.currentCampDay > input.durationDays) {
+      return { ok: false, error: 'Invalid teaching-day count or current camp day.' };
+    }
+    const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
+    if (calendarError) return { ok: false, error: calendarError };
+    const conflictingLecture = lectures.find(l => l.campId === target.id &&
+      (l.campDay > input.durationDays ||
+       l.lectureDate !== calculateCampDayDate(input.startDate, l.campDay, input.operatingWeekdays)));
+    if (conflictingLecture) return { ok: false, error: 'Existing lectures would move to another date. Reconcile schedule first.' };
 
     if (isSupabaseMode) {
       try {
@@ -1394,7 +1515,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const endDate = calculateCampDayDate(input.startDate, input.durationDays);
+    const endDate = calculateCampDayDate(input.startDate, input.durationDays, input.operatingWeekdays);
     setCamps((prev) =>
       prev.map((c) =>
         c.id === input.campId
@@ -1405,6 +1526,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               startDate: input.startDate,
               endDate,
               durationDays: input.durationDays,
+              operatingWeekdays: [...input.operatingWeekdays],
               currentCampDay: input.currentCampDay,
               settings: {
                 ...c.settings,
@@ -1438,6 +1560,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await activateCampInDb(campId);
         await refreshOperationalData();
+        setSelectedCampId(campId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Activation failed.' };
@@ -1447,6 +1570,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCamps((prev) =>
       prev.map((c) => (c.id === campId ? { ...c, status: CampStatus.ACTIVE } : c))
     );
+    setSelectedCampId(campId);
     appendSandboxAudit(
       'CAMP_ACTIVATED',
       'camps',
@@ -1733,7 +1857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     specialization: string;
     defaultLectureRateEgp: number;
     isActive: boolean;
-    assignedToActiveCamp: boolean;
+    assignedToActiveCamp?: boolean;
   }): Promise<ActionResult> => {
     if (
       !auth.isAuthenticated ||
@@ -1815,7 +1939,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : p
       )
     );
-    if (activeCamp) {
+    if (activeCamp && input.assignedToActiveCamp !== undefined) {
       setCampInstructorIds((prev) => {
         const list = prev[activeCamp.id] || [];
         const next = input.assignedToActiveCamp
@@ -2062,7 +2186,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const inst = instructors.find((i) => i.id === input.instructorId) || instructors[0];
-    const lectureDate = calculateCampDayDate(activeCamp.startDate, input.campDay);
+    if (!Number.isInteger(input.campDay) || input.campDay < 1 || input.campDay > activeCamp.durationDays) {
+      return { ok: false, errors: ['Lecture must be on a valid Camp teaching day.'] };
+    }
+    const lectureDate = calculateCampDayDate(activeCamp.startDate, input.campDay, activeCamp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS);
+    const crossCampValidation = validateCrossCampLectureSlot({
+      existingLectures: lectures,
+      candidate: {
+        campId: activeCamp.id, lectureDate,
+        startTime: periodObj.start, endTime: periodObj.end,
+        instructorId: input.instructorId, roomId: input.roomId
+      },
+    });
+    if (!crossCampValidation.valid) {
+      return {ok:false,errors:crossCampValidation.conflicts};
+    }
     const frozenRate = inst?.defaultLectureRateEgp ?? activeCamp.settings.defaultLectureRateEgp;
 
     if (isSupabaseMode) {
@@ -2176,8 +2314,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const archiveCheck = validateCampNotArchived(activeCamp);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
 
-    const target = lectures.find((l) => l.id === input.lectureId);
-    if (!target) return { ok: false, error: 'Lecture not found.' };
+    const target = lectures.find((l) => l.id === input.lectureId && l.campId === activeCamp.id);
+    if (!target) return { ok: false, error: 'Lecture not found in selected Camp.' };
 
     const effectiveInst =
       input.substituteInstructorId !== undefined
@@ -2201,6 +2339,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!validation.valid) {
       return { ok: false, error: validation.conflicts.join(' ') };
+    }
+
+    const crossCampValidation = validateCrossCampLectureSlot({
+      existingLectures: lectures,
+      candidate: {
+        id: target.id, campId: target.campId, lectureDate: target.lectureDate,
+        startTime: target.startTime, endTime: target.endTime,
+        instructorId: effectiveInst, roomId: input.roomId || target.roomId,
+      },
+    });
+    if ((input.status || target.status) !== LectureStatus.CANCELLED &&
+        !crossCampValidation.valid) {
+      return {ok:false,error:crossCampValidation.conflicts.join(' ')};
     }
 
     if (isSupabaseMode) {
@@ -2418,7 +2569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       campId: activeCamp.id,
       instructorId: input.instructorId,
       campDay: activeCamp.currentCampDay,
-      checkinDate: calculateCampDayDate(activeCamp.startDate, activeCamp.currentCampDay),
+      checkinDate: calculateCampDayDate(activeCamp.startDate, activeCamp.currentCampDay, activeCamp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS),
       serverTimestamp: new Date().toISOString(),
       latitude: input.latitude,
       longitude: input.longitude,
@@ -2562,6 +2713,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let syncState = OfflineSyncState.OFFLINE;
     let dbSyncError: string | null = null;
     const idempotencyKey = existingSheet?.idempotencyKey || `idem-${activeCamp.id}-${lectureId}`;
+    const baselineKey = `${activeCamp.id}:${lectureId}`;
+    const previouslyStoredDraft = await getOfflineAttendanceDraft(lectureId);
+    const pendingDraftBelongsToInstructor = Boolean(
+      previouslyStoredDraft && previouslyStoredDraft.campId === activeCamp.id &&
+      previouslyStoredDraft.instructorId === (lec.substituteInstructorId || lec.instructorId) &&
+      previouslyStoredDraft.syncState !== OfflineSyncState.SYNCED
+    );
+    // Preserve the *original* server baseline through multiple offline edits
+    // and reloads. Legacy drafts with no baseline must fail closed unless the
+    // desired rows are already identical to the server.
+    const serverBaselineRecords = pendingDraftBelongsToInstructor
+      ? previouslyStoredDraft?.serverBaselineRecords
+      : serverAttendanceBaselinesRef.current[baselineKey];
 
     await saveOfflineAttendanceDraft({
       lectureId,
@@ -2570,6 +2734,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       idempotencyKey,
       syncState,
       records,
+      serverBaselineRecords,
       updatedAt: new Date().toISOString(),
     });
 
@@ -2584,19 +2749,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!remote || remote.status !== AttendanceSheetStatus.DRAFT) {
           throw new Error('Server draft missing or already finalized. Refresh and review before syncing.');
         }
-        const conflicts = compareAttendanceDraftRows(records, remote.records);
+        // Compare what this editor last saw on the server, NOT the marks
+        // they are trying to change. CAS in Postgres checks this again
+        // under the sheet lock to close the read/write race.
+        const conflicts = unsafeAttendanceDraftConflicts(serverBaselineRecords, records, remote.records);
         if (conflicts.length) {
           throw new Error(
             `Draft conflict for ${conflicts.length} student(s): no server changes were made. ` +
             'Review local and server marks before syncing.'
           );
         }
-        await saveAttendanceRecordsDraftToDb({
-          campId: activeCamp.id,
-          lecture: lec,
+        await saveAttendanceDraftAtomicallyInDb({
           sheetId: remote.id,
+          expected: remote.records,
+          desired: records,
+        });
+        syncState = OfflineSyncState.SYNCED;
+        serverAttendanceBaselinesRef.current[baselineKey] = persistedAttendanceRows(records);
+        await saveOfflineAttendanceDraft({
+          lectureId,
+          campId: activeCamp.id,
+          instructorId: lec.substituteInstructorId || lec.instructorId,
+          idempotencyKey,
+          syncState,
           records,
-          updatedBy: auth.currentProfile.id,
+          serverBaselineRecords: persistedAttendanceRows(records),
+          updatedAt: new Date().toISOString(),
         });
       } catch (err) {
         syncState = OfflineSyncState.FAILED;
@@ -2611,6 +2789,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           idempotencyKey,
           syncState,
           records,
+          serverBaselineRecords,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -2664,8 +2843,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const latest = await fetchOperationalSnapshot(supabaseCtx);
       const camp = latest.camps.find(c => c.id === activeCamp.id);
       if (!camp) return { ok: false, error: 'Selected Camp was not found on the server.' };
-      if (camp.durationDays !== 10) {
-        return { ok: false, error: 'The handover workbook currently supports ten-day camps only.' };
+      if (camp.durationDays < 1 || camp.durationDays > 60) {
+        return { ok: false, error: 'Invalid teaching day count for attendance workbook.' };
       }
       const workbook = buildCampAttendanceWorkbook({
         camp,
@@ -2676,7 +2855,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         studentTransfers: latest.studentTransfers.filter(tr => tr.campId === camp.id),
       });
       const fileName = 'Operation-LMS-' +
-        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-10day-attendance.xlsx';
+        camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + '-' + camp.durationDays + 'day-attendance.xlsx';
       const url = URL.createObjectURL(workbook);
       const link = document.createElement('a');
       link.href = url;
@@ -2833,21 +3012,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!serverSheet || serverSheet.status !== AttendanceSheetStatus.DRAFT) {
           throw new Error('Server attendance sheet was changed or is missing. Refresh and review before finalizing.');
         }
-        const differences = compareAttendanceDraftRows(sheet.records, serverSheet.records);
+        // The submitted marks may legitimately differ from the last server
+        // snapshot when the Instructor edited offline. Reject only if another
+        // writer changed that expected snapshot, not the editor's own changes.
+        const pendingLocalDraft = await getOfflineAttendanceDraft(lectureId);
+        const isOwnedPendingDraft = auth.currentProfile.role === UserRole.INSTRUCTOR &&
+          pendingLocalDraft?.campId === activeCamp.id &&
+          pendingLocalDraft?.instructorId === (lec.substituteInstructorId || lec.instructorId) &&
+          pendingLocalDraft?.syncState !== OfflineSyncState.SYNCED;
+        const serverBaseline = isOwnedPendingDraft
+          ? pendingLocalDraft?.serverBaselineRecords
+          : serverAttendanceBaselinesRef.current[`${activeCamp.id}:${lectureId}`];
+        const differences = unsafeAttendanceDraftConflicts(
+          serverBaseline, sheet.records, serverSheet.records
+        );
         if (differences.length > 0) {
           throw new Error(
-            `Local and server attendance drafts differ for ${differences.length} student(s). ` +
+            `Another editor changed the server draft for ${differences.length} student(s). ` +
             'Final submission is blocked to prevent data loss. Review and reconcile the drafts before submitting.'
           );
         }
-        const persistedSheetId = await saveAttendanceRecordsDraftToDb({
-          campId: activeCamp.id,
-          lecture: lec,
+        await saveAttendanceDraftAtomicallyInDb({
           sheetId: serverSheet.id,
-          records: finalized.finalizedRecords,
-          updatedBy: auth.currentProfile.id,
+          expected: serverSheet.records,
+          desired: finalized.finalizedRecords,
+          submit: true,
         });
-        await submitAttendanceSheetInDb(persistedSheetId);
         await deleteOfflineAttendanceDraft(lectureId);
         await refreshOperationalData();
         return { ok: true };
@@ -3040,6 +3230,135 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       input.note || 'Admin attendance mark correction'
     );
     return { ok: true };
+  };
+
+  // Finance mutations are admin-only. Connected writes are audit-RPC transactions;
+  // never write directly to finance tables or expose payment modifications to Instructor.
+  const mayManageFinance = () =>
+    auth.isAuthenticated && auth.currentProfile.isActive &&
+    auth.currentProfile.role === UserRole.ADMIN && Boolean(activeCamp) &&
+    financeSnapshot.enabled;
+  const financeNoAccess = (): ActionResult => ({
+    ok:false,
+    error:t('Finance is unavailable or the Administrator is not authorized. Migration 0023 must be reviewed and applied on Staging first.',
+      'الحسابات غير متاحة أو الحساب ملوش صلاحية. لازم مراجعة وتطبيق Migration 0023 على Staging الأول.'),
+  });
+  const safeFinanceError = (err:unknown):ActionResult=>({
+    ok:false,error:err instanceof Error ? err.message : 'Finance operation failed.',
+  });
+  const setCampFinanceRates = async (input:{
+    campId:string;effectiveDay:number;backupRate:number;transportRate:number;reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance() || input.campId!==activeCamp?.id) return financeNoAccess();
+    const {campId,effectiveDay,backupRate,transportRate,reason}=input;
+    if(!reason.trim() || reason.trim().length<3 ||
+      ![effectiveDay,backupRate,transportRate].every(Number.isSafeInteger) ||
+      effectiveDay<1 || backupRate<0 || transportRate<0 || backupRate>1000000 || transportRate>1000000)
+      return {ok:false,error:'Valid future day, nonnegative whole-number rates and reason required.'};
+    const existing=financeSnapshot.policies.filter(p=>p.campId===campId);
+    if (existing.length>0 ? effectiveDay<=activeCamp!.currentCampDay || existing.some(p=>p.effectiveFromDay===effectiveDay)
+      : effectiveDay!==1)
+      return {ok:false,error:'Initial rates must start on Day 1; future changes must start after current day.'};
+    if(isSupabaseMode) {
+      try{await setFinanceRatesInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-finance-policy-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,policies:[...prev.policies,{
+      id,campId,effectiveFromDay:effectiveDay,backupRateEgp:backupRate,
+      transportPerDayEgp:transportRate,createdAt:new Date().toISOString(),
+    }]}));
+    appendSandboxAudit('FINANCE_RATE_POLICY_CREATED','camp_finance_rate_policies',id,null,
+      {effectiveDay,backupRate,transportRate},reason.trim());
+    return {ok:true};
+  };
+  const addFinanceBackup = async (input:{
+    lectureId:string;instructorId:string;reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const lec=lectures.find(l=>l.id===input.lectureId && l.campId===activeCamp!.id &&
+      l.status!==LectureStatus.CANCELLED);
+    const instructor=instructors.find(i=>i.id===input.instructorId && i.isActive);
+    const existing=financeSnapshot.backups.some(b=>b.lectureId===input.lectureId && b.instructorId===input.instructorId);
+    const policy=lec&&financePolicyForDay(financeSnapshot.policies,activeCamp!.id,lec.campDay);
+    if(!lec || !instructor || !policy || existing ||
+      (campInstructorIds[activeCamp!.id]||[]).indexOf(instructor.id)===-1 ||
+      input.instructorId===lec.instructorId || input.instructorId===lec.substituteInstructorId ||
+      input.reason.trim().length<3)
+      return {ok:false,error:'Select a different active Camp instructor and lecture; configure rates and add a reason. Duplicates are blocked.'};
+    if(lectures.some(l=>l.id!==lec.id && l.campId===lec.campId && l.campDay===lec.campDay &&
+      l.periodNumber===lec.periodNumber && l.status!==LectureStatus.CANCELLED &&
+      (l.substituteInstructorId||l.instructorId)===instructor.id))
+      return {ok:false,error:'Backup instructor has a primary lecture in this same period.'};
+    if(isSupabaseMode){
+      try{await addBackupFinanceSessionInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-backup-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,backups:[...prev.backups,{
+      id,campId:lec.campId,lectureId:lec.id,instructorId:instructor.id,
+      campDay:lec.campDay,frozenRateEgp:policy.backupRateEgp,status:'pending',
+      reason:input.reason.trim(),reviewedAt:null,
+    }]}));
+    appendSandboxAudit('FINANCE_BACKUP_RECORDED','camp_backup_sessions',id,null,
+      {lectureId:lec.id,instructorId:instructor.id,rate:policy.backupRateEgp},input.reason.trim());
+    return {ok:true};
+  };
+  const reviewFinanceBackup = async (input:{
+    backupId:string;decision:'approved'|'excluded';reason:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const backup=financeSnapshot.backups.find(b=>b.id===input.backupId && b.campId===activeCamp!.id);
+    const lec=backup&&lectures.find(l=>l.id===backup.lectureId);
+    const sheet=backup&&attendanceSheets.find(s=>s.lectureId===backup.lectureId);
+    if(!backup || input.reason.trim().length<3)
+      return {ok:false,error:'Backup record and audit reason are required.'};
+    if(input.decision==='approved' && (lec?.status===LectureStatus.CANCELLED ||
+      (sheet?.status!==AttendanceSheetStatus.SUBMITTED && sheet?.status!==AttendanceSheetStatus.LOCKED)))
+      return {ok:false,error:'Finalized lecture attendance is required before approving backup.'};
+    if(isSupabaseMode){
+      try{await reviewBackupFinanceSessionInDb(input);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    setFinanceSnapshot(prev=>({...prev,backups:prev.backups.map(b=>b.id!==backup.id?b:{
+      ...b,status:input.decision,reviewedAt:new Date().toISOString(),
+    })}));
+    appendSandboxAudit('FINANCE_BACKUP_REVIEWED','camp_backup_sessions',backup.id,
+      {status:backup.status},{status:input.decision},input.reason.trim());
+    return {ok:true};
+  };
+  const recordFinancePayment = async (input:{
+    instructorId:string;amountEgp:number;method:FinancePaymentMethod;reference:string;note:string;
+  }):Promise<ActionResult> => {
+    if(!mayManageFinance()) return financeNoAccess();
+    const inst=instructors.find(i=>i.id===input.instructorId);
+    if(!inst || !Number.isSafeInteger(input.amountEgp) || input.amountEgp===0 ||
+      Math.abs(input.amountEgp)>10000000 || input.note.trim().length<3 ||
+      !(['cash','bank_transfer','instapay','wallet','other'] as string[]).includes(input.method))
+      return {ok:false,error:'Valid instructor, nonzero whole-number amount, payment method and reason required.'};
+    const st=calculateInstructorFinancialStatement({
+      campId:activeCamp!.id,instructor:inst,lectures,entitlements,
+      backups:financeSnapshot.backups,payments:financeSnapshot.payments,
+      policies:financeSnapshot.policies,
+    });
+    if(input.amountEgp>0 && input.amountEgp>st.balanceEgp)
+      return {ok:false,error:'Cannot record payment greater than confirmed unpaid balance.'};
+    if(input.amountEgp<0 && -input.amountEgp>st.paidEgp)
+      return {ok:false,error:'Refund exceeds recorded payments.'};
+    const command={...input,campId:activeCamp!.id};
+    if(isSupabaseMode){
+      try{await postFinancePaymentInDb(command);await refreshOperationalData();return {ok:true};}
+      catch(e){return safeFinanceError(e);}
+    }
+    const id='demo-payment-'+Date.now();
+    setFinanceSnapshot(prev=>({...prev,payments:[...prev.payments,{
+      id,campId:activeCamp!.id,instructorId:inst.id,amountEgp:input.amountEgp,
+      method:input.method,reference:input.reference.trim(),note:input.note.trim(),
+      createdAt:new Date().toISOString(),
+    }]}));
+    appendSandboxAudit(input.amountEgp>0?'FINANCE_PAYMENT_POSTED':'FINANCE_REFUND_POSTED',
+      'camp_finance_payments',id,null,{instructorId:inst.id,amount:input.amountEgp},input.note.trim());
+    return {ok:true};
   };
 
   const reviewLectureEntitlement = async (
@@ -3558,6 +3877,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAdminRoute,
         instructorRoute,
         setInstructorRoute,
+        instructorAttendanceLectureId,
+        setInstructorAttendanceLectureId,
+        openInstructorAttendance,
         isArchitectureDrawerOpen,
         setArchitectureDrawerOpen,
         profiles,
@@ -3566,7 +3888,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         venues,
         rooms,
         camps,
+        availableCamps,
         activeCamp,
+        selectCamp,
         campInstructorIds,
         groups,
         students,
@@ -3576,6 +3900,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkinExceptions,
         attendanceSheets,
         entitlements,
+        financeSnapshot,
+        setCampFinanceRates,
+        addFinanceBackup,
+        reviewFinanceBackup,
+        recordFinancePayment,
         requests,
         notifications,
         issues,

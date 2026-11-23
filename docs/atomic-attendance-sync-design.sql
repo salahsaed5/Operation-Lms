@@ -1,0 +1,18 @@
+-- Proposed Atomic Attendance Sync design (not deployed).
+-- This file intentionally contains no executable DDL until the row-locking
+-- and legacy write paths have been reviewed together.
+--
+-- Required transaction:
+-- 1. Authenticate active assigned instructor (or explicitly authorized admin).
+-- 2. Lock attendance_sheets row FOR UPDATE and check draft status.
+-- 3. Compare exact canonical server rows with client's expected snapshot.
+-- 4. Validate student identity, enrollment day, group, mark, and duplicates.
+-- 5. Apply changes including deletions, and submit_attendance_sheet_tx
+--    inside the SAME database transaction.
+-- 6. Return a conflict error without any partial writes if snapshot differs.
+--
+-- CRITICAL: Existing attendance_records direct upserts must participate in
+-- the same sheet-level lock (or be revoked and replaced with guarded RPCs),
+-- otherwise the compare-and-swap is not atomic.
+--
+-- Do not apply this placeholder as a migration.

@@ -25,7 +25,7 @@ jobs:
         run: bun run lint
 
       - name: Run domain, attendance, security and XLSX export tests
-        run: bun test src/domain src/lib/supabase.test.ts src/services/tinyXlsxWorkbook.test.ts
+        run: bun test src/domain src/lib/supabase.test.ts src/services/tinyXlsxWorkbook.test.ts src/services/campAttendanceWorkbookExport.test.ts
 
       - name: Build production bundle
         run: bun run build

@@ -23,3 +23,37 @@ export function compareAttendanceDraftRows(
   });
   return different;
 }
+
+/** The server persists only marked attendance. Ignore roster placeholders in CAS comparisons. */
+export function persistedAttendanceRows(rows: AttendanceRecordItem[]): AttendanceRecordItem[] {
+  return rows.filter(row => row.mark !== 'unmarked');
+}
+
+/** Compare the last server state the editor saw against the latest server state. */
+export function compareAttendanceServerRows(
+  expectedServer: AttendanceRecordItem[],
+  actualServer: AttendanceRecordItem[]
+): string[] {
+  return compareAttendanceDraftRows(
+    persistedAttendanceRows(expectedServer),
+    persistedAttendanceRows(actualServer)
+  );
+}
+
+/**
+ * Return genuine lost-update conflicts, not intentional changes made by the
+ * current editor. If their desired state already matches the live server,
+ * accepting it is a safe idempotent no-op. Without an expected baseline
+ * (legacy Offline drafts), fail closed whenever local and server differ.
+ */
+export function unsafeAttendanceDraftConflicts(
+  expectedServer: AttendanceRecordItem[] | undefined,
+  desiredRows: AttendanceRecordItem[],
+  actualServer: AttendanceRecordItem[]
+): string[] {
+  const concurrentChanges = compareAttendanceServerRows(expectedServer ?? desiredRows, actualServer);
+  if (concurrentChanges.length === 0) return [];
+  return compareAttendanceServerRows(desiredRows, actualServer).length === 0
+    ? []
+    : concurrentChanges;
+}

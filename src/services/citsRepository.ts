@@ -574,6 +574,7 @@ export async function fetchOperationalSnapshot(
     startDate: c.start_date,
     endDate: c.end_date,
     durationDays: c.duration_days,
+    operatingWeekdays: c.operating_weekdays ?? [0,1,2,3,4,5,6],
     currentCampDay: c.current_camp_day,
     settings: settingsByCampId.get(c.id) || {
       campId: c.id,
@@ -1049,6 +1050,7 @@ export async function createDraftCampInDb(input: {
   startDate: string;
   endDate: string;
   durationDays: number;
+  operatingWeekdays: number[];
   geofenceRadiusMeters: number;
   defaultRateEgp: number;
   createdBy: string;
@@ -1065,6 +1067,7 @@ export async function createDraftCampInDb(input: {
       start_date: input.startDate,
       end_date: input.endDate,
       duration_days: input.durationDays,
+      operating_weekdays: input.operatingWeekdays,
       current_camp_day: 1,
       created_by: input.createdBy,
     })
@@ -1094,13 +1097,14 @@ export async function updateCampInDb(input: {
   nameAr: string;
   startDate: string;
   durationDays: number;
+  operatingWeekdays: number[];
   currentCampDay: number;
   geofenceRadiusMeters: number;
   defaultRateEgp: number;
   maxInstructorGroupsPerDay: number;
 }): Promise<void> {
   const client = getClient();
-  const endDate = calculateCampDayDate(input.startDate, input.durationDays);
+  const endDate = calculateCampDayDate(input.startDate, input.durationDays, input.operatingWeekdays);
 
   const { error: campErr } = await client
     .from('camps')
@@ -1110,6 +1114,7 @@ export async function updateCampInDb(input: {
       start_date: input.startDate,
       end_date: endDate,
       duration_days: input.durationDays,
+      operating_weekdays: input.operatingWeekdays,
       current_camp_day: input.currentCampDay,
     })
     .eq('id', input.campId);
@@ -1703,75 +1708,29 @@ export async function reviewCheckinExceptionInDb(input: {
   if (error) throw new Error(error.message);
 }
 
-export async function saveAttendanceRecordsDraftToDb(input: {
-  campId: string;
-  lecture: Lecture;
-  sheetId?: string;
-  records: AttendanceRecordItem[];
-  updatedBy: string;
-}): Promise<string> {
-  const client = getClient();
-  let targetSheetId = input.sheetId;
-
-  if (!targetSheetId) {
-    const activeInstructor =
-      input.lecture.substituteInstructorId || input.lecture.instructorId;
-    const { data: existingSheet } = await client
-      .from('attendance_sheets')
-      .select('id')
-      .eq('lecture_id', input.lecture.id)
-      .maybeSingle();
-
-    if (existingSheet) {
-      targetSheetId = existingSheet.id;
-    } else {
-      const { data: createdSheet, error: sheetErr } = await client
-        .from('attendance_sheets')
-        .insert({
-          camp_id: input.campId,
-          lecture_id: input.lecture.id,
-          instructor_id: activeInstructor,
-          status: 'draft',
-          sync_state: 'Offline',
-          idempotency_key: `idem-${input.campId}-${input.lecture.id}`,
-        })
-        .select('id')
-        .single();
-      if (sheetErr || !createdSheet) {
-        throw new Error(sheetErr?.message || 'Unable to initialize attendance sheet.');
-      }
-      targetSheetId = createdSheet.id;
-    }
-  }
-
-  const markedRows = input.records.filter((r) => r.mark !== 'unmarked');
-  if (markedRows.length > 0) {
-    const payload = markedRows.map((r) => ({
-      camp_id: input.campId,
-      attendance_sheet_id: targetSheetId!,
-      lecture_id: input.lecture.id,
-      camp_day: input.lecture.campDay,
-      period_number: input.lecture.periodNumber,
-      student_id: r.studentId,
-      origin_group_id: r.originGroupId,
-      attended_group_id: r.attendedGroupId,
-      is_cross_group: r.isCrossGroup,
-      mark: r.mark as DbAttendanceMark,
-      note: r.note || null,
-      updated_by: input.updatedBy,
+/** Server-serialized draft CAS: no direct attendance-record upsert on this path. */
+export async function saveAttendanceDraftAtomicallyInDb(input: {
+  sheetId: string;
+  expected: AttendanceRecordItem[];
+  desired: AttendanceRecordItem[];
+  submit?: boolean;
+}): Promise<void> {
+  const toPayload = (rows: AttendanceRecordItem[]) =>
+    rows.filter(r => r.mark !== 'unmarked').map(r => ({
+      studentId: r.studentId,
+      mark: r.mark,
+      originGroupId: r.originGroupId,
+      attendedGroupId: r.attendedGroupId,
+      isCrossGroup: r.isCrossGroup,
+      note: r.note || '',
     }));
-
-    const { error: recErr } = await client
-      .from('attendance_records')
-      .upsert(payload, { onConflict: 'attendance_sheet_id,student_id' });
-
-    if (recErr) throw new Error(recErr.message);
-  }
-
-  if (!targetSheetId) {
-    throw new Error('Unable to resolve attendance sheet ID.');
-  }
-  return targetSheetId;
+  const { error } = await getClient().rpc('save_attendance_draft_cas_tx', {
+    p_sheet_id: input.sheetId,
+    p_expected: toPayload(input.expected),
+    p_desired: toPayload(input.desired),
+    p_submit: input.submit || false,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function submitAttendanceSheetInDb(sheetId: string): Promise<void> {

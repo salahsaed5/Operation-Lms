@@ -11,6 +11,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { calculateCampDayDate } from '../../domain/businessRules';
 import {
   AttendanceMark,
   AttendanceSheetStatus,
@@ -50,16 +51,20 @@ export const AdminDashboardView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sheetFilter, setSheetFilter] = useState<SheetFilter>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const selectedTeachingDate = activeCamp
+    ? calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays)
+    : null;
 
   const campStudents = activeCamp
     ? students.filter((s) => s.campId === activeCamp.id && s.isActive)
     : [];
   const campGroups = activeCamp ? groups.filter((g) => g.campId === activeCamp.id) : [];
   const assignedIds = activeCamp ? campInstructorIds[activeCamp.id] : undefined;
-  const campInstructors =
-    assignedIds && assignedIds.length > 0
-      ? instructors.filter((i) => assignedIds.includes(i.id))
-      : instructors;
+  // A Camp with no assigned instructors must show zero, not instructors
+  // from other simultaneously active Camps.
+  const campInstructors = instructors.filter(i =>
+    (assignedIds || []).includes(i.id)
+  );
 
   const todayLectures = useMemo(() => {
     if (!activeCamp) return [];
@@ -240,7 +245,7 @@ export const AdminDashboardView: React.FC = () => {
               {t(
                 `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
                 `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
-              )}
+              )} · {selectedTeachingDate}
             </span>
           </>
         }
@@ -253,7 +258,7 @@ export const AdminDashboardView: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('Search topic or group...', 'ابحث بالعنوان أو المجموعة...')}
-                aria-label={t('Search today sessions', 'بحث في جلسات اليوم')}
+                aria-label={t('Search selected Camp day sessions', 'البحث في جلسات يوم الدراسة المحدد')}
                 className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
               />
             </div>
@@ -334,7 +339,7 @@ export const AdminDashboardView: React.FC = () => {
           <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-                {t('Today Sessions', 'جلسات اليوم')}
+                {t('Selected Day Sessions', 'جلسات يوم الدراسة المحدد')}
               </p>
               <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {todayLectures.length}
@@ -504,7 +509,7 @@ export const AdminDashboardView: React.FC = () => {
               </div>
               <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
                 {todayLectures.length === 0
-                  ? t('No sessions scheduled for today', 'لا توجد جلسات مجدولة لليوم')
+                  ? t('No lectures scheduled for selected teaching day', 'لا توجد محاضرات مجدولة ليوم الدراسة المحدد')
                   : t('No sessions match your current search or filter', 'لا توجد جلسات مطابقة لبحثك')}
               </p>
               {(searchQuery.trim() !== '' || sheetFilter !== 'all') && (
@@ -756,7 +761,7 @@ export const AdminDashboardView: React.FC = () => {
                       <p className="text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5 truncate">
                         {chk
                           ? `${new Date(chk.serverTimestamp).toISOString().slice(11, 16)} UTC · ${chk.distanceFromVenueMeters}m · ${chk.selfieSizeKb}KB`
-                          : t('No GPS/Selfie check-in recorded yet today', 'لم يسجل حضور اليوم بعد')}
+                          : t('No GPS/Selfie check-in for selected teaching day', 'لا يوجد تسجيل وصول ليوم الدراسة المحدد')}
                       </p>
                     </div>
 

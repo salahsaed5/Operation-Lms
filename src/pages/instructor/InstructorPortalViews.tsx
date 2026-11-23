@@ -14,9 +14,11 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
+import { calculateInstructorFinancialStatement } from '../../domain/instructorFinance';
+import { calculateCampDayDate, calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
+import { studentsForSelectedLecture } from '../../domain/instructorLectureRoster';
 import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
@@ -64,6 +66,15 @@ function instructorCheckinBadge(
   }
 }
 
+/** Compare all teaching dates in the Camp's Cairo timezone, never browser local time. */
+const cairoTodayIso = (): string => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit',
+  }).formatToParts(new Date());
+  const part = (type:string) => parts.find(p=>p.type===type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+
 export const InstructorDashboardView: React.FC = () => {
   const {
     activeCamp,
@@ -75,6 +86,7 @@ export const InstructorDashboardView: React.FC = () => {
     checkins,
     attendanceSheets,
     setInstructorRoute,
+    openInstructorAttendance,
     t,
   } = useApp();
 
@@ -135,6 +147,11 @@ export const InstructorDashboardView: React.FC = () => {
   const checkinDisplay = myCheckinToday
     ? instructorCheckinBadge(myCheckinToday.status, t)
     : null;
+  const scheduledTeachingDate = calculateCampDayDate(
+    activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays
+  );
+  const isOffDay = (activeCamp.operatingWeekdays?.length ?? 7) < 7 &&
+    scheduledTeachingDate !== cairoTodayIso();
 
   return (
     <div className="space-y-5">
@@ -150,7 +167,7 @@ export const InstructorDashboardView: React.FC = () => {
               {t(
                 `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
                 `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
-              )}
+              )} · {scheduledTeachingDate}
             </span>
           </>
         }
@@ -166,6 +183,10 @@ export const InstructorDashboardView: React.FC = () => {
               </span>
               {checkinDisplay ? (
                 <StatusBadge tone={checkinDisplay.tone}>{checkinDisplay.label}</StatusBadge>
+              ) : isOffDay ? (
+                <StatusBadge tone="neutral">
+                  {t('Not a teaching date', 'مش يوم دراسة')}
+                </StatusBadge>
               ) : (
                 <StatusBadge tone="warning">
                   {t('Action Required', 'مطلوب قبل المحاضرة')}
@@ -179,6 +200,9 @@ export const InstructorDashboardView: React.FC = () => {
             >
               {myCheckinToday
                 ? checkinDisplay?.label
+                : isOffDay
+                ? t(`Check-in opens on the scheduled teaching date: ${scheduledTeachingDate}`,
+                    `تسجيل الوصول هيفتح يوم الدراسة ${scheduledTeachingDate}`)
                 : t(
                     'Complete your GPS & selfie venue check-in before starting',
                     'أكمل تسجيل الوصول بالموقع وصورة التحقق قبل بدء المحاضرة'
@@ -198,7 +222,8 @@ export const InstructorDashboardView: React.FC = () => {
           <button
             type="button"
             onClick={() => setInstructorRoute('checkin')}
-            className={`${BTN_PRIMARY} min-h-[44px] px-4`}
+            disabled={isOffDay && !myCheckinToday}
+            className={`${BTN_PRIMARY} min-h-[44px] px-4 disabled:opacity-50`}
           >
             <MapPinCheck className="w-4 h-4" />
             <span>
@@ -236,7 +261,7 @@ export const InstructorDashboardView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => setInstructorRoute('attendance')}
+              onClick={() => openInstructorAttendance(nextLecture.id)}
               className={`${BTN_SECONDARY} min-h-[44px] px-4`}
             >
               <ClipboardCheck className="w-4 h-4 text-blue-600" />
@@ -257,7 +282,7 @@ export const InstructorDashboardView: React.FC = () => {
               id="inst-daily-schedule"
               className="text-sm font-bold text-slate-900 dark:text-white"
             >
-              {t('3. Today’s Schedule', '3. جدولي اليومي')}
+              {t('3. Current Teaching Day Schedule', '3. جدول يوم الدراسة المحدد')} · {scheduledTeachingDate}
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
               {myLecturesToday.length} {t('Lectures', 'محاضرات')}
@@ -303,7 +328,7 @@ export const InstructorDashboardView: React.FC = () => {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setInstructorRoute('attendance')}
+                          onClick={() => openInstructorAttendance(lec.id)}
                           className={`${BTN_PRIMARY} min-h-[40px]`}
                         >
                           {t('Take Attendance', 'تسجيل الحضور')}
@@ -355,7 +380,7 @@ export const InstructorDashboardView: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setInstructorRoute('attendance')}
+                  onClick={() => openInstructorAttendance(draft.lectureId)}
                   className={`${BTN_PRIMARY} min-h-[40px]`}
                 >
                   {t('Review', 'مراجعة')}
@@ -459,7 +484,7 @@ export const InstructorScheduleView: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400">
                       {t(`Day ${lec.campDay}`, `اليوم ${lec.campDay}`)} · P{lec.periodNumber} (
-                      {lec.startTime}–{lec.endTime}) · {room?.code}
+                      {lec.startTime}–{lec.endTime}) · {lec.lectureDate} · {room?.code}
                     </span>
                     {isSubstitute && (
                       <StatusBadge tone="info">{t('Substitute', 'محاضر بديل')}</StatusBadge>
@@ -504,6 +529,11 @@ export const InstructorCheckinView: React.FC = () => {
     ? venues.find((v) => v.id === activeCamp.venueId) || venues[0]
     : venues[0];
 
+  const scheduledTeachingDate = activeCamp
+    ? calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays)
+    : '';
+  const isOffDay = Boolean(activeCamp && (activeCamp.operatingWeekdays?.length ?? 7) < 7 &&
+    scheduledTeachingDate !== cairoTodayIso());
   const existingCheckin =
     activeCamp && currentInstructor
       ? checkins.find(
@@ -766,6 +796,12 @@ export const InstructorCheckinView: React.FC = () => {
 
   const handleCheckin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffDay) {
+      setResultMsg({ok:false,text:t(
+        `Check-in is only allowed on your scheduled teaching date: ${scheduledTeachingDate}`,
+        `تسجيل الوصول متاح يوم الدراسة المحدد فقط: ${scheduledTeachingDate}`)});
+      return;
+    }
     if (!gpsSnapshot || !selfieBlob || !maySubmitGps || Date.now() - gpsSnapshot.at > 30_000) {
       setResultMsg({ ok: false, text: t(
         'Capture a new selfie with a fresh, accurate GPS reading first.',
@@ -854,6 +890,12 @@ export const InstructorCheckinView: React.FC = () => {
 
       <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
 
+        {isOffDay && (
+          <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm">
+            {t(`Check-in is closed until teaching date ${scheduledTeachingDate}.`,
+               `تسجيل الوصول مقفول لحد يوم الدراسة ${scheduledTeachingDate}.`)}
+          </div>
+        )}
         <section className={`${SURFACE_SUBTLE} p-4 space-y-2`}>
           <p className="text-sm font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -1036,7 +1078,7 @@ export const InstructorCheckinView: React.FC = () => {
 
         <button
           type="submit"
-          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || !maySubmitGps || Boolean(existingCheckin) || activeCamp.status !== CampStatus.ACTIVE}
+          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || !maySubmitGps || Boolean(existingCheckin) || isOffDay || activeCamp.status !== CampStatus.ACTIVE}
           className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           <MapPinCheck className="w-4 h-4" />
@@ -1053,6 +1095,25 @@ export const InstructorCheckinView: React.FC = () => {
   );
 };
 
+/** Highlight the actual match in a search result without interpreting user input as HTML or regex. */
+function highlightAttendanceSearchMatch(value: string, query: string): React.ReactNode {
+  const term = query.trim();
+  if (!term) return value;
+  const index = value.toLocaleLowerCase().indexOf(term.toLocaleLowerCase());
+  if (index < 0) return value;
+  return (
+    <>
+      {value.slice(0, index)}
+      <mark className="rounded-sm bg-amber-200 dark:bg-amber-500/40 text-inherit px-0.5">
+        {value.slice(index, index + term.length)}
+      </mark>
+      {value.slice(index + term.length)}
+    </>
+  );
+}
+
+type AttendanceRosterFilter = 'all' | 'unmarked' | AttendanceMark;
+
 export const InstructorAttendanceView: React.FC = () => {
   const {
     activeCamp,
@@ -1064,6 +1125,8 @@ export const InstructorAttendanceView: React.FC = () => {
     groups,
     attendanceSheets,
     isSupabaseMode,
+    instructorAttendanceLectureId: selectedLectureId,
+    setInstructorAttendanceLectureId: setSelectedLectureId,
     saveAttendanceDraft,
     enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
@@ -1084,11 +1147,12 @@ export const InstructorAttendanceView: React.FC = () => {
         )
       : [];
 
-  const [selectedLectureId, setSelectedLectureId] = useState<string>('');
+  // One query drives both the visible roster and the scoped server-side
+  // visitor lookup. No second input or separate student-selection step.
   const [studentSearch, setStudentSearch] = useState('');
-  const [crossGroupStudentId, setCrossGroupStudentId] = useState<string>('');
-  const [crossGroupSearch, setCrossGroupSearch] = useState('');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<AttendanceRosterFilter>('all');
   const [secureVisitingMatches, setSecureVisitingMatches] = useState<VisitingStudentLookupResult[]>([]);
+  const [lastCompletedVisitQuery, setLastCompletedVisitQuery] = useState('');
   const [visitingLookupError, setVisitingLookupError] = useState<string | null>(null);
   const [visitingSearchBusy, setVisitingSearchBusy] = useState(false);
   const [visitingSourceGroupCodes, setVisitingSourceGroupCodes] = useState<Record<string,string>>({});
@@ -1117,30 +1181,35 @@ export const InstructorAttendanceView: React.FC = () => {
   // Use a narrowly authorized, lecture-scoped RPC for visitors; never widen RLS.
   useEffect(() => {
     let cancelled = false;
-    const term = crossGroupSearch.trim();
+    const term = studentSearch.trim();
     if (!isSupabaseMode || !selectedLectureId || term.length < 2) {
       setSecureVisitingMatches([]);
       setVisitingLookupError(null);
       setVisitingSearchBusy(false);
+      setLastCompletedVisitQuery('');
       return;
     }
+    setVisitingSearchBusy(true);
     const timer = window.setTimeout(async () => {
-      setVisitingSearchBusy(true);
       setVisitingLookupError(null);
       try {
         const rows = await searchVisitingStudentsInDb({ lectureId: selectedLectureId, query: term });
-        if (!cancelled) setSecureVisitingMatches(rows);
+        if (!cancelled) {
+          setSecureVisitingMatches(rows);
+          setLastCompletedVisitQuery(term);
+        }
       } catch (err) {
         if (!cancelled) {
           setSecureVisitingMatches([]);
+          setLastCompletedVisitQuery('');
           setVisitingLookupError(err instanceof Error ? err.message : 'Secure lookup is not available.');
         }
       } finally {
         if (!cancelled) setVisitingSearchBusy(false);
       }
-    }, 350);
+    }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [isSupabaseMode, selectedLectureId, crossGroupSearch]);
+  }, [isSupabaseMode, selectedLectureId, studentSearch]);
 
   if (!activeCamp || !currentInstructor) {
     return (
@@ -1157,17 +1226,13 @@ export const InstructorAttendanceView: React.FC = () => {
   const baseRecords: AttendanceRecordItem[] = (() => {
     if (!selectedLecture) return [];
     const sheetRecords = existingSheet?.records || [];
-    const groupRoster = students.filter(
-      (s) =>
-        s.campId === activeCamp.id &&
-        s.isActive &&
-        studentEligibleForCampDay(s, selectedLecture.campDay) &&
-        resolveStudentOriginGroupForDay({
-          student: s,
-          transfers: studentTransfers,
-          campDay: selectedLecture.campDay,
-        }) === selectedLecture.groupId
-    );
+    // Never reuse another lecture's home roster: P2 / GRP-02 must only
+    // show GRP-02 students, even if the same Instructor also teaches P1.
+    const groupRoster = studentsForSelectedLecture({
+      lecture: selectedLecture,
+      students,
+      transfers: studentTransfers,
+    });
     const existingIds = new Set(sheetRecords.map((r) => r.studentId));
     const missingFromRoster: AttendanceRecordItem[] = groupRoster
       .filter((stu) => !existingIds.has(stu.id))
@@ -1190,15 +1255,36 @@ export const InstructorAttendanceView: React.FC = () => {
     return [...sheetRecords, ...missingFromRoster];
   })();
 
-  const filteredRecords = useMemo(() => {
-    const q = studentSearch.trim().toLowerCase();
+  // Status filters never mutate the underlying records or widen visitor RLS.
+  // In particular, 'unmarked' is not 'absent' until authorized final submit.
+  const nameMatchedRecords = useMemo(() => {
+    const q = studentSearch.trim().toLocaleLowerCase();
     if (!q) return baseRecords;
-    return baseRecords.filter(
-      (r) =>
-        r.studentName.toLowerCase().includes(q) ||
-        r.studentCode.toLowerCase().includes(q)
+    return baseRecords.filter((r) =>
+      r.studentName.toLocaleLowerCase().includes(q) ||
+      r.studentCode.toLocaleLowerCase().includes(q)
     );
   }, [baseRecords, studentSearch]);
+  const filteredRecords = useMemo(
+    () => nameMatchedRecords.filter(r =>
+      attendanceStatusFilter === 'all' || r.mark === attendanceStatusFilter
+    ),
+    [nameMatchedRecords, attendanceStatusFilter]
+  );
+  const attendanceFilterOptions: Array<{
+    value: AttendanceRosterFilter; en: string; ar: string; activeClass: string;
+  }> = [
+    { value: 'all', en: 'All', ar: 'الكل', activeClass: 'bg-slate-800 text-white border-slate-800' },
+    { value: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', activeClass: 'bg-emerald-600 text-white border-emerald-600' },
+    { value: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', activeClass: 'bg-amber-600 text-white border-amber-600' },
+    { value: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', activeClass: 'bg-red-600 text-white border-red-600' },
+    { value: AttendanceMark.EXCUSED, en: 'Excused', ar: 'بعذر', activeClass: 'bg-violet-600 text-white border-violet-600' },
+    { value: 'unmarked', en: 'Unmarked', ar: 'لم يُحدد', activeClass: 'bg-slate-600 text-white border-slate-600' },
+  ];
+  const attendanceFilterCount = (status: AttendanceRosterFilter) =>
+    status === 'all'
+      ? nameMatchedRecords.length
+      : nameMatchedRecords.filter(r => r.mark === status).length;
 
   const isLockedOrSubmitted =
     existingSheet?.status === AttendanceSheetStatus.SUBMITTED ||
@@ -1236,9 +1322,9 @@ export const InstructorAttendanceView: React.FC = () => {
     ? secureVisitingMatches.filter(stu =>
         !rosterStudentIds.has(stu.studentId) &&
         stu.homeGroupId !== selectedLecture?.groupId)
-    : crossGroupSearch.trim().length >= 2
+    : studentSearch.trim().length >= 2
       ? eligibleCrossGroupStudents.filter(stu => {
-          const q = crossGroupSearch.trim().toLocaleLowerCase();
+          const q = studentSearch.trim().toLocaleLowerCase();
           const home = groups.find(g => g.id === stu.groupId);
           return stu.fullName.toLocaleLowerCase().includes(q) ||
             stu.studentCode.toLocaleLowerCase().includes(q) ||
@@ -1255,8 +1341,7 @@ export const InstructorAttendanceView: React.FC = () => {
         })
       : [];
 
-  const selectedVisitingStudent = visitingMatches.find(s => s.studentId === crossGroupStudentId);
-  const visitingGroupName = (studentId: string) => {
+   const visitingGroupName = (studentId: string) => {
     const match = visitingMatches.find(s => s.studentId === studentId);
     if (match) return match.homeGroupCode;
     if (visitingSourceGroupCodes[studentId]) return visitingSourceGroupCodes[studentId];
@@ -1288,11 +1373,11 @@ export const InstructorAttendanceView: React.FC = () => {
     }
   };
 
-  const handleAddCrossGroupStudent = async () => {
-    if (!crossGroupStudentId || !selectedLecture || isLockedOrSubmitted || isBusy) return;
+  const handleAddCrossGroupStudent = async (selectedStudent: VisitingStudentLookupResult) => {
+    if (!selectedLecture || isLockedOrSubmitted || isBusy) return;
     // Verify eligibility again at click time; no duplicate roster row or
     // unrecognized/off-camp student can be added via the UI.
-    const stu = visitingMatches.find((s) => s.studentId === crossGroupStudentId);
+    const stu = visitingMatches.find((s) => s.studentId === selectedStudent.studentId);
     if (!stu) {
       setFeedback({ ok: false, text: t('The student is no longer eligible as a visitor.', 'الطالب غير متاح كزائر في هذه المحاضرة.') });
       return;
@@ -1342,8 +1427,9 @@ export const InstructorAttendanceView: React.FC = () => {
     setIsBusy(false);
     if (res.ok) {
       setVisitingSourceGroupCodes(prev => ({ ...prev, [stu.studentId]: stu.homeGroupCode }));
-      setCrossGroupStudentId('');
-      setCrossGroupSearch('');
+      setStudentSearch('');
+      setSecureVisitingMatches([]);
+      setLastCompletedVisitQuery('');
       setFeedback({
         ok: true,
         text: t(
@@ -1445,31 +1531,135 @@ export const InstructorAttendanceView: React.FC = () => {
     }
   };
 
+  // Reuse exactly the same attendance controls for search results and the
+  // full roster; both write through the existing safe Draft/CAS workflow.
+  const renderAttendanceRows = (records: AttendanceRecordItem[], searchTerm: string) => (
+    <div className="space-y-2">
+      {records.map((rec) => (
+                <div
+                  key={rec.studentId}
+                  role="group"
+                  aria-label={t(`Attendance for ${rec.studentName}`, `حضور ${rec.studentName}`)}
+                  className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-950/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="grid grid-cols-3 gap-2 w-full md:w-[280px] shrink-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">
+                        {highlightAttendanceSearchMatch(rec.studentName, searchTerm)}
+                      </p>
+                      {rec.isCrossGroup ? (
+                        <StatusBadge tone="info">
+                          {t('Visitor from', 'زائر من')} {visitingGroupName(rec.studentId)}
+                        </StatusBadge>
+                      ) : (
+                        <span className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                          {t('In this group', 'في الجروب ده')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-mono tabular-nums text-slate-500 mt-0.5">
+                      {highlightAttendanceSearchMatch(rec.studentCode, searchTerm)} ·{' '}
+                      {rec.mark === 'unmarked'
+                        ? t('Unmarked', 'غير محدد')
+                        : rec.mark === AttendanceMark.PRESENT
+                        ? t('Present', 'حاضر')
+                        : rec.mark === AttendanceMark.LATE
+                        ? t('Late', 'متأخر')
+                        : rec.mark === AttendanceMark.EXCUSED
+                        ? t('Excused', 'بعذر')
+                        : t('Absent', 'غائب')}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
+                      aria-pressed={rec.mark === AttendanceMark.PRESENT}
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.PRESENT
+                          ? 'bg-emerald-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Present', 'حاضر')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
+                      aria-pressed={rec.mark === AttendanceMark.LATE}
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.LATE
+                          ? 'bg-amber-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Late', 'متأخر')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLockedOrSubmitted}
+                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
+                      aria-pressed={rec.mark === AttendanceMark.ABSENT}
+                      className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
+                        rec.mark === AttendanceMark.ABSENT
+                          ? 'bg-red-600 text-white'
+                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {t('Absent', 'غائب')}
+                    </button>
+                  </div>
+                </div>
+
+      ))}
+    </div>
+  );
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={t('Lecture Attendance', 'تسجيل حضور المحاضرة')}
         subtitle={t(
-          'Mark student attendance offline or online. Unmarked students become absent upon final submission.',
-          'سجل حضور الطلاب في أي وقت؛ يتحول الطلاب غير المحددين إلى غياب عند الاعتماد النهائي فقط.'
+          'Search, filter and mark attendance for the selected lecture.',
+          'بحث وفلترة وتسجيل حضور طلاب المحاضرة المختارة.'
         )}
         actions={
-          <select
-            aria-label={t('Select lecture for attendance', 'اختر المحاضرة')}
-            value={selectedLectureId}
-            onChange={(e) => {
-              setSelectedLectureId(e.target.value);
-              setFeedback(null);
-              setComparisonRows(null);
-            }}
-            className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold max-w-full"
-          >
-            {myLectures.map((l) => (
-              <option key={l.id} value={l.id}>
-                D{l.campDay} P{l.periodNumber} ({l.startTime}) · {l.topic}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-1.5 w-full sm:w-[380px]">
+            <label
+              htmlFor="instructor-attendance-lecture"
+              className="text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              {t('Lecture & group', 'المحاضرة والجروب')}
+            </label>
+            <select
+              id="instructor-attendance-lecture"
+              aria-label={t('Select lecture and group for attendance', 'اختر المحاضرة والجروب للحضور')}
+              value={selectedLectureId}
+              onChange={(e) => {
+                setSelectedLectureId(e.target.value);
+                // Search and visiting-student selections belong to the old
+                // lecture/group. Clear them before displaying the next roster.
+                setStudentSearch('');
+                setAttendanceStatusFilter('all');
+                setSecureVisitingMatches([]);
+                setLastCompletedVisitQuery('');
+                setVisitingLookupError(null);
+                setShowMidcampEnrollForm(false);
+                setFeedback(null);
+                setComparisonRows(null);
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold max-w-full focus:ring-2 focus:ring-blue-500"
+            >
+              {myLectures.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {groups.find(g => g.id === l.groupId)?.code || t('Unknown group', 'جروب غير معروف')} · D{l.campDay} ({l.lectureDate}) P{l.periodNumber} ({l.startTime}) · {l.topic}
+                </option>
+              ))}
+            </select>
+          </div>
         }
       />
 
@@ -1482,134 +1672,250 @@ export const InstructorAttendanceView: React.FC = () => {
       )}
 
       {selectedLecture ? (
-        <div className={`${SURFACE_CARD} p-5 space-y-4`}>
-          {/* Sheet Status Header */}
-          <div className={`${SURFACE_SUBTLE} p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs`}>
-            <div className="flex items-center gap-2">
-              {existingSheet?.syncState === OfflineSyncState.SYNCED ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <WifiOff className="w-4 h-4 text-amber-600" />
-              )}
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {isLockedOrSubmitted
-                  ? t('Submitted & Synced', 'معتمد ومتزامن')
-                  : t('Draft — Not Yet Finalized', 'مسودة — لم تُعتمد نهائيًا')}
-              </span>
+        <div className="space-y-5">
+          {/* Compact lecture summary — never duplicate the draft status panel. */}
+          <section aria-label={t('Selected lecture summary', 'ملخص المحاضرة المختارة')}
+            className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
+          >
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="min-w-0 space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  {t('Selected lecture', 'المحاضرة المختارة')}
+                </p>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
+                  {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
+                  {' · '}{selectedLecture.topic}
+                </h2>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <span>D{selectedLecture.campDay} · {selectedLecture.lectureDate} · P{selectedLecture.periodNumber}</span>
+                  <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
+                  <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
+                    lecture: selectedLecture, students, transfers: studentTransfers,
+                  }).length}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap md:flex-col md:items-end gap-2 shrink-0">
+                <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
+                  {isLockedOrSubmitted
+                    ? t('Submitted · Locked', 'معتمد · مغلق')
+                    : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
+                </StatusBadge>
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  {existingSheet?.syncState === OfflineSyncState.SYNCED
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
+                  {existingSheet?.syncState === OfflineSyncState.SYNCED
+                    ? t('Synced', 'متزامن')
+                    : t('Local draft / pending sync', 'مسودة محلية / انتظار المزامنة')}
+                </span>
+              </div>
             </div>
-            <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
-              {isLockedOrSubmitted ? t('Locked', 'مغلق') : t('Editable Draft', 'قابل للتعديل')}
-            </StatusBadge>
-          </div>
+          </section>
 
-          {/* Search Roster + Visiting Cross-Group Student */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          {/* Single live search: home roster appears immediately below; the
+              scoped RPC returns visitors without exposing unassigned rosters. */}
+          <section aria-label={t('Find and mark student attendance', 'ابحث وسجل حضور طالب')}
+            className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm"
+          >
+            <label htmlFor="attendance-student-search" className="block text-sm font-bold text-slate-900 dark:text-white">
+              {t('Find student', 'البحث عن طالب')}
+            </label>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                id="attendance-student-search"
                 type="search"
                 value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-                placeholder={t('Filter students by name or code...', 'ابحث عن طالب بالاسم أو الكود...')}
-                aria-label={t('Filter roster students', 'بحث في كشف الطلاب')}
-                className={`${INPUT_CLASS} ps-9`}
+                onChange={(e) => {
+                  setStudentSearch(e.target.value);
+                  // Prevent results from an older search being added under a
+                  // newer query, especially while an RPC is in flight.
+                  setSecureVisitingMatches([]);
+                  setLastCompletedVisitQuery('');
+                  setVisitingLookupError(null);
+                }}
+                placeholder={t('Enter student name or ID code...', 'اكتب اسم الطالب أو الكود...')}
+                aria-label={t('Search students by name or code', 'البحث عن الطلاب بالاسم أو الكود')}
+                autoComplete="off"
+                className={`${INPUT_CLASS} ps-9 text-sm min-h-[48px] rounded-xl`}
               />
             </div>
-
-            {!isLockedOrSubmitted && (
-              <div className="space-y-2">
-                <label htmlFor="visiting-student-search" className={LABEL_CLASS}>
-                  {t('Visiting Student — Search All Camp Groups', 'طالب زائر — البحث في مجموعات المعسكر')}
-                </label>
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="visiting-student-search"
-                    type="search"
-                    value={crossGroupSearch}
-                    onChange={e => { setCrossGroupSearch(e.target.value); setCrossGroupStudentId(''); }}
-                    autoComplete="off"
-                    placeholder={t('Enter at least 2 letters of name or student code...', 'اكتب حرفين على الأقل من الاسم أو كود الطالب...')}
-                    className={`${INPUT_CLASS} ps-9`}
-                  />
+            {!studentSearch.trim() && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t('Search by student name or code in the roster and other groups.',
+                  'ابحث بالاسم أو كود الطالب في الكشف والجروبات التانية.')}
+              </p>
+            )}
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-2">
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                {t('Filter attendance status', 'فلترة حسب حالة الحضور')}
+              </p>
+              <div role="group" aria-label={t('Filter attendance by status', 'فلترة الحضور حسب الحالة')}
+                className="flex flex-wrap gap-2"
+              >
+                {attendanceFilterOptions.map(option => {
+                  const active = attendanceStatusFilter === option.value;
+                  return (
+                    <button key={option.value} type="button"
+                      aria-pressed={active}
+                      onClick={() => setAttendanceStatusFilter(option.value)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold min-h-[38px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${active
+                        ? option.activeClass
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      <span>{t(option.en, option.ar)}</span>
+                      <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-[11px] tabular-nums text-center ${active ? 'bg-white/20 text-white' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200'}`}>
+                        {attendanceFilterCount(option.value)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Show the actual matching students AND controls right below
+                the search, not a count that forces the Instructor to scroll. */}
+            {studentSearch.trim() && filteredRecords.length > 0 && (
+              <div role="group" aria-label={t('Matching students in this attendance sheet', 'الطلاب المطابقون في كشف الحضور')}
+                className="space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    {t('Already in this attendance sheet', 'موجودين بالفعل في الكشف')}
+                  </h3>
+                  <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    {filteredRecords.length}
+                  </span>
                 </div>
+                {renderAttendanceRows(filteredRecords, studentSearch)}
+              </div>
+            )}
+            {studentSearch.trim() && nameMatchedRecords.length === 0 && studentSearch.trim().length < 2 && (
+              <p role="status" className="text-xs text-slate-500">
+                {t('No match in this sheet. Enter two characters to also search other groups.',
+                  'مفيش نتيجة في الكشف ده. اكتب حرفين عشان تبحث في الجروبات التانية كمان.')}
+              </p>
+            )}
+
+            {studentSearch.trim() && nameMatchedRecords.length > 0 &&
+              filteredRecords.length === 0 && attendanceStatusFilter !== 'all' && (
+              <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/20 p-3 flex flex-wrap gap-3 items-center justify-between">
+                <p className="text-xs text-amber-900 dark:text-amber-200">
+                  {t('Student found, but hidden by the selected status filter.',
+                    'الطالب موجود، لكن فلتر حالة الحضور مخفيه.')}
+                </p>
+                <button type="button" onClick={() => setAttendanceStatusFilter('all')}
+                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                  {t('Show matching students', 'إظهار الطلاب المطابقين')}
+                </button>
+              </div>
+            )}
+            {!isLockedOrSubmitted && studentSearch.trim().length >= 2 && (
+              <div className="space-y-2">
                 {visitingSearchBusy && (
                   <p className="text-xs text-slate-500" role="status">
-                    {t('Searching other groups securely...', 'جاري البحث بشكل آمن في المجموعات التانية...')}
+                    {t('Searching other groups securely...', 'جاري البحث في المجموعات التانية...')}
                   </p>
                 )}
                 {visitingLookupError && (
                   <p className="text-xs text-rose-700 dark:text-rose-300" role="alert">
-                    {t('Secure visiting-student lookup is unavailable until the Staging server update is approved.',
-                      'البحث الآمن عن الطالب الزائر مش متاح لحد اعتماد تحديث السيرفر على Staging.')}
+                    {t('Visiting student search is currently unavailable. Try again later.',
+                      'البحث عن الطلاب الزائرين غير متاح حاليًا. حاول مرة تانية.')}
                   </p>
                 )}
-                {visitingMatches.length > 0 && (
-                  <div role="group" aria-label={t('Visiting student results', 'نتائج البحث عن الطلاب الزائرين')}
-                    className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    {visitingMatches.map(stu => (
-                      <button key={stu.studentId} type="button"
-                        onClick={() => setCrossGroupStudentId(stu.studentId)}
-                        aria-pressed={stu.studentId === crossGroupStudentId}
-                        className={`w-full text-start px-3 py-2.5 text-xs border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${
-                          stu.studentId === crossGroupStudentId
-                            ? 'bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-500'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}>
-                        <span className="block font-semibold text-slate-900 dark:text-white">{stu.fullName}</span>
-                        <span className="text-slate-500 font-mono">{stu.studentCode} · {t('Home group:', 'المجموعة الأصلية:')} {stu.homeGroupCode}</span>
-                      </button>
-                    ))}
+                {visitingMatches.length > 0 && !visitingSearchBusy && (
+                  <div role="group" aria-label={t('Students from other groups', 'طلاب مجموعات أخرى')}
+                    className="space-y-2"
+                  >
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {t('Students in other groups', 'طلاب موجودين في جروبات تانية')}
+                    </p>
+                    <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                      {visitingMatches.map(stu => (
+                        <div key={stu.studentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b last:border-b-0 border-slate-100 dark:border-slate-800">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{highlightAttendanceSearchMatch(stu.fullName, studentSearch)}</p>
+                            <p className="text-xs text-slate-500">
+                              <span className="font-mono">{highlightAttendanceSearchMatch(stu.studentCode, studentSearch)}</span>
+                              {' · '}{t('Home group:', 'المجموعة الأصلية:')} {stu.homeGroupCode}
+                            </p>
+                          </div>
+                          <button type="button" disabled={isBusy}
+                            onClick={() => { void handleAddCrossGroupStudent(stu); }}
+                            aria-label={t(`Add ${stu.fullName} as visitor`, `إضافة ${stu.fullName} كزائر`)}
+                            className={`${BTN_SECONDARY} min-h-[40px] shrink-0`}
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            <span>{t('Add as visitor', 'إضافة كزائر')}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-                {crossGroupSearch.trim().length >= 2 && !visitingSearchBusy && !visitingLookupError && visitingMatches.length === 0 && (
-                  <p className="text-xs text-slate-500">
-                    {t('No student found in another group of this camp. Do not create duplicate student records.',
-                        'مفيش طالب مطابق في مجموعات المعسكر التانية. متضيفش بيانات طالب مكررة.')}
-                  </p>
-                )}
-                {selectedVisitingStudent && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 dark:border-blue-900 p-2.5">
-                    <span className="text-xs text-slate-700 dark:text-slate-200">
-                      {t('Selected:', 'الطالب المختار:')} <strong>{selectedVisitingStudent.fullName}</strong>
-                      {' · '}{t('Home group:', 'مجموعته:')} {selectedVisitingStudent.homeGroupCode}
-                    </span>
-                    <button type="button" disabled={isBusy} onClick={() => { void handleAddCrossGroupStudent(); }}
-                      className={BTN_SECONDARY}>
-                      <UserPlus className="w-4 h-4" />
-                      <span>{t('Mark Present as Visitor', 'تسجيل حاضر كزائر')}</span>
-                    </button>
-                  </div>
-                )}
-                <p className="text-xs text-slate-500">
-                  {t('The student keeps their original group. Once added, change Present to Late if needed. This is a local draft until safely synchronized.',
-                      'الطالب بيفضل تابع لمجموعته الأصلية. بعد الإضافة تقدر تغير حاضر إلى متأخر. التعديل مسودة محلية لحد المزامنة الآمنة.')}
-                </p>
+                {!visitingSearchBusy && !visitingLookupError &&
+                  lastCompletedVisitQuery === studentSearch.trim() &&
+                  visitingMatches.length === 0 && nameMatchedRecords.length === 0 && (
+                    <p className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3 text-xs text-slate-600 dark:text-slate-300" role="status">
+                      {t('No student matched this name or code in the current sheet or other groups.',
+                        'ملقيناش طالب بالاسم أو الكود ده في الكشف أو الجروبات التانية.')}
+                    </p>
+                  )}
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
+{/* Complete roster appears when the search is clear. Search matches are
+              displayed directly under the input rather than far below. */}
+          {!studentSearch.trim() && (
+            <section aria-label={t('Full attendance roster', 'كشف الحضور الكامل')}
+              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {t('Attendance roster', 'كشف حضور الطلاب')}
+                </h3>
+                <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-200 tabular-nums">
+                  {filteredRecords.length} / {baseRecords.length}
+                </span>
+              </div>
+              {filteredRecords.length > 0
+                ? renderAttendanceRows(filteredRecords, '')
+                : <div role="status" className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-5 text-center space-y-3">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      {t('No students with this attendance status.', 'مفيش طلاب بالحالة دي حاليًا.')}
+                    </p>
+                    {attendanceStatusFilter !== 'all' && (
+                      <button type="button" onClick={() => setAttendanceStatusFilter('all')}
+                        className="text-sm font-semibold text-blue-600 dark:text-blue-400 underline underline-offset-2">
+                        {t('Show all students', 'عرض كل الطلاب')}
+                      </button>
+                    )}
+                  </div>}
+            </section>
+          )}
+
+                    {/* Controlled mid-camp Student Enrollment: not a group transfer. */}
           {!isLockedOrSubmitted && (
-            <section className={`${SURFACE_SUBTLE} rounded-lg p-3.5 space-y-3 text-xs`}>
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3 shadow-sm text-xs">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-white">
-                    {t('New Student Joining Mid-Camp', 'طالب جديد انضم أثناء المعسكر')}
+                    {t('Enroll new student', 'إضافة طالب جديد')}
                   </h3>
                   <p className="text-slate-500 mt-1">
-                    {t('Use only if the student does not already exist in another group. Group and join day are recorded by the server.',
-                        'استخدمها لو الطالب مش موجود أصلًا في أي مجموعة. السيرفر بيسجل المجموعة ويوم الانضمام تلقائيًا.')}
+                    {t('For students not already registered in any Camp group.',
+                        'للطالب اللي مش متسجل أصلًا في أي جروب بالمعسكر.')}
                   </p>
                 </div>
                 <button type="button" onClick={() => setShowMidcampEnrollForm(v => !v)}
+                  aria-expanded={showMidcampEnrollForm}
+                  aria-controls="midcamp-enrollment-form"
                   className={BTN_SECONDARY}>
                   <UserPlus className="w-4 h-4" />
                   <span>{showMidcampEnrollForm ? t('Cancel', 'إلغاء') : t('Enroll New Student', 'إضافة طالب جديد')}</span>
                 </button>
               </div>
               {showMidcampEnrollForm && (
-                <form onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3">
+                <form id="midcamp-enrollment-form" onSubmit={e => { void handleEnrollMidcampStudent(e); }} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
                   <p className="text-blue-700 dark:text-blue-300">
                     {t('Assigned group:', 'المجموعة:')} <strong>{groups.find(g => g.id === selectedLecture?.groupId)?.code || '—'}</strong>
                     {' · '}{t('Official join day and enrollment timestamp are set by the server.', 'يوم الانضمام والتوقيت الرسمي بيحددهم السيرفر.')}
@@ -1659,95 +1965,17 @@ export const InstructorAttendanceView: React.FC = () => {
             </section>
           )}
 
-          {/* Student Touch Rows */}
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredRecords.length === 0 ? (
-              <p className="py-6 text-xs text-slate-500 text-center">
-                {t('No matching students in roster.', 'لا يوجد طلاب مطابقون للبحث.')}
-              </p>
-            ) : (
-              filteredRecords.map((rec) => (
-                <div
-                  key={rec.studentId}
-                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                        {rec.studentName}
-                      </p>
-                      {rec.isCrossGroup && (
-                        <StatusBadge tone="info">
-                          {t('Visitor from', 'زائر من')} {visitingGroupName(rec.studentId)}
-                        </StatusBadge>
-                      )}
-                    </div>
-                    <p className="text-xs font-mono tabular-nums text-slate-500 mt-0.5">
-                      {rec.studentCode} ·{' '}
-                      {rec.mark === 'unmarked'
-                        ? t('Unmarked', 'غير محدد')
-                        : rec.mark === AttendanceMark.PRESENT
-                        ? t('Present', 'حاضر')
-                        : rec.mark === AttendanceMark.LATE
-                        ? t('Late', 'متأخر')
-                        : t('Absent', 'غائب')}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isLockedOrSubmitted}
-                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                        rec.mark === AttendanceMark.PRESENT
-                          ? 'bg-emerald-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {t('Present', 'حاضر')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isLockedOrSubmitted}
-                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                        rec.mark === AttendanceMark.LATE
-                          ? 'bg-amber-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {t('Late', 'متأخر')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isLockedOrSubmitted}
-                      onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
-                      className={`min-h-[44px] flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
-                        rec.mark === AttendanceMark.ABSENT
-                          ? 'bg-red-600 text-white'
-                          : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {t('Absent', 'غائب')}
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
           {!isLockedOrSubmitted && !canFinalizeAttendance && (
-            <div role="status" className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-xs text-amber-900 dark:text-amber-200">
+            <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
               {t(
-                'Draft preparation is available. Final submission is disabled until this camp is active and the scheduled lecture date has arrived. Unmarked students will count as absent after final submission.',
-                'تقدر تجهز كشف الحضور كمسودة. الاعتماد النهائي مقفول لحد تفعيل المعسكر وحلول موعد المحاضرة. الطلاب غير المحددين هيتحسبوا غياب عند الاعتماد.'
+                'Draft only. Submission opens when the camp is active and the lecture date arrives. Unmarked students become absent only on final submission.',
+                'مسودة فقط. الاعتماد متاح بعد تفعيل المعسكر وحلول موعد المحاضرة. غير المحددين يتحولوا لغياب عند الاعتماد النهائي.'
               )}
             </div>
           )}
 
           {!isLockedOrSubmitted && isSupabaseMode && (
-            <section className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+            <section className="space-y-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1817,7 +2045,7 @@ export const InstructorAttendanceView: React.FC = () => {
           )}
 
           {!isLockedOrSubmitted && (
-            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 shadow-sm">
               <button
                 type="button"
                 disabled={isBusy || !canFinalizeAttendance}
@@ -1847,7 +2075,11 @@ export const InstructorAttendanceView: React.FC = () => {
 export const InstructorProfileAndSectionsView: React.FC = () => {
   const {
     auth,
+    activeCamp,
+    financeSnapshot,
+    isSandboxMode,
     instructors,
+    lectures,
     groups,
     surveys,
     entitlements,
@@ -1863,7 +2095,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   const [reqFeedback, setReqFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const currentInstructor =
-    instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
+    instructors.find((i) => i.id === auth.activeInstructorId) || (isSandboxMode ? instructors[0] : undefined);
 
   if (!currentInstructor) {
     return (
@@ -1877,6 +2109,19 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   const myGroups = groups.filter((g) => g.primaryInstructorId === currentInstructor.id);
   const mySurveys = surveys.filter((s) => s.instructorId === currentInstructor.id);
   const myEntitlements = entitlements.filter((e) => e.instructorId === currentInstructor.id);
+  const myFinance = activeCamp && financeSnapshot.enabled
+    ? calculateInstructorFinancialStatement({
+        campId:activeCamp.id,instructor:currentInstructor,
+        lectures,entitlements:myEntitlements,
+        backups:financeSnapshot.backups.filter(b=>b.instructorId===currentInstructor.id),
+        payments:financeSnapshot.payments.filter(p=>p.instructorId===currentInstructor.id),
+        policies:financeSnapshot.policies,
+      })
+    : null;
+  const myBackupSessions = financeSnapshot.backups.filter(b=>
+    b.instructorId===currentInstructor.id && b.campId===activeCamp?.id);
+  const myRecordedPayments = financeSnapshot.payments.filter(p=>
+    p.instructorId===currentInstructor.id && p.campId===activeCamp?.id);
   const myRequests = requests.filter((r) => r.instructorId === currentInstructor.id);
 
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -2011,6 +2256,56 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي (جنيه مصري)')}
           </h2>
+          {myFinance ? (
+            <section aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t(
+                'Only your own records are visible. Confirmed amounts include main, approved backup and once-daily primary transportation. Pending sums are not payable yet.',
+                'اللي ظاهر هنا حسابك إنت بس. المؤكد يشمل الأساسي والباك أب المعتمد وانتقالات أيام الأساسي مرة واحدة. المعلق مش ضمن المستحق.'
+              )}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  {en:'Confirmed total',ar:'إجمالي المستحق المؤكد',n:myFinance.confirmedTotalEgp},
+                  {en:'Paid',ar:'المدفوع',n:myFinance.paidEgp},
+                  {en:'Remaining',ar:'المتبقي',n:myFinance.balanceEgp},
+                  {en:'Pending estimate',ar:'المعلق تقديري',n:myFinance.pendingEstimateEgp},
+                ].map(x=><div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3" key={x.en}>
+                  <p className="text-xs text-slate-500">{t(x.en,x.ar)}</p>
+                  <p className="text-base font-bold tabular-nums mt-1">{x.n.toLocaleString()} EGP</p>
+                </div>)}
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                {[
+                  {en:'Main',ar:'أساسي',n:myFinance.primaryEgp},
+                  {en:'Backup',ar:'باك أب',n:myFinance.backupEgp},
+                  {en:'Transport',ar:'انتقالات',n:myFinance.transportEgp},
+                ].map(x=><div key={x.en} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-3">
+                  <p className="text-slate-500">{t(x.en,x.ar)}</p>
+                  <p className="font-bold mt-1 tabular-nums">{x.n.toLocaleString()} EGP</p>
+                </div>)}
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-bold text-sm">{t('My backup sessions','محاضراتي كـ باك أب')}</h3>
+                {myBackupSessions.length===0 && <p className="text-slate-500">{t('No backup sessions recorded','لا يوجد باك أب مسجل')}</p>}
+                {myBackupSessions.map(b=><div key={b.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>{t('Day','يوم')} {b.campDay} · {lectures.find(l=>l.id===b.lectureId)?.topic||''}</span>
+                  <span className="font-semibold">{b.frozenRateEgp} EGP · {b.status}</span>
+                </div>)}
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-bold text-sm">{t('My recorded payments','الدفعات المسجلة لي')}</h3>
+                {myRecordedPayments.length===0&&<p className="text-slate-500">{t('No payments yet','مفيش دفعات مسجلة')}</p>}
+                {myRecordedPayments.map(p=><div key={p.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>{new Date(p.createdAt).toLocaleDateString()} · {p.method}</span>
+                  <strong>{p.amountEgp.toLocaleString()} EGP</strong>
+                </div>)}
+              </div>
+            </section>
+          ) : (
+            <p role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300">
+              {t('Detailed backup, transport and payment history will become available after the Finance migration is reviewed and activated.',
+                'تفاصيل الباك أب والانتقالات والمدفوعات هتظهر بعد مراجعة وتفعيل تحديث Finance في قاعدة البيانات.')}
+            </p>
+          )}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {myEntitlements.length === 0 ? (
               <p className="py-4 text-slate-500">{t('No entitlement records yet.', 'لا توجد مستحقات مسجلة بعد.')}</p>

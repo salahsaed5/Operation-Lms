@@ -14,6 +14,7 @@ import {
   User,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { CampSwitcher } from '../components/ui/CampSwitcher';
 import { InstructorRouteId } from '../types/database';
 
 const INSTRUCTOR_TABS: {
@@ -238,6 +239,15 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
         )}
       </header>
+
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-blue-50/50 dark:bg-blue-950/20 border-b border-slate-200 dark:border-slate-800 text-xs">
+        <span className="font-semibold shrink-0">{t('My Camp:', 'الكامب الخاص بي:')}</span>
+        <CampSwitcher />
+        <span className="hidden md:inline text-slate-500 dark:text-slate-400">
+          {t('Switch to view your assignments, check-ins and statement for each Camp.',
+             'بدّل الكامب لعرض جدولك وحضورك وحساباتك الخاصة بكل كامب.')}
+        </span>
+      </div>
 
       {dataError && (
         <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4">

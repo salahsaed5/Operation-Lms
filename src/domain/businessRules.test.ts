@@ -10,6 +10,7 @@ import {
   calculateHaversineDistanceMeters,
   evaluateDailyCheckin,
   validateLectureScheduleSlot,
+  validateCrossCampLectureSlot,
   finalizeAttendanceSubmission,
   evaluateLectureEntitlement,
   validateEntitlementUpsert,
@@ -17,6 +18,7 @@ import {
   evaluateRlsPolicy,
   createValidatedAuditLogEntry,
   calculateCampDayDate,
+  validateCampWeekdays,
   resolveStudentOriginGroupForDay,
   validateGpsCoordinates,
 } from './businessRules';
@@ -77,16 +79,18 @@ test('2. Concurrent Admin creation protection: serializes concurrent requests an
   assert.equal(batch.results[2].allowed, false); // Max 2 reached
 });
 
-test('3. Single active camp & archived camp read-only protection', () => {
+test('3. Parallel active camps & archived camp read-only protection', () => {
   const camps = [
     { id: 'c1', nameEn: 'Cairo Spring Camp', status: CampStatus.ACTIVE },
     { id: 'c2', nameEn: 'Alexandria Summer Camp', status: CampStatus.DRAFT },
     { id: 'c3', nameEn: 'Winter Archive 2025', status: CampStatus.ARCHIVED },
   ];
-  // Cannot activate c2 while c1 is active
+  // Separate Camps may be active at the same time.
   const res = validateCampActivation(camps, 'c2');
-  assert.equal(res.allowed, false);
-  assert.ok(res.error?.includes('Cairo Spring Camp'));
+  assert.equal(res.allowed, true);
+  assert.equal(validateCampActivation(camps, 'c1').allowed, true);
+  assert.equal(validateCampActivation(camps, 'missing-camp').allowed, false);
+  assert.equal(validateCampActivation(camps, 'c3').allowed, false);
 
   // Archived camp is strictly read-only
   const archiveCheck = validateCampNotArchived(camps[2]);
@@ -1742,3 +1746,59 @@ test('28. Migration 0008 & Security Phase Closure: closes SEC-004 enumeration, S
 });
 
 
+
+
+test('teaching calendar: Saturday/Monday/Wednesday has 10 actual sessions (not 10 consecutive dates)',()=>{
+  const days=[1,3,6]; // JS DOW Monday, Wednesday, Saturday
+  assert.equal(calculateCampDayDate('2026-11-28',1,days),'2026-11-28');
+  assert.equal(calculateCampDayDate('2026-11-28',2,days),'2026-11-30');
+  assert.equal(calculateCampDayDate('2026-11-28',3,days),'2026-12-02');
+  assert.equal(calculateCampDayDate('2026-11-28',4,days),'2026-12-05');
+  assert.equal(calculateCampDayDate('2026-11-28',10,days),'2026-12-19');
+  assert.equal(calculateCampDayDate('2026-11-28',10),'2026-12-07'); // Legacy daily
+});
+
+test('teaching calendar: Sunday/Tuesday/Thursday runs 15 sessions over five weeks',()=>{
+  const days=[0,2,4];
+  assert.equal(calculateCampDayDate('2026-11-29',1,days),'2026-11-29');
+  assert.equal(calculateCampDayDate('2026-11-29',2,days),'2026-12-01');
+  assert.equal(calculateCampDayDate('2026-11-29',3,days),'2026-12-03');
+  assert.equal(calculateCampDayDate('2026-11-29',15,days),'2026-12-31');
+});
+
+test('teaching calendar blocks non-teaching start dates, duplicate days and impossible dates',()=>{
+  assert.match(validateCampWeekdays('2026-11-30',[0,2,4])||'',/first teaching date/i);
+  assert.ok(validateCampWeekdays('2026-11-29',[0,0,2]));
+  assert.ok(validateCampWeekdays('2026-02-30',[0,2,4]));
+  assert.equal(calculateCampDayDate('2026-11-29',0,[0,2,4]),'2026-11-29'); // Legacy safe clamp
+  assert.throws(()=>calculateCampDayDate('2026-11-29',15,[]));
+});
+
+test('parallel Camp schedule: same real date/time blocks instructor and room across Camp IDs',()=>{
+  const lecture={
+    id:'sat',campId:'camp-a',campDay:1,lectureDate:'2026-11-29',
+    periodNumber:1,startTime:'09:00',endTime:'12:00',
+    instructorId:'inst-A',substituteInstructorId:null,
+    roomId:'venue-1-room-1',groupId:'group-a',status:LectureStatus.SCHEDULED,
+  };
+  const conflict=validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-29',
+      startTime:'11:00',endTime:'13:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  });
+  assert.equal(conflict.valid,false);
+  assert.ok(conflict.conflicts.some(c=>c.includes('Instructor')));
+  assert.ok(conflict.conflicts.some(c=>c.includes('Room')));
+  // Different Camp weekday => different calendar date, even with same campDay.
+  assert.equal(validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-30',
+      startTime:'09:00',endTime:'12:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  }).valid,true);
+  // Another Camp can use the same real resources after the period is finished.
+  assert.equal(validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-29',
+      startTime:'12:00',endTime:'15:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  }).valid,true);
+});

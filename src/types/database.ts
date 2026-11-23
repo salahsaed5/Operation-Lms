@@ -195,6 +195,7 @@ export interface Database {
           start_date: string;
           end_date: string;
           duration_days: number;
+          operating_weekdays: number[];
           current_camp_day: number;
           template_source_camp_id: string | null;
           archived_at: string | null;
@@ -212,6 +213,7 @@ export interface Database {
           start_date: string;
           end_date: string;
           duration_days?: number;
+          operating_weekdays?: number[];
           current_camp_day?: number;
           template_source_camp_id?: string | null;
           archived_at?: string | null;
@@ -228,6 +230,7 @@ export interface Database {
           start_date?: string;
           end_date?: string;
           duration_days?: number;
+          operating_weekdays?: number[];
           current_camp_day?: number;
           archived_at?: string | null;
           updated_at?: string;
@@ -1123,6 +1126,15 @@ export interface Database {
         Args: { p_group_id: string };
         Returns: boolean;
       };
+      save_attendance_draft_cas_tx: {
+        Args: {
+          p_sheet_id: string;
+          p_expected: Json;
+          p_desired: Json;
+          p_submit?: boolean;
+        };
+        Returns: Json;
+      };
       submit_attendance_sheet_tx: {
         Args: { p_sheet_id: string };
         Returns: {
@@ -1410,6 +1422,8 @@ export interface Camp {
   venueId: string;
   startDate: string;
   endDate: string;
+  /** 0=Sunday .. 6=Saturday, optional on legacy snapshots/fixtures (daily). */
+  operatingWeekdays?: number[];
   durationDays: number;
   currentCampDay: number;
   settings: CampSettings;

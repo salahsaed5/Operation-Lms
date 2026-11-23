@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
-import { RawStudentImportRow } from '../../domain/businessRules';
+import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, RawStudentImportRow } from '../../domain/businessRules';
 import { parseStudentRosterFile } from '../../domain/studentRosterFile';
 import {
   CredentialDeliveryMode,
@@ -47,11 +47,70 @@ import {
 } from '../../components/ui/UiPrimitives';
 
 type CampFilter = 'all' | CampStatus;
+
+const CAMP_WEEKDAYS = [
+  { id: 0, en: 'Sun', ar: 'الأحد' },
+  { id: 1, en: 'Mon', ar: 'الإثنين' },
+  { id: 2, en: 'Tue', ar: 'الثلاثاء' },
+  { id: 3, en: 'Wed', ar: 'الأربعاء' },
+  { id: 4, en: 'Thu', ar: 'الخميس' },
+  { id: 5, en: 'Fri', ar: 'الجمعة' },
+  { id: 6, en: 'Sat', ar: 'السبت' },
+];
+
+function CampWeekdayPicker(props: {
+  weekdays: number[];
+  onChange: (days: number[]) => void;
+  t: (en: string, ar: string) => string;
+}) {
+  const { weekdays, onChange, t } = props;
+  const presets = [
+    { en: 'Every day (legacy)', ar: 'كل يوم', days: [...ALL_CAMP_WEEKDAYS] },
+    { en: 'Sat / Mon / Wed', ar: 'سبت / اثنين / أربع', days: [1,3,6] },
+    { en: 'Sun / Tue / Thu', ar: 'حد / تلات / خميس', days: [0,2,4] },
+  ];
+  return (
+    <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+      <p className={LABEL_CLASS}>{t('Teaching weekdays *', 'أيام الدراسة الفعلية *')}</p>
+      <div className="flex flex-wrap gap-2">
+        {presets.map(p => (
+          <button key={p.en} type="button" className={BTN_SECONDARY}
+            aria-pressed={p.days.length===weekdays.length && p.days.every(d=>weekdays.includes(d))}
+            onClick={() => onChange([...p.days])}>
+            {t(p.en,p.ar)}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {CAMP_WEEKDAYS.map(day => (
+          <label key={day.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs">
+            <input type="checkbox" checked={weekdays.includes(day.id)}
+              onChange={e => onChange(
+                e.target.checked ? [...weekdays,day.id].sort((a,b)=>a-b) : weekdays.filter(d=>d!==day.id)
+              )}/>
+            {t(day.en,day.ar)}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-slate-500">
+        {t('Only selected weekdays count as Camp teaching days. The start date must be selected.',
+           'الأيام المختارة فقط بتتحسب أيام دراسة. تاريخ البداية لازم يوافق يوم من الأيام المختارة.')}
+      </p>
+    </div>
+  );
+}
+
+function campEndPreview(start: string, duration: number, weekdays: number[]): string | null {
+  try { return calculateCampDayDate(start, duration, weekdays); }
+  catch { return null; }
+}
 type InstructorFilter = 'all' | 'active' | 'disabled';
 
 export const AdminCampsView: React.FC = () => {
   const {
     camps,
+    activeCamp,
+    selectCamp,
     venues,
     createVenue,
     createRoom,
@@ -87,6 +146,7 @@ export const AdminCampsView: React.FC = () => {
   const [venueId, setVenueId] = useState(venues[0]?.id || '');
   const [startDate, setStartDate] = useState('');
   const [durationDays, setDurationDays] = useState(10);
+  const [operatingWeekdays, setOperatingWeekdays] = useState<number[]>([...ALL_CAMP_WEEKDAYS]);
   const [geofenceRadiusMeters, setGeofenceRadiusMeters] = useState(100);
   const [defaultRateEgp, setDefaultRateEgp] = useState(700);
 
@@ -95,6 +155,7 @@ export const AdminCampsView: React.FC = () => {
   const [editNameAr, setEditNameAr] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
   const [editDurationDays, setEditDurationDays] = useState(10);
+  const [editOperatingWeekdays, setEditOperatingWeekdays] = useState<number[]>([...ALL_CAMP_WEEKDAYS]);
   const [editCurrentDay, setEditCurrentDay] = useState(1);
   const [editGeofence, setEditGeofence] = useState(100);
   const [editRateEgp, setEditRateEgp] = useState(700);
@@ -130,6 +191,7 @@ export const AdminCampsView: React.FC = () => {
     setEditNameAr(camp.nameAr);
     setEditStartDate(camp.startDate);
     setEditDurationDays(camp.durationDays);
+    setEditOperatingWeekdays([...(camp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS)]);
     setEditCurrentDay(camp.currentCampDay);
     setEditGeofence(camp.settings.geofenceRadiusMeters);
     setEditRateEgp(camp.settings.defaultLectureRateEgp);
@@ -208,6 +270,7 @@ export const AdminCampsView: React.FC = () => {
         venueId: venueId || venues[0]?.id,
         startDate,
         durationDays,
+        operatingWeekdays,
         geofenceRadiusMeters,
         defaultRateEgp,
       });
@@ -226,6 +289,7 @@ export const AdminCampsView: React.FC = () => {
         setNameAr('');
         setStartDate('');
         setDurationDays(10);
+        setOperatingWeekdays([...ALL_CAMP_WEEKDAYS]);
         setGeofenceRadiusMeters(100);
         setDefaultRateEgp(700);
         setShowNewCampForm(false);
@@ -247,6 +311,7 @@ export const AdminCampsView: React.FC = () => {
         nameAr: editNameAr.trim(),
         startDate: editStartDate,
         durationDays: editDurationDays,
+        operatingWeekdays: editOperatingWeekdays,
         currentCampDay: editCurrentDay,
         geofenceRadiusMeters: editGeofence,
         defaultRateEgp: editRateEgp,
@@ -309,8 +374,8 @@ export const AdminCampsView: React.FC = () => {
       <PageHeader
         title={t('Camp Management & Archives', 'إدارة المعسكرات والأرشيف')}
         subtitle={t(
-          'Only one camp can be active at a time. Default duration is 10 days and archived camps become read-only.',
-          'يُسمح بمعسكر نشط واحد فقط في نفس الوقت. المدة الافتراضية 10 أيام والمعسكرات المؤرشفة للقراءة فقط.'
+          'Multiple Camps can run in parallel. Select the Camp you want to manage; archives remain read-only.',
+          'ممكن كذا كامب يشتغلوا بالتوازي. اختار الكامب اللي بتديره؛ والكامبات المؤرشفة للقراءة فقط.'
         )}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -588,6 +653,11 @@ export const AdminCampsView: React.FC = () => {
                 className={`${INPUT_CLASS} font-mono tabular-nums`}
               />
             </div>
+            <CampWeekdayPicker weekdays={operatingWeekdays} onChange={setOperatingWeekdays} t={t}/>
+            <div className="sm:col-span-2 lg:col-span-4 text-sm">
+              {t('Last teaching date:', 'تاريخ آخر يوم دراسة:')}{' '}
+              <strong>{campEndPreview(startDate,durationDays,operatingWeekdays) || t('Select a matching start date and weekdays','اختار تاريخ بداية يوافق أيام الدراسة')}</strong>
+            </div>
             <div>
               <label htmlFor="camp-geofence" className={LABEL_CLASS}>
                 {t('Geofence Radius (m)', 'نطاق الموقع (متر)')}
@@ -696,6 +766,11 @@ export const AdminCampsView: React.FC = () => {
                 onChange={(e) => setEditDurationDays(Number(e.target.value))}
                 className={`${INPUT_CLASS} font-mono tabular-nums`}
               />
+            </div>
+            <CampWeekdayPicker weekdays={editOperatingWeekdays} onChange={setEditOperatingWeekdays} t={t}/>
+            <div className="sm:col-span-2 lg:col-span-4 text-sm">
+              {t('Last teaching date:', 'تاريخ آخر يوم دراسة:')}{' '}
+              <strong>{campEndPreview(editStartDate,editDurationDays,editOperatingWeekdays) || t('Select matching start date/weekdays','اختار تاريخ بداية يوافق أيام الدراسة')}</strong>
             </div>
             <div>
               <label htmlFor="edit-camp-day" className={LABEL_CLASS}>
@@ -822,6 +897,11 @@ export const AdminCampsView: React.FC = () => {
 
                   {camp.status !== CampStatus.ARCHIVED && (
                     <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button type="button" disabled={activeCamp?.id===camp.id}
+                        onClick={() => selectCamp(camp.id)}
+                        className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                        {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Work on this Camp','إدارة هذا الكامب')}
+                      </button>
                       <button
                         type="button"
                         disabled={isBusy}
@@ -918,6 +998,11 @@ export const AdminCampsView: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-5 text-end">
                         <div className="inline-flex items-center gap-2">
+                          <button type="button" disabled={activeCamp?.id===camp.id}
+                            onClick={() => selectCamp(camp.id)}
+                            className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
+                            {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Manage','إدارة')}
+                          </button>
                           {camp.status !== CampStatus.ARCHIVED && (
                             <button
                               type="button"

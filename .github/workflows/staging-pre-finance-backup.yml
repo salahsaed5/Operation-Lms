@@ -1,0 +1,81 @@
+# Staging-only pre-finance migration encrypted logical backup.
+# Public GitHub repo: NEVER upload raw pg_dump; encryption is mandatory.
+name: Staging Encrypted Pre-Finance Backup
+
+on:
+  push:
+    branches:
+      - fix/atomic-attendance-sync-20261122
+    paths:
+      - .github/workflows/staging-pre-finance-backup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-staging:
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 25
+    steps:
+      - name: Validate exact staging DB target without exposing secret
+        shell: bash
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_STAGING_DB_URL:-}" ]]; then
+            echo '::error::Missing staging database URL'; exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit,unquote
+          u=urlsplit(os.environ['SUPABASE_STAGING_DB_URL'])
+          project='uewhudbufykfkhimvqjj'
+          prod='wdmlxsgbjkboadkeekdq'
+          host=(u.hostname or '').lower()
+          user=unquote(u.username or '')
+          db=unquote(u.path.lstrip('/'))
+          direct=(host=='db.'+project+'.supabase.co' and user=='postgres')
+          pooler=(host.endswith('.pooler.supabase.com') and user=='postgres.'+project)
+          if prod in host or prod in user or u.scheme not in ('postgres','postgresql') or not (direct or pooler) or db!='postgres' or u.port not in (None,5432):
+            raise SystemExit('REJECTED: not exact known Staging Postgres database')
+          print('Validated exact approved STAGING project. No production access.')
+          PY
+
+      - name: Create and validate PostgreSQL 17 logical database backup
+        shell: bash
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/finance0023"
+          docker run --rm -e SUPABASE_STAGING_DB_URL \
+            -v "$RUNNER_TEMP/finance0023:/backup" postgres:17 \
+            bash -ec 'pg_dump --format=custom --no-owner --no-acl \
+              --file=/backup/pre_finance0023_full.dump \
+              "$SUPABASE_STAGING_DB_URL" && \
+              pg_restore --list /backup/pre_finance0023_full.dump >/dev/null'
+          test -s "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
+            -in "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump" \
+            -out "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump.enc" \
+            -pass env:BACKUP_PASSPHRASE
+          sha256sum "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump.enc" \
+            | awk '{ print $1 "  pre_finance0023_full.dump.enc" }' \
+            > "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump.enc.sha256"
+          rm -f "$RUNNER_TEMP/finance0023/pre_finance0023_full.dump"
+          echo 'Encrypted Postgres 17 pre-finance 0023 logical backup validated. Raw dump deleted.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Encryption: AES-256-CBC PBKDF2 250000 iterations. Passphrase currently sourced from the STAGING database URL secret (keep the original secret securely until restore is verified).' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only ENCRYPTED artifact (3-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-pre-finance-0023-encrypted
+          path: |
+            ${{ runner.temp }}/finance0023/pre_finance0023_full.dump.enc
+            ${{ runner.temp }}/finance0023/pre_finance0023_full.dump.enc.sha256
+          if-no-files-found: error
+          retention-days: 3

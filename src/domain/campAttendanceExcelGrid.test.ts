@@ -74,3 +74,21 @@ test('excused absence uses E, not A',()=>{
   assert.equal(g.rows[0].days[0],'E');
   assert.equal(g.rows[0].absentDays,0);
 });
+
+test('15-day Camp grid keeps Day 15, future sessions and late joiners without phantom absences',()=>{
+  const g=buildCampAttendanceExcelGrid({
+    campId,durationDays:15,students:[student('s','A',4)],studentTransfers:[],
+    lectures:[lecture('day1',1),lecture('day4',4),lecture('day15',15)],
+    attendanceSheets:[
+      sheet('d1','day1',[['s',AttendanceMark.ABSENT]]),
+      sheet('d4','day4',[['s',AttendanceMark.LATE]]),
+      sheet('d15','day15',[['s',AttendanceMark.PRESENT]]),
+    ],
+  });
+  assert.equal(g.dayCount,15);
+  assert.equal(g.rows[0].days.length,15);
+  assert.deepEqual(g.rows[0].days.slice(0,4),['—','—','—','L']);
+  assert.equal(g.rows[0].days[14],'P');
+  assert.equal(g.rows[0].presentDays,2);
+  assert.equal(g.rows[0].absentDays,0);
+});

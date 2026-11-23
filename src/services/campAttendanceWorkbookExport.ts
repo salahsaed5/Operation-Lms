@@ -3,6 +3,7 @@ import type {
 } from '../types/database';
 import { AttendanceMark, AttendanceSheetStatus } from '../types/database';
 import { buildCampToDateReport } from '../domain/campCumulativeAttendance';
+import { calculateCampDayDate } from '../domain/businessRules';
 import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../domain/campAttendanceExcelGrid';
 import { createXlsxWorkbook, excelCell as c, excelFormula as f, type ExcelCell, type ExcelSheet } from './tinyXlsxWorkbook';
 
@@ -17,6 +18,12 @@ const statusStyle = (status: DayAttendanceCode): number => {
   }
 };
 const blank = ():ExcelCell => ({});
+/** 1-indexed Excel column name (works beyond Z). */
+const excelColumn = (col: number): string => {
+  let n=col, name='';
+  while(n>0){n--; name=String.fromCharCode(65+n%26)+name; n=Math.floor(n/26);}
+  return name;
+};
 const headingRow = (title:string, width:number):ExcelCell[] => [
   c(title,1),...Array.from({length:width-1},blank),
 ];
@@ -33,11 +40,18 @@ export function buildCampAttendanceWorkbook(input: {
   attendanceSheets: AttendanceSheet[];
 }): Blob {
   const { camp, groups, students, studentTransfers, lectures, attendanceSheets } = input;
-  if (camp.durationDays !== 10) {
-    throw new Error('The handover workbook currently supports ten-day camps only.');
+  if (!Number.isInteger(camp.durationDays) || camp.durationDays < 1 || camp.durationDays > 60) {
+    throw new Error('Camp report duration must be between 1 and 60 teaching days.');
   }
+  const dayCount = camp.durationDays;
+  const lastDayCol = excelColumn(4+dayCount);
+  const presentCol = excelColumn(5+dayCount);
+  const lateCol = excelColumn(6+dayCount);
+  const absentCol = excelColumn(7+dayCount);
+  const lastCol = excelColumn(8+dayCount);
+  const dailyWidth = 8+dayCount;
   const official = buildCampToDateReport({
-    campId: camp.id, asOfDay: 10, students, lectures,
+    campId: camp.id, asOfDay: dayCount, students, lectures,
     attendanceSheets, studentTransfers,
   });
   const grid = buildCampAttendanceExcelGrid({
@@ -90,12 +104,12 @@ export function buildCampAttendanceWorkbook(input: {
   };
 
   const dailyRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  ' + reportState + ' TEN-DAY ATTENDANCE',18),
-    subheadingRow(subtitle,18),
-    subheadingRow('P = Present | L = Late | A = Absent | E = Excused | Pending = Not Final | — = Not Applicable',18),
+    headingRow('OPERATION LMS  |  ' + reportState + ' ' + dayCount + '-DAY ATTENDANCE',dailyWidth),
+    subheadingRow(subtitle,dailyWidth),
+    subheadingRow('P = Present | L = Late | A = Absent | E = Excused | Pending = Not Final | — = Not Applicable',dailyWidth),
     [
       c('Student Code',3),c('Full Name',3),c('Home Group',3),c('Join Day',3),
-      ...Array.from({length:10},(_,i)=>c('Day '+(i+1),3)),
+      ...Array.from({length:dayCount},(_,i)=>c('Day '+(i+1)+' · '+calculateCampDayDate(camp.startDate,i+1,camp.operatingWeekdays),3)),
       c('Days Attended',3),c('Late Days',3),c('Absent Days',3),c('Attendance %',3),
     ],
   ];
@@ -105,11 +119,11 @@ export function buildCampAttendanceWorkbook(input: {
     const cells:ExcelCell[]=[
       c(st.studentCode,4),c(st.fullName,4),c(codeOf(st.homeGroupId),4),c(st.joinedCampDay,10),
       ...st.days.map(day => c(day,statusStyle(day))),
-      f('COUNTIF(E'+rowNo+':N'+rowNo+',"P")+COUNTIF(E'+rowNo+':N'+rowNo+',"L")',st.presentDays),
-      f('COUNTIF(E'+rowNo+':N'+rowNo+',"L")',st.lateDays),
-      f('COUNTIF(E'+rowNo+':N'+rowNo+',"A")',st.absentDays),
+      f('COUNTIF(E'+rowNo+':'+lastDayCol+rowNo+',"P")+COUNTIF(E'+rowNo+':'+lastDayCol+rowNo+',"L")',st.presentDays),
+      f('COUNTIF(E'+rowNo+':'+lastDayCol+rowNo+',"L")',st.lateDays),
+      f('COUNTIF(E'+rowNo+':'+lastDayCol+rowNo+',"A")',st.absentDays),
       st.eligibleFinalDays > 0
-        ? f('IFERROR(O'+rowNo+'/(O'+rowNo+'+Q'+rowNo+'),0)',rate,11)
+        ? f('IFERROR('+presentCol+rowNo+'/('+presentCol+rowNo+'+'+absentCol+rowNo+'),0)',rate,11)
         : c('N/A',10),
     ];
     dailyRows.push(cells);
@@ -119,10 +133,10 @@ export function buildCampAttendanceWorkbook(input: {
     const totalRow=lastDataRow+1;
     dailyRows.push([
       c('TOTAL',3),c('',3),c('',3),c('',3),
-      ...Array.from({length:10},blank),
-      f('SUM(O5:O'+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.presentDays,0)),
-      f('SUM(P5:P'+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.lateDays,0)),
-      f('SUM(Q5:Q'+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.absentDays,0)),
+      ...Array.from({length:dayCount},blank),
+      f('SUM('+presentCol+'5:'+presentCol+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.presentDays,0)),
+      f('SUM('+lateCol+'5:'+lateCol+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.lateDays,0)),
+      f('SUM('+absentCol+'5:'+absentCol+lastDataRow+')',grid.rows.reduce((s,row)=>s+row.absentDays,0)),
       c('',4),
     ]);
     void totalRow;
@@ -130,10 +144,10 @@ export function buildCampAttendanceWorkbook(input: {
   const daily:ExcelSheet={
     name:'Daily Attendance',
     rows:dailyRows,
-    widths:[19,31,17,13,...Array.from({length:10},()=>13),18,15,17,17],
-    merges:['A1:R1','A2:R2','A3:R3'],
+    widths:[19,31,17,13,...Array.from({length:dayCount},()=>13),18,15,17,17],
+    merges:['A1:'+lastCol+'1','A2:'+lastCol+'2','A3:'+lastCol+'3'],
     freeze:{columns:4,rows:4,topLeft:'E5'},
-    autoFilter:'A4:R'+Math.max(5,lastDataRow),
+    autoFilter:'A4:'+lastCol+Math.max(5,lastDataRow),
   };
 
   const sheets = attendanceSheets.filter(sh=>sh.campId===camp.id);
