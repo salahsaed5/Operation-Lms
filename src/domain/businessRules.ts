@@ -25,7 +25,7 @@ import {
 export const ALL_CAMP_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 
 export function validateCampWeekdays(startDateIso: string, weekdays: readonly number[]): string | null {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDateIso)) return 'Choose a valid first teaching date.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDateIso)) return 'Choose a valid first teaching date.';
   const date = new Date(`${startDateIso}T00:00:00Z`);
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== startDateIso) {
     return 'Choose a valid first teaching date.';
