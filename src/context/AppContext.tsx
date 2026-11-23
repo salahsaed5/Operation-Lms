@@ -69,6 +69,7 @@ import {
   validateCampNotArchived,
   validateGpsCoordinates,
   validateLectureScheduleSlot,
+  validateCrossCampLectureSlot,
   validateStudentBatchImport,
 } from '../domain/businessRules';
 import {
@@ -2189,6 +2190,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { ok: false, errors: ['Lecture must be on a valid Camp teaching day.'] };
     }
     const lectureDate = calculateCampDayDate(activeCamp.startDate, input.campDay, activeCamp.operatingWeekdays ?? ALL_CAMP_WEEKDAYS);
+    const crossCampValidation = validateCrossCampLectureSlot({
+      existingLectures: lectures,
+      candidate: {
+        campId: activeCamp.id, lectureDate,
+        startTime: periodObj.start, endTime: periodObj.end,
+        instructorId: input.instructorId, roomId: input.roomId
+      },
+    });
+    if (!crossCampValidation.valid) {
+      return {ok:false,errors:crossCampValidation.conflicts};
+    }
     const frozenRate = inst?.defaultLectureRateEgp ?? activeCamp.settings.defaultLectureRateEgp;
 
     if (isSupabaseMode) {
@@ -2302,8 +2314,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const archiveCheck = validateCampNotArchived(activeCamp);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
 
-    const target = lectures.find((l) => l.id === input.lectureId);
-    if (!target) return { ok: false, error: 'Lecture not found.' };
+    const target = lectures.find((l) => l.id === input.lectureId && l.campId === activeCamp.id);
+    if (!target) return { ok: false, error: 'Lecture not found in selected Camp.' };
 
     const effectiveInst =
       input.substituteInstructorId !== undefined
@@ -2327,6 +2339,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!validation.valid) {
       return { ok: false, error: validation.conflicts.join(' ') };
+    }
+
+    const crossCampValidation = validateCrossCampLectureSlot({
+      existingLectures: lectures,
+      candidate: {
+        id: target.id, campId: target.campId, lectureDate: target.lectureDate,
+        startTime: target.startTime, endTime: target.endTime,
+        instructorId: effectiveInst, roomId: input.roomId || target.roomId,
+      },
+    });
+    if ((input.status || target.status) !== LectureStatus.CANCELLED &&
+        !crossCampValidation.valid) {
+      return {ok:false,error:crossCampValidation.conflicts.join(' ')};
     }
 
     if (isSupabaseMode) {
