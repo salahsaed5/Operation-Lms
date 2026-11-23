@@ -10,6 +10,7 @@ import {
   calculateHaversineDistanceMeters,
   evaluateDailyCheckin,
   validateLectureScheduleSlot,
+  validateCrossCampLectureSlot,
   finalizeAttendanceSubmission,
   evaluateLectureEntitlement,
   validateEntitlementUpsert,
@@ -1771,4 +1772,33 @@ test('teaching calendar blocks non-teaching start dates, duplicate days and impo
   assert.ok(validateCampWeekdays('2026-02-30',[0,2,4]));
   assert.equal(calculateCampDayDate('2026-11-29',0,[0,2,4]),'2026-11-29'); // Legacy safe clamp
   assert.throws(()=>calculateCampDayDate('2026-11-29',15,[]));
+});
+
+test('parallel Camp schedule: same real date/time blocks instructor and room across Camp IDs',()=>{
+  const lecture={
+    id:'sat',campId:'camp-a',campDay:1,lectureDate:'2026-11-29',
+    periodNumber:1,startTime:'09:00',endTime:'12:00',
+    instructorId:'inst-A',substituteInstructorId:null,
+    roomId:'venue-1-room-1',groupId:'group-a',status:LectureStatus.SCHEDULED,
+  };
+  const conflict=validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-29',
+      startTime:'11:00',endTime:'13:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  });
+  assert.equal(conflict.valid,false);
+  assert.ok(conflict.conflicts.some(c=>c.includes('Instructor')));
+  assert.ok(conflict.conflicts.some(c=>c.includes('Room')));
+  // Different Camp weekday => different calendar date, even with same campDay.
+  assert.equal(validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-30',
+      startTime:'09:00',endTime:'12:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  }).valid,true);
+  // Another Camp can use the same real resources after the period is finished.
+  assert.equal(validateCrossCampLectureSlot({
+    existingLectures:[lecture as any],
+    candidate:{campId:'camp-b',lectureDate:'2026-11-29',
+      startTime:'12:00',endTime:'15:00',instructorId:'inst-A',roomId:'venue-1-room-1'}
+  }).valid,true);
 });
