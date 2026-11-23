@@ -22,10 +22,11 @@ jobs:
           STAGING_ORIGIN: https://operation-lms-staging-salah-2543.vercel.app
           PREVIEW_ORIGIN: https://operation-ca6y7khe0-salah-2543.vercel.app
           BRANCH_ORIGIN: https://operation-lms-git-design-graphite-glass-respo-56f62e-salah-2543.vercel.app
+          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
         run: |
           set -euo pipefail
           url_base="https://${STAGING_PROJECT}.supabase.co/functions/v1"
-          for origin_to_check in "$STAGING_ORIGIN" "$PREVIEW_ORIGIN" "$BRANCH_ORIGIN"; do
+          for origin_to_check in "$STAGING_ORIGIN" "$PREVIEW_ORIGIN" "$BRANCH_ORIGIN" "$HOSTINGER_ORIGIN"; do
             for fn in auth-login provision-instructor; do
               headers="$(mktemp)"
               status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \

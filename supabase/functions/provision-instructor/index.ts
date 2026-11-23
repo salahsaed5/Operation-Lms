@@ -57,6 +57,7 @@ const UUID_REGEX =
 
 // Staging-only, exact Vercel origins. Production keeps its configured CORS policy.
 const STAGING_PREVIEW_ORIGINS = [
+  'https://gleaming-skyblue-heron-54.hostingersite.com',
   'https://operation-ca6y7khe0-salah-2543.vercel.app',
   'https://operation-lms-git-design-graphite-glass-respo-56f62e-salah-2543.vercel.app',
 ];
