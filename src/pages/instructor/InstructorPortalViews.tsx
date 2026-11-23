@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { calculateInstructorFinancialStatement } from '../../domain/instructorFinance';
-import { calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
+import { calculateCampDayDate, calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
 import { studentsForSelectedLecture } from '../../domain/instructorLectureRoster';
@@ -65,6 +65,15 @@ function instructorCheckinBadge(
       return { label: t('Recorded', 'مسجل'), tone: 'neutral' };
   }
 }
+
+/** Compare all teaching dates in the Camp's Cairo timezone, never browser local time. */
+const cairoTodayIso = (): string => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit',
+  }).formatToParts(new Date());
+  const part = (type:string) => parts.find(p=>p.type===type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
 
 export const InstructorDashboardView: React.FC = () => {
   const {
@@ -138,6 +147,11 @@ export const InstructorDashboardView: React.FC = () => {
   const checkinDisplay = myCheckinToday
     ? instructorCheckinBadge(myCheckinToday.status, t)
     : null;
+  const scheduledTeachingDate = calculateCampDayDate(
+    activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays
+  );
+  const isOffDay = (activeCamp.operatingWeekdays?.length ?? 7) < 7 &&
+    scheduledTeachingDate !== cairoTodayIso();
 
   return (
     <div className="space-y-5">
@@ -153,7 +167,7 @@ export const InstructorDashboardView: React.FC = () => {
               {t(
                 `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
                 `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
-              )}
+              )} · {scheduledTeachingDate}
             </span>
           </>
         }
@@ -169,6 +183,10 @@ export const InstructorDashboardView: React.FC = () => {
               </span>
               {checkinDisplay ? (
                 <StatusBadge tone={checkinDisplay.tone}>{checkinDisplay.label}</StatusBadge>
+              ) : isOffDay ? (
+                <StatusBadge tone="neutral">
+                  {t('Not a teaching date', 'مش يوم دراسة')}
+                </StatusBadge>
               ) : (
                 <StatusBadge tone="warning">
                   {t('Action Required', 'مطلوب قبل المحاضرة')}
@@ -182,6 +200,9 @@ export const InstructorDashboardView: React.FC = () => {
             >
               {myCheckinToday
                 ? checkinDisplay?.label
+                : isOffDay
+                ? t(`Check-in opens on the scheduled teaching date: ${scheduledTeachingDate}`,
+                    `تسجيل الوصول هيفتح يوم الدراسة ${scheduledTeachingDate}`)
                 : t(
                     'Complete your GPS & selfie venue check-in before starting',
                     'أكمل تسجيل الوصول بالموقع وصورة التحقق قبل بدء المحاضرة'
@@ -201,7 +222,8 @@ export const InstructorDashboardView: React.FC = () => {
           <button
             type="button"
             onClick={() => setInstructorRoute('checkin')}
-            className={`${BTN_PRIMARY} min-h-[44px] px-4`}
+            disabled={isOffDay && !myCheckinToday}
+            className={`${BTN_PRIMARY} min-h-[44px] px-4 disabled:opacity-50`}
           >
             <MapPinCheck className="w-4 h-4" />
             <span>
@@ -260,7 +282,7 @@ export const InstructorDashboardView: React.FC = () => {
               id="inst-daily-schedule"
               className="text-sm font-bold text-slate-900 dark:text-white"
             >
-              {t('3. Today’s Schedule', '3. جدولي اليومي')}
+              {t('3. Current Teaching Day Schedule', '3. جدول يوم الدراسة المحدد')} · {scheduledTeachingDate}
             </h2>
             <span className="text-xs font-mono tabular-nums text-slate-500">
               {myLecturesToday.length} {t('Lectures', 'محاضرات')}
@@ -507,6 +529,11 @@ export const InstructorCheckinView: React.FC = () => {
     ? venues.find((v) => v.id === activeCamp.venueId) || venues[0]
     : venues[0];
 
+  const scheduledTeachingDate = activeCamp
+    ? calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays)
+    : '';
+  const isOffDay = Boolean(activeCamp && (activeCamp.operatingWeekdays?.length ?? 7) < 7 &&
+    scheduledTeachingDate !== cairoTodayIso());
   const existingCheckin =
     activeCamp && currentInstructor
       ? checkins.find(
@@ -769,6 +796,12 @@ export const InstructorCheckinView: React.FC = () => {
 
   const handleCheckin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffDay) {
+      setResultMsg({ok:false,text:t(
+        `Check-in is only allowed on your scheduled teaching date: ${scheduledTeachingDate}`,
+        `تسجيل الوصول متاح يوم الدراسة المحدد فقط: ${scheduledTeachingDate}`)});
+      return;
+    }
     if (!gpsSnapshot || !selfieBlob || !maySubmitGps || Date.now() - gpsSnapshot.at > 30_000) {
       setResultMsg({ ok: false, text: t(
         'Capture a new selfie with a fresh, accurate GPS reading first.',
@@ -857,6 +890,12 @@ export const InstructorCheckinView: React.FC = () => {
 
       <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
 
+        {isOffDay && (
+          <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm">
+            {t(`Check-in is closed until teaching date ${scheduledTeachingDate}.`,
+               `تسجيل الوصول مقفول لحد يوم الدراسة ${scheduledTeachingDate}.`)}
+          </div>
+        )}
         <section className={`${SURFACE_SUBTLE} p-4 space-y-2`}>
           <p className="text-sm font-bold text-slate-900 dark:text-white">{t(venue.nameEn, venue.nameAr)}</p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -1039,7 +1078,7 @@ export const InstructorCheckinView: React.FC = () => {
 
         <button
           type="submit"
-          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || !maySubmitGps || Boolean(existingCheckin) || activeCamp.status !== CampStatus.ACTIVE}
+          disabled={isBusy || cameraOpen || cameraCapturing || !selfieBlob || !maySubmitGps || Boolean(existingCheckin) || isOffDay || activeCamp.status !== CampStatus.ACTIVE}
           className={`${BTN_PRIMARY} w-full min-h-[48px] text-sm disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           <MapPinCheck className="w-4 h-4" />
