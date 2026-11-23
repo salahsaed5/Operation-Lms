@@ -305,3 +305,57 @@ test('Admin Finance reconciles primary, backup, transportation and immutable pay
   await expect(own).not.toContainText('Eng. Karim Adel');
   expect(runtimeErrors).toEqual([]);
 });
+
+
+test('Admin sidebar opens on hover, pins on demand, and persists the preference', async ({ page }) => {
+  await page.setViewportSize({ width: 1365, height: 900 });
+  await page.goto('/');
+  const sidebar = page.getByRole('complementary', { name: 'Admin modules navigation' });
+  const navigate = sidebar.getByRole('button', { name: 'Students & Groups', exact: true });
+  await expect(navigate).toBeVisible();
+  await page.getByRole('button', { name: 'Toggle sidebar' }).click();
+  // Collapse to icons; hover overlays instead of shifting main content.
+  await expect(sidebar).toHaveCSS('width', '72px');
+  await page.mouse.move(1000, 600);
+  await expect(navigate.getByText('Students & Groups')).toHaveCount(0);
+  await sidebar.hover();
+  await expect(navigate.getByText('Students & Groups')).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Pin sidebar open' }).click();
+  await page.mouse.move(1000, 600);
+  await expect(navigate.getByText('Students & Groups')).toBeVisible();
+  await page.reload();
+  await expect(sidebar).toHaveCSS('width', '240px');
+});
+
+test('Admin mobile glass tabs navigate and More opens hidden modules', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const bar = page.getByRole('navigation', { name: 'Mobile bottom navigation' });
+  await expect(bar).toBeVisible();
+  await bar.getByRole('button', { name: 'Schedule', exact: true }).click();
+  await expect(bar.getByRole('button', { name: 'Schedule' })).toHaveAttribute('aria-current','page');
+  await bar.getByRole('button', { name: 'More', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'More sections' });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: 'Students & Groups', exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(bar.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current','page');
+});
+
+test('Instructor mobile glass tabs reach check-in and attendance without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  // Local sandbox account switcher is a dev-only test helper.
+  await page.getByRole('button', { name: 'Open navigation menu' }).click();
+  await page.getByRole('complementary', { name: 'Admin modules navigation' })
+    .getByRole('button', { name: 'Logout' }).click();
+  await page.getByRole('region', { name: 'Local sandbox account selector' })
+    .getByRole('button', { name: /Instructor/ }).first().click();
+  const bar = page.getByRole('navigation', { name: 'Mobile bottom navigation' });
+  await expect(bar).toBeVisible();
+  await bar.getByRole('button', { name: 'Check-in', exact: true }).click();
+  await expect(bar.getByRole('button', { name: 'Check-in' })).toHaveAttribute('aria-current','page');
+  await bar.getByRole('button', { name: 'Attendance', exact: true }).click();
+  await expect(bar.getByRole('button', { name: 'Attendance' })).toHaveAttribute('aria-current','page');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
+});
