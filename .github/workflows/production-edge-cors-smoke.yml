@@ -39,6 +39,41 @@ jobs:
             fi
           done
 
+      - name: Validate Production auth-login fails closed for fake credentials
+        env:
+          PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
+          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            -X POST "https://${PRODUCTION_PROJECT}.supabase.co/functions/v1/auth-login" \
+            -H "Origin: ${HOSTINGER_ORIGIN}" -H 'Content-Type: application/json' \
+            -d '{"identifier":"hostinger-smoke-nonexistent@invalid.example","password":"not-an-actual-password"}' \
+            -o /dev/null -w '%{http_code}')"
+          echo "Fabricated login: HTTP ${status}"
+          if [[ "${status}" != "401" ]]; then
+            echo "::error::Expected uniform 401 for an invalid login, not ${status}"
+            exit 1
+          fi
+
+      - name: Verify Instructor provisioning requires authentication
+        env:
+          PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
+          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+            -X POST "https://${PRODUCTION_PROJECT}.supabase.co/functions/v1/provision-instructor" \
+            -H "Origin: ${HOSTINGER_ORIGIN}" -H 'Content-Type: application/json' \
+            -d '{}' -o /dev/null -w '%{http_code}')"
+          echo "Unauthenticated instructor provision: HTTP ${status}"
+          if [[ "${status}" != "401" && "${status}" != "403" ]]; then
+            echo "::error::Provisioning must reject a missing admin token, got ${status}"
+            exit 1
+          fi
+
       - name: Confirm Production rejects an unauthorized external Origin
         env:
           PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
