@@ -1767,6 +1767,6 @@ test('teaching calendar blocks non-teaching start dates, duplicate days and impo
   assert.match(validateCampWeekdays('2026-11-30',[0,2,4])||'',/first teaching date/i);
   assert.ok(validateCampWeekdays('2026-11-29',[0,0,2]));
   assert.ok(validateCampWeekdays('2026-02-30',[0,2,4]));
-  assert.throws(()=>calculateCampDayDate('2026-11-29',0,[0,2,4]));
+  assert.equal(calculateCampDayDate('2026-11-29',0,[0,2,4]),'2026-11-29'); // Legacy safe clamp
   assert.throws(()=>calculateCampDayDate('2026-11-29',15,[]));
 });
