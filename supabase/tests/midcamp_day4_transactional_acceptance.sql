@@ -52,13 +52,12 @@ BEGIN
        room_id,topic,frozen_rate_egp)
     VALUES(v_camp,1,v_start,1,'09:00','12:00',v_group,v_inst,v_room,'Day 1 prejoin QA',300)
     RETURNING id INTO v_lecture;
+    PERFORM set_config('request.jwt.claim.sub',v_uid::text,true);
+    PERFORM set_config('request.jwt.claim.role','authenticated',true);
     INSERT INTO public.attendance_sheets
       (camp_id,lecture_id,instructor_id,idempotency_key)
     VALUES (v_camp,v_lecture,v_inst,'rollback-day4-'||v_lecture::text)
     RETURNING id INTO v_sheet;
-
-    PERFORM set_config('request.jwt.claim.sub',v_uid::text,true);
-    PERFORM set_config('request.jwt.claim.role','authenticated',true);
     v_student:=public.instructor_enroll_midcamp_student_tx(
       v_group,'STG-ROLLBACK-D4','Synthetic Midcamp Acceptance Student',
       'Staging University','Teaching-day four enrollment acceptance'
