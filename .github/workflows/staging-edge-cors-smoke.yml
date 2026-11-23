@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/atomic-attendance-sync-20261122
+      - 'design/**'
   workflow_dispatch:
 
 permissions:
@@ -19,28 +20,32 @@ jobs:
         env:
           STAGING_PROJECT: uewhudbufykfkhimvqjj
           STAGING_ORIGIN: https://operation-lms-staging-salah-2543.vercel.app
+          PREVIEW_ORIGIN: https://operation-ca6y7khe0-salah-2543.vercel.app
+          BRANCH_ORIGIN: https://operation-lms-git-design-graphite-glass-respo-56f62e-salah-2543.vercel.app
         run: |
           set -euo pipefail
           url_base="https://${STAGING_PROJECT}.supabase.co/functions/v1"
-          for fn in auth-login provision-instructor; do
-            headers="$(mktemp)"
-            status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
-              -X OPTIONS "${url_base}/${fn}" \
-              -H "Origin: ${STAGING_ORIGIN}" \
-              -H 'Access-Control-Request-Method: POST' \
-              -H 'Access-Control-Request-Headers: authorization,apikey,content-type' \
-              -D "$headers" -o /dev/null -w '%{http_code}')"
-            origin="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
-            rm -f "$headers"
-            echo "${fn}: HTTP ${status}; CORS origin ${origin:-<absent>}"
-            if [[ "$status" != 200 && "$status" != 204 ]]; then
-              echo "::error::Staging ${fn} OPTIONS failed with HTTP ${status}; check Edge gateway JWT and CORS configuration."
-              exit 1
-            fi
-            if [[ "$origin" != "$STAGING_ORIGIN" ]]; then
-              echo "::error::Staging ${fn} does not allow exact Staging alias. Configure its ALLOWED_ORIGINS secret, not a wildcard."
-              exit 1
-            fi
+          for origin_to_check in "$STAGING_ORIGIN" "$PREVIEW_ORIGIN" "$BRANCH_ORIGIN"; do
+            for fn in auth-login provision-instructor; do
+              headers="$(mktemp)"
+              status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+                -X OPTIONS "${url_base}/${fn}" \
+                -H "Origin: ${origin_to_check}" \
+                -H 'Access-Control-Request-Method: POST' \
+                -H 'Access-Control-Request-Headers: authorization,apikey,content-type' \
+                -D "$headers" -o /dev/null -w '%{http_code}')"
+              origin="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
+              rm -f "$headers"
+              echo "${fn}: HTTP ${status}; preview ${origin_to_check}; allowed ${origin:-<absent>}"
+              if [[ "$status" != 200 && "$status" != 204 ]]; then
+                echo "::error::Staging ${fn} OPTIONS failed with HTTP ${status}; check Edge gateway JWT and CORS configuration."
+                exit 1
+              fi
+              if [[ "$origin" != "$origin_to_check" ]]; then
+                echo "::error::Staging ${fn} does not allow exact configured origin."
+                exit 1
+              fi
+            done
           done
 
       - name: Confirm untrusted origins are not reflected
