@@ -195,29 +195,20 @@ export function processConcurrentAdminCreations(
 }
 
 /**
- * 2. Enforce Single Active Camp Rule & Archived Camp Read-Only Protection
+ * Parallel Active Camps are allowed. Archived Camps cannot be reactivated.
+ * Membership, lecture resource conflicts, and per-Camp dates are enforced
+ * independently by database RLS and schedule triggers.
  */
 export function validateCampActivation(
   camps: Pick<Camp, 'id' | 'nameEn' | 'status'>[],
   targetCampId: string
 ): { allowed: boolean; error?: string } {
-  const target = camps.find((c) => c.id === targetCampId);
-  if (target?.status === CampStatus.ARCHIVED) {
-    return {
-      allowed: false,
-      error: `Camp "${target.nameEn}" is archived and strictly read-only.`,
-    };
+  const target = camps.find(c => c.id === targetCampId);
+  if (!target) return {allowed:false,error:'Selected Camp does not exist.'};
+  if (target.status === CampStatus.ARCHIVED) {
+    return {allowed:false,error:`Camp "${target.nameEn}" is archived and strictly read-only.`};
   }
-  const existingActive = camps.find(
-    (c) => c.status === CampStatus.ACTIVE && c.id !== targetCampId
-  );
-  if (existingActive) {
-    return {
-      allowed: false,
-      error: `Only one camp can be active at a time. "${existingActive.nameEn}" is currently active.`,
-    };
-  }
-  return { allowed: true };
+  return {allowed:true};
 }
 
 export function validateCampNotArchived(camp: Pick<Camp, 'id' | 'nameEn' | 'status'>): {
