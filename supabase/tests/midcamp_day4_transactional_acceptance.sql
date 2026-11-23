@@ -11,7 +11,6 @@ DECLARE
   v_uid uuid;
   v_day integer;
   v_student uuid;
-  v_today date := (now() AT TIME ZONE 'Africa/Cairo')::date;
 BEGIN
   SELECT c.id,g.id,sh.id,l.id,l.instructor_id,i.profile_id
     INTO v_camp,v_group,v_sheet,v_lecture,v_inst,v_uid
@@ -28,9 +27,9 @@ BEGIN
   END IF;
 
   BEGIN
-    -- Simulate Day 4 only in this rolled-back subtransaction.
-    UPDATE public.camps SET status='active',
-      start_date=v_today-3, end_date=v_today+6, current_camp_day=4
+    -- Simulate Day 4 only. Do not move the first teaching date: lecture
+    -- dates are immutable when their timetable has already been scheduled.
+    UPDATE public.camps SET status='active', current_camp_day=4
     WHERE id=v_camp;
 
     PERFORM set_config('request.jwt.claim.sub',v_uid::text,true);
