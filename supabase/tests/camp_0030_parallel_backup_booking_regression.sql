@@ -15,7 +15,7 @@ BEGIN
   JOIN public.admin_accounts a ON a.profile_id=p.id
   WHERE p.role='admin' AND p.is_active LIMIT 1;
   SELECT p.id INTO v_admin2 FROM public.profiles p WHERE p.role='admin'
-    AND p.id <> v_admin AND p.is_active LIMIT 1;
+    AND p.id <> v_admin LIMIT 1; -- identity only, no login in rollback fixture
   SELECT i.id INTO v_real_inst FROM public.instructors i
     JOIN public.profiles p ON p.id=i.profile_id WHERE p.role='instructor' AND p.is_active LIMIT 1;
   SELECT r.id,r.venue_id INTO v_room1,v_venue FROM public.rooms r WHERE r.is_active LIMIT 1;
