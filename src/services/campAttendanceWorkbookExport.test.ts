@@ -140,6 +140,7 @@ test('15 teaching-day Excel contains Day 15 and correct dynamic formula columns'
   const daily=entries['xl/worksheets/sheet2.xml'];
   const summary=entries['xl/worksheets/sheet1.xml'];
   assert.match(daily,/Day 15/);
+  assert.match(daily,/2026-12-31/); // final scheduled Thursday, not Day 15 consecutive
   assert.match(daily,/COUNTIF\(E5:S5/);
   assert.match(daily,/SUM\(T5:T7\)/);
   assert.match(daily,/A4:W/);
