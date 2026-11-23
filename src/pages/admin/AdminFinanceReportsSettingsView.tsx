@@ -820,7 +820,7 @@ export const AdminReportsView: React.FC = () => {
     setExportBusy(true);
     setExportFeedback(null);
     try {
-      const result = await downloadTenDayAttendanceWorkbook();
+      const result = await downloadTenDayAttendanceWorkbook(groupFilter === 'all' ? undefined : groupFilter);
       setExportFeedback({
         ok: result.ok,
         text: result.ok
@@ -858,7 +858,7 @@ export const AdminReportsView: React.FC = () => {
               onClick={() => { void handleDownloadAttendanceWorkbook(); }}>
               <Download className="w-4 h-4" />
               <span>{exportBusy ? t('Preparing Excel...', 'جاري تجهيز الإكسيل...') :
-                t(`Download ${activeCamp?.durationDays || 10}-Day Attendance Excel`, `تحميل شيت حضور ${activeCamp?.durationDays || 10} يوم`)}</span>
+                t(`Export ${groupFilter === 'all' ? 'all groups' : 'selected group'} · ${activeCamp?.durationDays || 10} days`, `تصدير ${groupFilter === 'all' ? 'كل المجموعات' : 'المجموعة المحددة'} · ${activeCamp?.durationDays || 10} يوم`)}</span>
             </button>
             <div className="relative sm:w-56">
               <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
