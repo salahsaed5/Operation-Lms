@@ -468,6 +468,45 @@ export function validateLectureScheduleSlot(params: {
   };
 }
 
+/** Parallel Camps cannot book the same real Instructor or room across
+ * overlapping dates/times. Camp-Day numbers and period numbers are local to
+ * each Camp; real lectureDate and actual time windows are authoritative.
+ */
+export function validateCrossCampLectureSlot(params: {
+  existingLectures: Lecture[];
+  candidate: Pick<Lecture,
+    'campId'|'lectureDate'|'startTime'|'endTime'|'instructorId'|'roomId'> & {
+      id?: string;
+      substituteInstructorId?: string | null;
+    };
+}): { valid: boolean; conflicts: string[] } {
+  const { existingLectures, candidate } = params;
+  const start = parseTimeMinutes(candidate.startTime);
+  const end = parseTimeMinutes(candidate.endTime);
+  const effectiveInstructor = candidate.substituteInstructorId || candidate.instructorId;
+  const conflicts: string[] = [];
+  for (const lec of existingLectures) {
+    if (lec.id === candidate.id || lec.campId === candidate.campId ||
+        lec.lectureDate !== candidate.lectureDate ||
+        lec.status === LectureStatus.CANCELLED) continue;
+    const lecStart = parseTimeMinutes(lec.startTime);
+    const lecEnd = parseTimeMinutes(lec.endTime);
+    if (start === null || end === null || lecStart === null || lecEnd === null ||
+        start >= lecEnd || end <= lecStart) continue;
+    if ((lec.substituteInstructorId || lec.instructorId) === effectiveInstructor) {
+      conflicts.push(
+        `Cross-Camp Instructor conflict: already teaching another Camp on ${candidate.lectureDate}.`
+      );
+    }
+    if (lec.roomId === candidate.roomId) {
+      conflicts.push(
+        `Cross-Camp Room conflict: room already occupied on ${candidate.lectureDate}.`
+      );
+    }
+  }
+  return {valid: conflicts.length === 0,conflicts};
+}
+
 /**
  * 6. Attendance Submission & Unmarked -> Absent Conversion + Duplicate Same-Day/Cross-Group Prevention
  */
