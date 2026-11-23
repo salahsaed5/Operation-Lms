@@ -391,7 +391,7 @@ test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload ne
 
   // Returning to RTL after reload also exercises the collapsed persisted state.
   await page.getByRole('button', { name: 'Switch Language' }).click();
-  await page.getByRole('button', { name: 'Switch Light or Dark Theme' }).click();
+  await page.getByRole('button', { name: 'تبديل المظهر الفاتح أو الداكن' }).click();
   // Hover overlays the navigation; pin restores expanded layout.
   await sidebar.hover();
   await expect(sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' })).toBeVisible();
