@@ -359,3 +359,42 @@ test('Instructor mobile glass tabs reach check-in and attendance without overflo
   await expect(bar.getByRole('button', { name: 'Attendance' })).toHaveAttribute('aria-current','page');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
 });
+
+
+test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload never blank the screen', async ({ page }) => {
+  const jsErrors: string[] = [];
+  page.on('pageerror', err => jsErrors.push(err.message));
+  await page.setViewportSize({ width: 1790, height: 900 });
+  await page.goto('/');
+  const main = page.locator('main').first();
+  const sidebar = page.getByRole('complementary', { name: 'Admin modules navigation' });
+  await expect(sidebar).toBeVisible();
+  await page.getByRole('button', { name: 'Switch Light or Dark Theme' }).click();
+  await page.getByRole('button', { name: 'Switch Language' }).click();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await expect(main).toBeVisible();
+
+  // Regression: deployed preview used mobileNavOpen in a derived expression
+  // before declaration. Collapsing from an unhovered state unmounted React.
+  await page.getByRole('button', { name: 'طي أو توسيع القائمة الجانبية' }).click();
+  await page.mouse.move(250, 500);
+  await expect(main).toBeVisible();
+  await expect(sidebar).toHaveCSS('width', '72px');
+  expect(jsErrors).toEqual([]);
+
+  // The same collapsed preference must survive a reload (old preview crashed).
+  await page.reload();
+  await expect(sidebar).toHaveCSS('width', '72px');
+  await expect(main).toBeVisible();
+  expect(jsErrors).toEqual([]);
+
+  // Hover overlays the navigation; pin restores expanded layout.
+  await sidebar.hover();
+  await expect(sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' })).toBeVisible();
+  await sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' }).click();
+  await page.mouse.move(250, 500);
+  await expect(sidebar).toHaveCSS('width', '240px');
+  await expect(main).toBeVisible();
+  expect(jsErrors).toEqual([]);
+});
