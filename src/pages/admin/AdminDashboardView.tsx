@@ -56,10 +56,11 @@ export const AdminDashboardView: React.FC = () => {
     : [];
   const campGroups = activeCamp ? groups.filter((g) => g.campId === activeCamp.id) : [];
   const assignedIds = activeCamp ? campInstructorIds[activeCamp.id] : undefined;
-  const campInstructors =
-    assignedIds && assignedIds.length > 0
-      ? instructors.filter((i) => assignedIds.includes(i.id))
-      : instructors;
+  // A Camp with no assigned instructors must show zero, not instructors
+  // from other simultaneously active Camps.
+  const campInstructors = instructors.filter(i =>
+    (assignedIds || []).includes(i.id)
+  );
 
   const todayLectures = useMemo(() => {
     if (!activeCamp) return [];
