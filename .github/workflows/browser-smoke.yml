@@ -5,6 +5,8 @@ on:
     branches:
       - fix/atomic-attendance-sync-20261122
       - 'design/**'
+      - 'release/**'
+      - main
   workflow_dispatch:
 
 permissions:

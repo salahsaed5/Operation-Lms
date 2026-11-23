@@ -62,6 +62,24 @@ const STAGING_PREVIEW_ORIGINS = [
   'https://operation-lms-git-design-graphite-glass-respo-56f62e-salah-2543.vercel.app',
 ];
 
+// The live Hostinger URL is allowed only against the actual Production project.
+// Do not trust an arbitrary caller Origin or grant wildcard access.
+const PRODUCTION_HOSTINGER_ORIGINS = [
+  'https://gleaming-skyblue-heron-54.hostingersite.com',
+];
+
+function productionHostingerOrigins(): string[] {
+  const productionRef = 'wdmlxsgbjkboadkeekdq';
+  try {
+    const host = new URL(Deno.env.get('SUPABASE_URL') || '').hostname;
+    if (host === productionRef + '.supabase.co') return PRODUCTION_HOSTINGER_ORIGINS;
+  } catch {
+    // No usable project URL: never open CORS to arbitrary origins.
+  }
+  return Deno.env.get('SUPABASE_PROJECT_REF') === productionRef
+    ? PRODUCTION_HOSTINGER_ORIGINS : [];
+}
+
 function stagingPreviewOrigins(): string[] {
   const stagingRef = 'uewhudbufykfkhimvqjj';
   try {
@@ -77,7 +95,7 @@ function stagingPreviewOrigins(): string[] {
 function resolveAllowedOrigins(): string[] {
   const raw = (Deno.env.get('ALLOWED_ORIGINS') || '').trim();
   if (!raw) {
-    return [...DEFAULT_PRODUCTION_ORIGINS, ...stagingPreviewOrigins()];
+    return [...DEFAULT_PRODUCTION_ORIGINS, ...stagingPreviewOrigins(), ...productionHostingerOrigins()];
   }
 
   const parsed: string[] = [];
@@ -100,7 +118,7 @@ function resolveAllowedOrigins(): string[] {
     }
   }
 
-  return [...new Set([...(parsed.length > 0 ? parsed : DEFAULT_PRODUCTION_ORIGINS), ...stagingPreviewOrigins()])];
+  return [...new Set([...(parsed.length > 0 ? parsed : DEFAULT_PRODUCTION_ORIGINS), ...stagingPreviewOrigins(), ...productionHostingerOrigins()])];
 }
 
 function evaluateOriginPolicy(

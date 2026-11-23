@@ -1,0 +1,62 @@
+name: Production Edge CORS Smoke (No Credentials)
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-edge-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact Hostinger Origin for Production Edge Functions
+        env:
+          PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
+          HOSTINGER_ORIGIN: https://gleaming-skyblue-heron-54.hostingersite.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          for function in auth-login provision-instructor; do
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+              -X OPTIONS "https://${PRODUCTION_PROJECT}.supabase.co/functions/v1/${function}" \
+              -H "Origin: ${HOSTINGER_ORIGIN}" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,apikey,content-type' \
+              -D "$headers" -o /dev/null -w '%{http_code}')"
+            allowed="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
+            rm -f "$headers"
+            echo "${function}: HTTP ${status}, allowed origin ${allowed:-none}"
+            if [[ "$status" != 200 && "$status" != 204 || "$allowed" != "$HOSTINGER_ORIGIN" ]]; then
+              echo "::error::Production CORS preflight failed for ${function}"
+              exit 1
+            fi
+          done
+
+      - name: Confirm Production rejects an unauthorized external Origin
+        env:
+          PRODUCTION_PROJECT: wdmlxsgbjkboadkeekdq
+        shell: bash
+        run: |
+          set -euo pipefail
+          for function in auth-login provision-instructor; do
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 25 \
+              -X OPTIONS "https://${PRODUCTION_PROJECT}.supabase.co/functions/v1/${function}" \
+              -H 'Origin: https://not-allowed.example.invalid' \
+              -H 'Access-Control-Request-Method: POST' \
+              -D "$headers" -o /dev/null -w '%{http_code}')"
+            allowed="$(awk 'BEGIN{IGNORECASE=1} {gsub(/\r/,""); if(tolower($1)=="access-control-allow-origin:")print $2}' "$headers" | tail -1)"
+            rm -f "$headers"
+            echo "${function}: untrusted origin HTTP ${status}, response reflected=${allowed:-none}"
+            if [[ "$allowed" == "https://not-allowed.example.invalid" || "$status" == "200" || "$status" == "204" ]]; then
+              echo "::error::Production unexpectedly allows untrusted Origin"
+              exit 1
+            fi
+          done

@@ -3,10 +3,10 @@ name: CITS Web CI
 on:
   push:
     # Validate unmerged staging feature/fix branches as well as main.
-    branches: [main, phase-2-finalization, 'feat/**', 'fix/**']
+    branches: [main, phase-2-finalization, 'feat/**', 'fix/**', 'design/**', 'release/**']
   pull_request:
     # Run for stacked Draft PRs too, not only PRs directly targeting main.
-    branches: [main, 'feat/**', 'fix/**']
+    branches: [main, 'feat/**', 'fix/**', 'release/**']
 
 jobs:
   verify-app-and-sql-static:
