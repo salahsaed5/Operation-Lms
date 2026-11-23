@@ -367,7 +367,7 @@ test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload ne
   await page.setViewportSize({ width: 1790, height: 900 });
   await page.goto('/');
   const main = page.locator('main').first();
-  const sidebar = page.getByRole('complementary', { name: 'Admin modules navigation' });
+  const sidebar = page.getByRole('complementary', { name: /Admin modules navigation|قائمة وحدات الإدارة/ });
   await expect(sidebar).toBeVisible();
   await page.getByRole('button', { name: 'Switch Light or Dark Theme' }).click();
   await page.getByRole('button', { name: 'Switch Language' }).click();
@@ -389,6 +389,9 @@ test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload ne
   await expect(main).toBeVisible();
   expect(jsErrors).toEqual([]);
 
+  // Returning to RTL after reload also exercises the collapsed persisted state.
+  await page.getByRole('button', { name: 'Switch Language' }).click();
+  await page.getByRole('button', { name: 'Switch Light or Dark Theme' }).click();
   // Hover overlays the navigation; pin restores expanded layout.
   await sidebar.hover();
   await expect(sidebar.getByRole('button', { name: 'تثبيت القائمة مفتوحة' })).toBeVisible();
