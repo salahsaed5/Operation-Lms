@@ -329,7 +329,7 @@ Deno.serve(async (req: Request) => {
   const id=typeof body.instructorId==='string'?body.instructorId:'';
   const action=body.action;
   const value=typeof body.value==='string'?body.value.trim():'';
-  if(!UUID_REGEX.test(id)||!['email','temporary_credential'].includes(String(action)))return reply(400,'Invalid instructor or action.');
+  if(!UUID_REGEX.test(id)||(action!=='email' && action!=='temporary_credential'))return reply(400,'Invalid instructor or action.');
   if(action==='email'&&(!EMAIL_REGEX.test(value)||value.length>254))return reply(400,'Invalid email.');
   if(action==='temporary_credential'&&validateInitialPasswordStrength(value))return reply(400,'Use a strong password of 8–128 characters with uppercase, lowercase and digits.');
 
