@@ -136,6 +136,7 @@ import {
   transferStudentInDb,
   updateCampInDb,
   updateInstructorInDb,
+  updateInstructorCredentialInDb,
   updateLectureInDb,
   uploadCheckinSelfie,
   upsertGroupInDb,
@@ -304,6 +305,8 @@ interface AppContextValue {
   updateInstructorAccount: (input: {
     instructorId: string;
     profileId: string;
+    instructorCode?: string;
+    username?: string;
     fullNameEn?: string;
     fullNameAr?: string;
     phone?: string;
@@ -314,6 +317,7 @@ interface AppContextValue {
     assignedToActiveCamp?: boolean;
   }) => Promise<ActionResult>;
 
+  updateInstructorCredential: (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }) => Promise<ActionResult>;
   triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
 
   createSingleStudent: (input: {
@@ -1867,6 +1871,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateInstructorAccount = async (input: {
     instructorId: string;
     profileId: string;
+    instructorCode?: string;
+    username?: string;
     fullNameEn?: string;
     fullNameAr?: string;
     phone?: string;
@@ -1890,11 +1896,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const target = instructors.find(i=>i.id===input.instructorId && i.profileId===input.profileId);
+    if (!target) return {ok:false,error:'Instructor account not found.'};
+    const code = input.instructorCode?.trim().toUpperCase();
+    const username = input.username?.trim().toLowerCase();
+    if (code !== undefined && (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code) || instructors.some(i=>i.id!==target.id && i.instructorCode.toUpperCase()===code))) return {ok:false,error:'Invalid or duplicate instructor code.'};
+    if (username !== undefined && (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username) || profiles.some(i=>i.id!==target.profileId && i.username?.toLowerCase()===username))) return {ok:false,error:'Invalid or duplicate username.'};
     if (isSupabaseMode) {
       try {
         await updateInstructorInDb({
           instructorId: input.instructorId,
           profileId: input.profileId,
+          instructorCode: code,
+          username,
           fullNameEn: input.fullNameEn,
           fullNameAr: input.fullNameAr,
           phone: input.phone,
@@ -1920,6 +1934,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         inst.id === input.instructorId
           ? {
               ...inst,
+              instructorCode: code ?? inst.instructorCode,
+              username: username ?? inst.username,
               fullNameEn:
                 input.fullNameEn !== undefined && input.fullNameEn.trim()
                   ? input.fullNameEn.trim()
@@ -1942,6 +1958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         p.id === input.profileId
           ? {
               ...p,
+              username: username ?? p.username,
               fullNameEn:
                 input.fullNameEn !== undefined && input.fullNameEn.trim()
                   ? input.fullNameEn.trim()
@@ -1979,6 +1996,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const updateInstructorCredential = async (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }): Promise<ActionResult> => {
+    if (!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN || !auth.currentProfile.isActive)
+      return {ok:false,error:'Connected Admin account required.'};
+    try {
+      await updateInstructorCredentialInDb(input);
+      await refreshOperationalData();
+      return {ok:true};
+    } catch (err) {return {ok:false,error:err instanceof Error?err.message:'Credential update failed.'};}
+  };
   const triggerInstructorPasswordReset = async (instructorId: string): Promise<ActionResult> => {
     if (
       !auth.isAuthenticated ||
@@ -3969,6 +3995,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         provisionInstructor,
         updateInstructorAccount,
         triggerInstructorPasswordReset,
+        updateInstructorCredential,
         createSingleStudent,
         enrollMidcampStudent,
         transferStudent,

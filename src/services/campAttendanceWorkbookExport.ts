@@ -101,6 +101,11 @@ export function buildCampAttendanceWorkbook(input: {
     [c('Student appears once, even if visiting another group or attending multiple same-day lectures.',4)],
     [c('A student joining on Day 4 has Days 1–3 marked —, NOT absent.',4)],
   ];
+  summaryRows.push(Array.from({length:8},blank),[c('المجموعة',3),c('إجمالي الطلاب',3),c('الحاضرون',3),c('لم يحضروا',3),c('غير محسوم',3)]);
+  for(const g of groups.filter(g=>g.campId===camp.id && (!groupId||g.id===groupId))){
+    const members=official.students.filter(st=>st.homeGroupId===g.id);
+    summaryRows.push([c(g.nameAr||g.nameEn,4),c(members.length,10),c(members.filter(s=>s.category==='attended').length,5),c(members.filter(s=>s.category==='never_attended').length,7),c(members.filter(s=>s.category==='pending').length,9)]);
+  }
   const summary:ExcelSheet={
     name:'الملخص',
     rightToLeft:true,

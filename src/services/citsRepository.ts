@@ -1258,6 +1258,8 @@ export async function upsertGroupInDb(input: {
 export async function updateInstructorInDb(input: {
   instructorId: string;
   profileId: string;
+  instructorCode?: string;
+  username?: string;
   fullNameEn?: string;
   fullNameAr?: string;
   phone?: string;
@@ -1272,11 +1274,13 @@ export async function updateInstructorInDb(input: {
   const instUpdate: {
     specialization: string;
     default_lecture_rate_egp: number;
+    instructor_code?: string;
     bio?: string | null;
   } = {
     specialization: input.specialization.trim(),
     default_lecture_rate_egp: Math.max(0, Math.round(input.defaultLectureRateEgp)),
   };
+  if (input.instructorCode !== undefined) instUpdate.instructor_code = input.instructorCode;
   if (input.bio !== undefined) {
     const cleanBio = input.bio.trim();
     instUpdate.bio = cleanBio.length > 0 ? cleanBio : null;
@@ -1285,17 +1289,19 @@ export async function updateInstructorInDb(input: {
   const { error: instErr } = await client
     .from('instructors')
     .update(instUpdate)
-    .eq('id', input.instructorId);
+    .eq('id', input.instructorId).eq('profile_id',input.profileId).select('id').single();
   if (instErr) throw new Error(instErr.message);
 
   const profUpdate: {
     is_active: boolean;
     full_name_en?: string;
     full_name_ar?: string;
+    username?: string;
     phone?: string | null;
   } = {
     is_active: input.isActive,
   };
+  if (input.username !== undefined) profUpdate.username = input.username;
   if (input.fullNameEn !== undefined && input.fullNameEn.trim().length >= 2) {
     profUpdate.full_name_en = input.fullNameEn.trim();
   }
@@ -1310,7 +1316,7 @@ export async function updateInstructorInDb(input: {
   const { error: profErr } = await client
     .from('profiles')
     .update(profUpdate)
-    .eq('id', input.profileId);
+    .eq('id', input.profileId).eq('role','instructor').select('id').single();
   if (profErr) throw new Error(profErr.message);
 
   if (input.campId && typeof input.assignedToCamp === 'boolean') {
@@ -1428,6 +1434,18 @@ export async function provisionInstructorViaEdgeFunction(
   }
 
   return data as ProvisionInstructorOutcome;
+}
+
+export async function updateInstructorCredentialInDb(input: {
+  instructorId: string; action:'email'|'temporary_credential'; value:string;
+}): Promise<void> {
+  const {data,error}=await getClient().functions.invoke('manage-instructor-credential',{body:input});
+  if(error){
+    let message=error.message;
+    try { const ctx=(error as unknown as {context?:Response}).context; if(ctx) message=(await ctx.json()).error || message; } catch {}
+    throw new Error(message);
+  }
+  if(!data?.ok)throw new Error(data?.error||'Credential update did not complete.');
 }
 
 export async function markProfileMustChangePassword(profileId: string): Promise<void> {

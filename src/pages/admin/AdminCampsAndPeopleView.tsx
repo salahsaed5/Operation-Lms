@@ -1105,6 +1105,7 @@ export const AdminInstructorsView: React.FC = () => {
     provisionInstructor,
     updateInstructorAccount,
     triggerInstructorPasswordReset,
+    updateInstructorCredential,
     t,
   } = useApp();
 
@@ -1134,6 +1135,10 @@ export const AdminInstructorsView: React.FC = () => {
 
   // Edit Instructor state
   const [editingInst, setEditingInst] = useState<Instructor | null>(null);
+  const [editInstructorCode, setEditInstructorCode] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editCredential, setEditCredential] = useState('');
   const [editFullNameEn, setEditFullNameEn] = useState('');
   const [editFullNameAr, setEditFullNameAr] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -1338,6 +1343,10 @@ export const AdminInstructorsView: React.FC = () => {
     setShowCreateForm(false);
     setViewingInst(null);
     setEditingInst(inst);
+    setEditInstructorCode(inst.instructorCode);
+    setEditUsername(inst.username);
+    setEditEmail(inst.email);
+    setEditCredential('');
     setEditFullNameEn(inst.fullNameEn);
     setEditFullNameAr(inst.fullNameAr);
     setEditPhone(inst.phone || '');
@@ -1347,6 +1356,24 @@ export const AdminInstructorsView: React.FC = () => {
     setIsActive(inst.isActive);
     setAssignedToCamp(activeCamp ? assignedSet.has(inst.id) : true);
     setFeedback(null);
+  };
+
+  const handleCredentialUpdate = async (action: 'email' | 'temporary_credential') => {
+    if (!editingInst || isBusy) return;
+    if (action === 'email' && editEmail.trim().toLowerCase() === editingInst.email.toLowerCase()) return;
+    if (!window.confirm(t('Confirm account credential change?', 'تأكيد تعديل بيانات تسجيل الدخول؟'))) return;
+    setIsBusy(true);
+    try {
+      const result = await updateInstructorCredential({
+        instructorId: editingInst.id, action,
+        value: action === 'email' ? editEmail : editCredential,
+      });
+      setFeedback({ok: result.ok, text: result.ok ? t('Account credentials updated.', 'تم تحديث بيانات تسجيل الدخول.') : (result.error || t('Update failed.', 'تعذر حفظ البيانات.'))});
+      if (result.ok && action === 'email') setEditingInst({...editingInst,email:editEmail.trim().toLowerCase()});
+    } finally {
+      setEditCredential('');
+      setIsBusy(false);
+    }
   };
 
   const handleSaveInst = async (e: React.FormEvent) => {
@@ -1368,6 +1395,8 @@ export const AdminInstructorsView: React.FC = () => {
       const res = await updateInstructorAccount({
         instructorId: editingInst.id,
         profileId: editingInst.profileId,
+        instructorCode: editInstructorCode,
+        username: editUsername,
         fullNameEn: editFullNameEn.trim(),
         fullNameAr: editFullNameAr.trim() || editFullNameEn.trim(),
         phone: editPhone.trim(),
@@ -2049,6 +2078,26 @@ export const AdminInstructorsView: React.FC = () => {
               />
             </div>
             <div>
+              <label htmlFor="inst-edit-code" className={LABEL_CLASS}>{t('Instructor Code', 'كود المحاضر')}</label>
+              <input id="inst-edit-code" className={INPUT_CLASS} required value={editInstructorCode} onChange={e=>setEditInstructorCode(e.target.value)} maxLength={32} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} onClick={()=>setEditInstructorCode(generateEntityCode('INST'))}>{t('Generate code','توليد كود')}</button>
+            </div>
+            <div>
+              <label htmlFor="inst-edit-username" className={LABEL_CLASS}>{t('Username','اسم المستخدم')}</label>
+              <input id="inst-edit-username" className={INPUT_CLASS} required value={editUsername} onChange={e=>setEditUsername(e.target.value)} maxLength={64} />
+            </div>
+            <div>
+              <label htmlFor="inst-edit-email" className={LABEL_CLASS}>{t('Login email','البريد الإلكتروني للدخول')}</label>
+              <input id="inst-edit-email" className={INPUT_CLASS} type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} disabled={isBusy || !editEmail.trim()} onClick={()=>handleCredentialUpdate('email')}>{t('Save email separately','حفظ البريد الإلكتروني')}</button>
+            </div>
+            <div>
+              <label htmlFor="inst-edit-password" className={LABEL_CLASS}>{t('New temporary password','كلمة مرور مؤقتة جديدة')}</label>
+              <input id="inst-edit-password" className={INPUT_CLASS} type="password" autoComplete="new-password" value={editCredential} onChange={e=>setEditCredential(e.target.value)} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} disabled={isBusy || editCredential.length<8} onClick={()=>handleCredentialUpdate('temporary_credential')}>{t('Set password separately','تعيين كلمة المرور')}</button>
+              <p className="text-xs text-slate-500 mt-1">{t('Requires change at next sign-in.','يجب تغييرها عند تسجيل الدخول التالي.')}</p>
+            </div>
+            <div>
               <label htmlFor="inst-edit-phone" className={LABEL_CLASS}>
                 {t('Phone Number', 'رقم الهاتف')}
               </label>
@@ -2266,7 +2315,7 @@ export const AdminInstructorsView: React.FC = () => {
                       >
                         <Power className="w-3 h-3" />
                         <span>
-                          {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                          {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                         </span>
                       </button>
                     </div>
@@ -2391,7 +2440,7 @@ export const AdminInstructorsView: React.FC = () => {
                           >
                             <Power className="w-3 h-3" />
                             <span>
-                              {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                              {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                             </span>
                           </button>
                         </div>
@@ -2562,7 +2611,7 @@ export const AdminInstructorsView: React.FC = () => {
         open={Boolean(toggleStatusTarget)}
         title={
           toggleStatusTarget?.isActive
-            ? t('Deactivate Instructor Account?', 'تعطيل حساب المحاضر؟')
+            ? t('Remove instructor access (retain history)?', 'إزالة حساب المحاضر مع الاحتفاظ بالسجلات؟')
             : t('Reactivate Instructor Account?', 'إعادة تفعيل حساب المحاضر؟')
         }
         description={
