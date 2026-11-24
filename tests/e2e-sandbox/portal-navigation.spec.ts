@@ -559,3 +559,31 @@ test('desktop Sidebar expanded content never obscures the header in English and 
   await checkSeparate();
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Admin uses attached curved brand rail, integrated camp header and centered mobile navigation', async ({page})=>{
+  await page.setViewportSize({width:1600,height:900});
+  await page.goto('/');
+  const rail=page.getByRole('complementary',{name:'Admin modules navigation'});
+  const header=page.locator('.admin-topbar');
+  await expect(rail.locator('[data-cits-brand]')).toContainText('Operations Dashboard');
+  await expect(rail.locator('[data-cits-brand]')).toHaveClass(/cits-brand-inverse/);
+  await expect(rail).toHaveCSS('border-end-end-radius','24px');
+  await expect(rail).toHaveCSS('box-shadow','none');
+  await expect(header).toHaveCSS('box-shadow','none');
+  await expect(header.getByRole('combobox',{name:'Select working Camp'})).toBeVisible();
+  await expect(page.getByRole('combobox',{name:'Select working Camp'})).toHaveCount(1);
+  await expect(header.locator('.instructor-topbar-name')).toContainText('Administrator');
+  await expect(rail.locator('[aria-current="page"]')).toHaveCount(1);
+  for(const width of [320,390,820]){
+    await page.setViewportSize({width,height:844});
+    const bar=page.getByRole('navigation',{name:'Mobile bottom navigation'});
+    await expect(bar).toBeVisible();
+    await expect(bar.getByRole('button')).toHaveCount(5);
+    const b=await bar.boundingBox();
+    expect(b!.x).toBeGreaterThanOrEqual(11);
+    expect(Math.abs(b!.x-(width-b!.x-b!.width))).toBeLessThan(2);
+    await expect(header.getByRole('combobox')).toBeVisible();
+    const h=await header.boundingBox();
+    expect(h!.x+h!.width).toBeLessThanOrEqual(width+1);
+  }
+});
