@@ -425,6 +425,16 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
   await page.setViewportSize({width:1365,height:900});
   await expect(bar).toBeHidden();
   await expect(page.locator('.instructor-desktop-nav')).toBeVisible();
+  const rail=page.locator('.instructor-curved-sidebar');
+  expect(await rail.evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThanOrEqual(20);
+  const nav=rail.getByRole('navigation');
+  for(const route of ['الرئيسية','المحاضرات','الوصول','حسابي']){
+    await nav.getByRole('button',{name:route,exact:true}).click();
+    const active=nav.locator('[aria-current="page"]');
+    await expect(active).toHaveCount(1);
+    expect(await active.evaluate(el=>getComputedStyle(el,'::before').content)).not.toBe('none');
+    expect(await active.evaluate(el=>getComputedStyle(el).borderTopLeftRadius)).toBe('0px');
+  }
   const header=page.locator('.instructor-topbar');
   await expect(header.getByRole('combobox')).toHaveCount(1);
   await expect(header.getByRole('button',{name:'الإشعارات'})).toBeVisible();
