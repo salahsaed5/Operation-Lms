@@ -141,35 +141,39 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
   .instructor-profile-progress { min-width:0; }
 }
 
-/* Navy / teal instructor masthead, separate from the admin header and mobile dock. */
+/* Integrated instructor header: quiet light surface, no floating shadow. */
 .instructor-topbar {
-  top:8px; margin:12px 16px 0; min-width:0; min-height:68px;
-  display:grid; grid-template-columns:minmax(0,1fr) minmax(0,230px) auto;
-  align-items:center; gap:16px; padding:12px 16px; border-radius:16px;
-  color:#fff; background:radial-gradient(ellipse at 83% 150%,rgba(12,147,151,.43) 0%,transparent 58%),linear-gradient(112deg,#10263e,#153a54 68%,#0d5360);
-  border:1px solid rgba(255,255,255,.1); box-shadow:0 5px 18px rgba(16,38,62,.14);
+  top:0; margin:0; min-width:0; min-height:64px;
+  display:grid; grid-template-columns:auto minmax(160px,260px) minmax(0,1fr);
+  align-items:center; gap:20px; padding:10px 22px; border-radius:0 0 12px 12px;
+  color:var(--text-primary); background:var(--bg-surface);
+  border:0; border-bottom:1px solid var(--border-subtle); box-shadow:none;
 }
-.instructor-topbar-brand { min-width:0; }
-.instructor-topbar-logo { display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;flex-shrink:0;background:rgba(255,255,255,.10);color:#d0f8ee; }
-.instructor-topbar-camp { display:flex;align-items:center;gap:8px;min-width:0;padding:5px 9px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#e8f4fa; }
-.instructor-topbar-camp select,.dark .instructor-topbar-camp select { flex:1;width:0;max-width:100%;min-width:0;min-height:34px;background:transparent;border:0;color:#fff;padding:3px 0;font-size:12px; }
-.instructor-topbar-camp select option { background:#18394e;color:white; }
+.instructor-topbar-brand { min-width:0; padding-inline-end:16px; border-inline-end:1px solid var(--border-subtle); }
+.instructor-topbar-secondary { color:var(--text-muted); }
+.instructor-topbar-logo { display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:11px;flex-shrink:0;background:#eaf2f7;color:#234965; }
+.instructor-topbar-camp { display:flex;align-items:center;gap:8px;min-width:0;padding:3px 10px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--bg-canvas);color:var(--text-secondary); }
+.instructor-topbar-camp select,.dark .instructor-topbar-camp select { flex:1;width:0;max-width:100%;min-width:0;min-height:32px;background:transparent;border:0;color:var(--text-primary);padding:3px 0;font-size:12px; }
+.instructor-topbar-camp select option { background:var(--bg-surface);color:var(--text-primary); }
 .instructor-topbar-camp select:disabled { opacity:.9; }
-.instructor-topbar-actions { display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0; }
-.instructor-topbar-control { position:relative;min-width:38px;min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px;border:1px solid rgba(255,255,255,.18);border-radius:12px;color:#e9f5fa;background:rgba(255,255,255,.06);font-size:12px;font-weight:600;cursor:pointer; }
-.instructor-topbar-control:hover,.instructor-topbar-profile:hover { background:rgba(255,255,255,.15); }
+.instructor-topbar-actions { display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0; }
+.instructor-topbar-control { position:relative;min-width:38px;min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px;border:1px solid var(--border-subtle);border-radius:12px;color:var(--text-secondary);background:transparent;font-size:12px;font-weight:600;cursor:pointer; }
+.instructor-topbar-control:hover,.instructor-topbar-profile:hover { background:var(--bg-canvas);color:var(--text-primary); }
 .instructor-topbar-control:disabled { opacity:.55;cursor:default; }
 .instructor-topbar-count { position:absolute;top:-4px;inset-inline-end:-4px;min-width:17px;height:17px;display:flex;align-items:center;justify-content:center;padding:0 3px;border-radius:999px;background:#c93442;color:white;font-size:10px;line-height:1;font-weight:700; }
-.instructor-topbar-account { display:flex;align-items:center;gap:7px;border-inline-start:1px solid rgba(255,255,255,.22);padding-inline-start:10px;min-width:0; }
+.instructor-topbar-account { display:flex;align-items:center;gap:8px;border-inline-start:1px solid var(--border-subtle);padding-inline-start:13px;min-width:0; }
 .instructor-topbar-profile { display:flex;align-items:center;gap:8px;min-width:0;max-width:170px;text-align:start;border-radius:10px;padding:2px;cursor:pointer; }
-.instructor-topbar-avatar { display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#e5f8f6;color:#184656;font-size:12px;font-weight:800; }
+.instructor-topbar-avatar { display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#265b78;color:#fff;font-size:12px;font-weight:800; }
 .instructor-topbar-name { display:none;min-width:0; }
-.instructor-topbar-logout:hover { background:rgba(190,45,61,.45); }
-.instructor-topbar :where(button,select):focus-visible { outline:2px solid #a7f3df;outline-offset:2px; }
+.instructor-topbar-logout:hover { background:#fff1f2;color:#b42335; }
+.dark .instructor-topbar-logo { background:#263b49;color:#b1d6ea; }
+.dark .instructor-topbar-avatar { background:#22495a;color:#e0f5f5; }
+.dark .instructor-topbar-logout:hover { background:#42272c;color:#ffb5bf; }
+.instructor-topbar :where(button,select):focus-visible { outline:2px solid var(--brand-electric);outline-offset:2px; }
 @media (min-width:1400px) { .instructor-topbar-name { display:block; } }
-@media (max-width:1199px) { .instructor-topbar { grid-template-columns:minmax(0,1fr) auto;gap:9px 12px; } .instructor-topbar-camp { grid-column:1/-1;grid-row:2;max-width:440px;width:100%; } }
+@media (max-width:1199px) { .instructor-topbar { grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:10px 16px; } .instructor-topbar-brand { border:0;padding:0; } .instructor-topbar-camp { grid-column:1/-1;grid-row:2;max-width:440px;width:100%; } }
 @media (max-width:639px) {
-  .instructor-topbar { top:5px;margin:8px 10px 0;padding:10px;gap:8px;border-radius:14px;grid-template-columns:minmax(0,1fr) auto; }
+  .instructor-topbar { top:0;margin:0;padding:8px 10px;gap:8px;border-radius:0 0 10px 10px;grid-template-columns:minmax(0,1fr) auto; }
   .instructor-topbar-logo { width:30px;height:30px;border-radius:9px; }
   .instructor-topbar-brand button { gap:5px; }
   .instructor-topbar-brand button>span:last-child { display:none; }

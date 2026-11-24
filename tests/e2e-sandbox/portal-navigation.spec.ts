@@ -387,6 +387,8 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
       const header=page.locator('.instructor-topbar');
       await expect(header).toBeVisible();
+      expect(await header.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
+      expect(await header.evaluate(el=>getComputedStyle(el).marginTop)).toBe('0px');
       await expect(header.getByRole('combobox',{name:'Select working Camp'})).toBeVisible();
       await expect(header.getByRole('button',{name:'Toggle theme'})).toBeVisible();
       const headBounds=await header.boundingBox();
