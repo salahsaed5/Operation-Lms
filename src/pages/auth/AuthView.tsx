@@ -167,17 +167,7 @@ export const AuthView: React.FC = () => {
           <CitsBrand inverse className="cits-auth-hero-logo"/>
           <p>{t('Learning Management System','نظام إدارة التعلم')}</p>
         </div>
-        <svg className="cits-auth-hero-art" viewBox="0 0 490 285" aria-hidden="true" focusable="false">
-          <defs>
-            {/* Isolate the illustration from the baked-in mockup background. */}
-            <clipPath id="cits-auth-art-silhouette">
-              <path d="M28 59Q56 49 73 63Q88 75 95 101Q89 80 69 73Q50 62 28 59Z M27 106Q51 87 73 96Q88 102 99 127L103 140L100 140Q88 112 75 109Q48 99 27 106Z M91 85Q83 48 107 29Q119 23 136 20Q124 32 119 49Q111 72 101 82L106 139H102Z M104 109Q114 82 149 76Q147 89 132 101L112 121L109 140H106Z M79 139L128 139Q131 154 135 165Q136 178 123 184H87Q69 180 73 166Z M43 181Q38 182 35 189L35 207Q37 214 43 215L32 217Q24 220 25 235Q26 246 38 249L180 252L186 244L175 182Z M165 49Q153 48 153 61L177 223Q177 231 184 236L184 241L249 257Q265 261 283 258L467 239Q476 238 477 232L377 215L350 78Q348 68 338 67Z"/>
-            </clipPath>
-            <radialGradient id="cits-art-shadow"><stop stopColor="#031823" stopOpacity=".60"/><stop offset="1" stopColor="#031823" stopOpacity="0"/></radialGradient>
-          </defs>
-          <ellipse cx="253" cy="263" rx="232" ry="19" fill="url(#cits-art-shadow)"/>
-          <image href="/assets/cits-login-hero.webp" width="490" height="341" clipPath="url(#cits-auth-art-silhouette)"/>
-        </svg>
+        <img className="cits-auth-hero-art" src="/assets/cits-login-hero-hd.webp" alt="" width={628} height={350} decoding="async"/>
       </aside>
       <div className="cits-auth-form-side">
         {/* Unobtrusive Top Utility Header */}
@@ -192,7 +182,7 @@ export const AuthView: React.FC = () => {
               className="cits-auth-utility"
             >
               <Globe className="w-3.5 h-3.5 text-slate-500" />
-              <span>{lang === 'en' ? 'العربية' : 'English'}</span>
+              <span>{lang === 'en' ? 'AR' : 'EN'}</span>
             </button>
             <button
               type="button"

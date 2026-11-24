@@ -47,7 +47,9 @@ test('empty credentials are rejected locally without network login', async ({ pa
 test('Arabic RTL navigation and masked password toggle work', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#login-identifier')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Switch Language' })).toHaveText('AR');
   await page.getByRole('button', { name: 'Switch Language' }).click();
+  await expect(page.getByRole('button', { name: 'تغيير اللغة' })).toHaveText('EN');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('#login-identifier')).toHaveAttribute('placeholder', /أدخل/);
   await page.getByRole('button', { name: 'إظهار كلمة المرور' }).click();
@@ -82,6 +84,9 @@ test('mobile sign-in controls are accessible without horizontal clipping', async
   expect(bounds!.height).toBeGreaterThanOrEqual(490);
   expect(await page.locator('.cits-auth-standard h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(32);
   expect(await page.locator('#login-identifier').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(14);
-  await expect(page.locator('.cits-auth-hero-art image')).toHaveAttribute('clip-path','url(#cits-auth-art-silhouette)');
+  const art=page.locator('img.cits-auth-hero-art');
+  await expect(art).toBeVisible();
+  await expect.poll(()=>art.evaluate((el: HTMLImageElement)=>[el.naturalWidth,el.naturalHeight])).toEqual([628,350]);
+  expect(await art.evaluate(el=>el.getBoundingClientRect().width)).toBeLessThanOrEqual(628);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+2)).toBe(false);
 });
