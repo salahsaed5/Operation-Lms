@@ -144,15 +144,16 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 /* Integrated instructor header: quiet light surface, no floating shadow. */
 .instructor-topbar {
   top:0; margin:0; min-width:0; min-height:64px;
-  display:grid; grid-template-columns:auto minmax(160px,260px) minmax(0,1fr);
+  display:grid; grid-template-columns:minmax(0,1fr) auto;
   align-items:center; gap:20px; padding:10px 22px; border-radius:0 0 12px 12px;
   color:var(--text-primary); background:var(--bg-surface);
   border:0; border-bottom:1px solid var(--border-subtle); box-shadow:none;
 }
-.instructor-topbar-brand { min-width:0; padding-inline-end:16px; border-inline-end:1px solid var(--border-subtle); }
+.instructor-topbar-context {display:flex;align-items:center;gap:12px;min-width:0;max-width:460px;}
+.instructor-topbar-day {display:inline-flex;align-items:center;gap:6px;min-height:36px;flex-shrink:0;white-space:nowrap;padding-inline:10px;border-inline-start:1px solid var(--border-subtle);color:var(--text-secondary);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+.instructor-topbar-day svg {color:var(--brand-electric);}
 .instructor-topbar-secondary { color:var(--text-muted); }
-.instructor-topbar-logo { display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:11px;flex-shrink:0;background:#eaf2f7;color:#234965; }
-.instructor-topbar-camp { display:flex;align-items:center;gap:8px;min-width:0;padding:3px 10px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--bg-canvas);color:var(--text-secondary); }
+.instructor-topbar-camp { display:flex;align-items:center;gap:8px;flex:1;max-width:310px;min-width:0;padding:3px 10px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--bg-canvas);color:var(--text-secondary); }
 .instructor-topbar-camp select,.dark .instructor-topbar-camp select { flex:1;width:0;max-width:100%;min-width:0;min-height:32px;background:transparent;border:0;color:var(--text-primary);padding:3px 0;font-size:12px; }
 .instructor-topbar-camp select option { background:var(--bg-surface);color:var(--text-primary); }
 .instructor-topbar-camp select:disabled { opacity:.9; }
@@ -166,18 +167,18 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .instructor-topbar-avatar { display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#265b78;color:#fff;font-size:12px;font-weight:800; }
 .instructor-topbar-name { display:none;min-width:0; }
 .instructor-topbar-logout:hover { background:#fff1f2;color:#b42335; }
-.dark .instructor-topbar-logo { background:#263b49;color:#b1d6ea; }
 .dark .instructor-topbar-avatar { background:#22495a;color:#e0f5f5; }
 .dark .instructor-topbar-logout:hover { background:#42272c;color:#ffb5bf; }
 .instructor-topbar :where(button,select):focus-visible { outline:2px solid var(--brand-electric);outline-offset:2px; }
 @media (min-width:1400px) { .instructor-topbar-name { display:block; } }
-@media (max-width:1199px) { .instructor-topbar { grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:10px 16px; } .instructor-topbar-brand { border:0;padding:0; } .instructor-topbar-camp { grid-column:1/-1;grid-row:2;max-width:440px;width:100%; } }
+@media (max-width:1199px) { .instructor-topbar { gap:8px 12px;padding:10px 16px; } .instructor-topbar-context {gap:8px;} .instructor-topbar-day {padding-inline:8px;} }
 @media (max-width:639px) {
-  .instructor-topbar { top:0;margin:0;padding:8px 10px;gap:8px;border-radius:0 0 10px 10px;grid-template-columns:minmax(0,1fr) auto; }
-  .instructor-topbar-logo { width:30px;height:30px;border-radius:9px; }
-  .instructor-topbar-brand button { gap:5px; }
-  .instructor-topbar-brand button>span:last-child { display:none; }
-  .instructor-topbar-actions { gap:4px; }
+  .instructor-topbar { top:0;margin:0;padding:8px 10px;gap:8px;border-radius:0 0 10px 10px;grid-template-columns:minmax(0,1fr); }
+  .instructor-topbar-context {max-width:none;gap:6px;}
+  .instructor-topbar-day {font-size:11px;gap:4px;padding-inline:6px;}
+  .instructor-topbar-day svg {width:14px;height:14px;}
+  .instructor-topbar-actions { gap:6px;justify-content:flex-start; }
+  .instructor-topbar-account {margin-inline-start:auto;}
   .instructor-topbar-actions .instructor-topbar-control { min-width:30px;min-height:36px;padding:5px;border-radius:9px; }
   .instructor-topbar-language svg { display:none; }
   .instructor-topbar-account { gap:4px;padding-inline-start:5px; }

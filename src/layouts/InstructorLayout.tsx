@@ -91,16 +91,13 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       <div className="instructor-workspace lg:ms-56 flex flex-col flex-1 min-w-0">
       {/* Workspace header */}
       <header className="instructor-header instructor-topbar sticky z-30">
-        <div className="instructor-topbar-brand">
-          <button type="button" onClick={()=>setInstructorRoute('dashboard')} aria-label={t('Instructor home','الرئيسية للمحاضر')} className="flex items-center gap-2.5 text-start cursor-pointer min-w-0">
-            <span className="instructor-topbar-logo"><GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true"/></span>
-            <span className="min-w-0"><span className="block font-bold text-sm sm:text-base truncate">{t('Instructor Portal','بوابة المحاضر')}</span><span className="hidden sm:block text-[11px] instructor-topbar-secondary truncate">{activeCamp ? t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,`اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`) : t('Operation LMS','Operation LMS')}</span></span>
-          </button>
-        </div>
-        <div className="instructor-camp-bar instructor-topbar-camp">
-          <Layers className="w-4 h-4 shrink-0" aria-hidden="true"/>
-          <span className="sr-only">{t('My Camp','الكامب الخاص بي')}</span>
-          <CampSwitcher />
+        <div className="instructor-topbar-context">
+          <div className="instructor-camp-bar instructor-topbar-camp">
+            <Layers className="w-4 h-4 shrink-0" aria-hidden="true"/>
+            <span className="sr-only">{t('My Camp','الكامب الخاص بي')}</span>
+            <CampSwitcher />
+          </div>
+          {activeCamp&&<span className="instructor-topbar-day"><CalendarClock className="w-4 h-4 shrink-0" aria-hidden="true"/><span>{t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,`اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`)}</span></span>}
         </div>
         <div className="instructor-header-actions instructor-topbar-actions">
           {isSupabaseMode&&<button type="button" disabled={isLoadingData} onClick={()=>refreshOperationalData()} aria-label={t('Refresh data','تحديث البيانات')} title={t('Refresh data','تحديث البيانات')} className="instructor-topbar-control">
