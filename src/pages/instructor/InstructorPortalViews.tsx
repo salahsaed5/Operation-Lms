@@ -1130,6 +1130,7 @@ export const InstructorAttendanceView: React.FC = () => {
     saveAttendanceDraft,
     enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
+    instructorCorrectSubmittedAttendance,
     reviewAttendanceDraft,
     t,
   } = useApp();
@@ -1301,6 +1302,10 @@ export const InstructorAttendanceView: React.FC = () => {
   const campOpenForAttendance = activeCamp.status === CampStatus.ACTIVE;
   const lectureIsFuture = Boolean(selectedLecture && selectedLecture.lectureDate > cairoToday);
   const canFinalizeAttendance = campOpenForAttendance && !lectureIsFuture;
+  const canCorrectSubmitted = isSupabaseMode && canFinalizeAttendance &&
+    existingSheet?.status === AttendanceSheetStatus.SUBMITTED &&
+    existingSheet.instructorId === currentInstructor.id &&
+    (selectedLecture?.substituteInstructorId || selectedLecture?.instructorId) === currentInstructor.id;
 
   const rosterStudentIds = new Set(baseRecords.map((r) => r.studentId));
   const eligibleCrossGroupStudents = selectedLecture
@@ -1354,7 +1359,22 @@ export const InstructorAttendanceView: React.FC = () => {
     studentId: string,
     mark: AttendanceMark | 'unmarked'
   ) => {
-    if (isLockedOrSubmitted || !selectedLecture) return;
+    if (!selectedLecture || isBusy) return;
+    if (isLockedOrSubmitted) {
+      const previous = existingSheet?.records.find(r => r.studentId === studentId)?.mark;
+      if (!canCorrectSubmitted || !existingSheet || !previous || previous === 'unmarked' ||
+          mark === 'unmarked' || previous === mark) return;
+      const note = window.prompt(t('Reason for changing submitted attendance', 'سبب تعديل الحضور المعتمد'));
+      if (!note?.trim()) return;
+      setIsBusy(true);
+      try {
+        const result = await instructorCorrectSubmittedAttendance({sheetId: existingSheet.id, studentId,
+          mark, expectedMark: previous, note: note.trim()});
+        setFeedback({ok: result.ok, text: result.ok ? t('Attendance corrected and audited.', 'تم تعديل الحضور وتسجيل السبب.') :
+          (result.error || t('Correction failed.', 'فشل تعديل الحضور.'))});
+      } finally { setIsBusy(false); }
+      return;
+    }
     setComparisonRows(null);
     const nextRecords: AttendanceRecordItem[] = baseRecords.map((r) =>
       r.studentId === studentId ? { ...r, mark } : r
@@ -1574,7 +1594,7 @@ export const InstructorAttendanceView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={isLockedOrSubmitted}
+                      disabled={isBusy || (isLockedOrSubmitted && (!canCorrectSubmitted || rec.mark === 'unmarked'))}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.PRESENT)}
                       aria-pressed={rec.mark === AttendanceMark.PRESENT}
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
@@ -1587,7 +1607,7 @@ export const InstructorAttendanceView: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      disabled={isLockedOrSubmitted}
+                      disabled={isBusy || (isLockedOrSubmitted && (!canCorrectSubmitted || rec.mark === 'unmarked'))}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.LATE)}
                       aria-pressed={rec.mark === AttendanceMark.LATE}
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
@@ -1600,7 +1620,7 @@ export const InstructorAttendanceView: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      disabled={isLockedOrSubmitted}
+                      disabled={isBusy || (isLockedOrSubmitted && (!canCorrectSubmitted || rec.mark === 'unmarked'))}
                       onClick={() => handleMarkChange(rec.studentId, AttendanceMark.ABSENT)}
                       aria-pressed={rec.mark === AttendanceMark.ABSENT}
                       className={`min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 ${
@@ -1697,7 +1717,7 @@ export const InstructorAttendanceView: React.FC = () => {
               <div className="flex flex-wrap md:flex-col md:items-end gap-2 shrink-0">
                 <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
                   {isLockedOrSubmitted
-                    ? t('Submitted · Locked', 'معتمد · مغلق')
+                    ? (canCorrectSubmitted ? t('Submitted · Audited corrections', 'معتمد · تعديل موثق') : t('Submitted · Locked', 'معتمد · مغلق'))
                     : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
                 </StatusBadge>
                 <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#A0A5AA]">

@@ -101,6 +101,7 @@ import {
 import {
   acknowledgeLectureInDb,
   adminCorrectAttendanceRecordInDb,
+  instructorCorrectSubmittedAttendanceInDb,
   archiveCampInDb,
   activateCampInDb,
   batchImportStudentsInDb,
@@ -399,6 +400,10 @@ interface AppContextValue {
       serverNote?: string;
     }[];
   }>;
+
+  instructorCorrectSubmittedAttendance: (input: {
+    sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+  }) => Promise<ActionResult>;
 
   adminCorrectAttendanceRecord: (input: {
     sheetId: string;
@@ -3159,6 +3164,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const instructorCorrectSubmittedAttendance = async (input: {
+    sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+  }): Promise<ActionResult> => {
+    if (!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role !== UserRole.INSTRUCTOR ||
+        activeCamp?.status !== CampStatus.ACTIVE || !input.note.trim()) {
+      return { ok: false, error: 'A connected active instructor and an audit reason are required.' };
+    }
+    const sheet = attendanceSheets.find(s => s.id === input.sheetId);
+    const lecture = lectures.find(l => l.id === sheet?.lectureId);
+    if (!sheet || sheet.campId !== activeCamp.id || sheet.status !== AttendanceSheetStatus.SUBMITTED ||
+        !auth.activeInstructorId || !lecture ||
+        sheet.instructorId !== auth.activeInstructorId ||
+        (lecture.substituteInstructorId || lecture.instructorId) !== auth.activeInstructorId) {
+      return { ok: false, error: 'Only your own submitted, unlocked lecture may be corrected.' };
+    }
+    try {
+      await instructorCorrectSubmittedAttendanceInDb(input);
+      await refreshOperationalData();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Correction failed.' };
+    }
+  };
+
   const adminCorrectAttendanceRecord = async (input: {
     sheetId: string;
     lectureId: string;
@@ -3953,6 +3982,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reviewAttendanceDraft,
         downloadTenDayAttendanceWorkbook,
         adminCorrectAttendanceRecord,
+        instructorCorrectSubmittedAttendance,
         reviewLectureEntitlement,
         reviewInstructorRequest,
         submitInstructorRequest,

@@ -1151,11 +1151,12 @@ export const AdminAttendanceView: React.FC = () => {
                                 {rec.isCrossGroup && <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>}
                               </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-2 w-full md:w-[270px] shrink-0">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full md:w-[340px] shrink-0">
                               {([
                                 { mk: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', active: 'bg-emerald-600 text-white border-emerald-600' },
                                 { mk: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', active: 'bg-amber-600 text-white border-amber-600' },
                                 { mk: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', active: 'bg-rose-600 text-white border-rose-600' },
+                                { mk: AttendanceMark.EXCUSED, en: 'Excused', ar: 'بعذر', active: 'bg-violet-600 text-white border-violet-600' },
                               ] as const).map(opt => (
                                 <button key={opt.mk} type="button"
                                   aria-pressed={rec.mark === opt.mk}

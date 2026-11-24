@@ -1768,6 +1768,17 @@ export async function adminCorrectAttendanceRecordInDb(input: {
   if (error) throw new Error(error.message);
 }
 
+export async function instructorCorrectSubmittedAttendanceInDb(input: {
+  sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+}): Promise<void> {
+  const { error } = await getClient().rpc('instructor_correct_submitted_attendance_tx', {
+    p_sheet_id: input.sheetId, p_student_id: input.studentId,
+    p_mark: input.mark as DbAttendanceMark, p_expected_mark: input.expectedMark as DbAttendanceMark,
+    p_note: input.note.trim(),
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function overrideEntitlementInDb(input: {
   entitlementId: string;
   decision: 'approved' | 'excluded';
