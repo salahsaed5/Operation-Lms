@@ -11,6 +11,7 @@ import {
   Bell,
   RefreshCw,
   User,
+  GraduationCap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { CampSwitcher } from '../components/ui/CampSwitcher';
@@ -53,7 +54,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   const currentInstructor =
-    instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
+    instructors.find((i) => i.id === auth.activeInstructorId) || (isSandboxMode ? instructors[0] : undefined);
 
   const myNotifications = notifications.filter(
     (n) => n.recipientProfileId === auth.currentProfile.id
@@ -68,7 +69,16 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
           <span className="ms-2">{t('Not connected to Supabase. Changes are demo-only and are not saved to the remote database.', 'لا يوجد اتصال بـ Supabase. التغييرات تجريبية فقط ولا تُحفظ في قاعدة البيانات البعيدة.')}</span>
         </div>
       )}
-      {/* Slim Sticky White Top Header */}
+      {/* Desktop instructor workspace navigation; mobile keeps the bottom bar. */}
+      <aside className="hidden md:flex fixed inset-y-0 start-0 w-48 lg:w-56 z-40 flex-col overflow-hidden bg-gradient-to-b from-[#10263e] via-[#12354e] to-[#07545f] text-white">
+        <div className="px-4 lg:px-5 py-6 flex items-center gap-2.5 border-b border-white/10"><GraduationCap className="w-7 h-7 shrink-0 text-white"/><div className="min-w-0"><p className="text-base lg:text-lg tracking-tight font-bold whitespace-nowrap">Operation <span className="text-[#76d8c4]">LMS</span></p><p className="text-[10px] text-blue-100/80 mt-1">{t('Instructor workspace','مساحة عمل المحاضر')}</p></div></div>
+        <nav aria-label={t('Instructor navigation','قائمة تنقل المحاضر')} className="flex flex-col gap-2 px-3 py-5">
+          {INSTRUCTOR_TABS.map(tab=>{const Icon=tab.icon;const isActive=instructorRoute===tab.id||(tab.id==='schedule'&&instructorRoute==='attendance');return <button type="button" key={tab.id} aria-current={isActive?'page':undefined} onClick={()=>setInstructorRoute(tab.id)} className={'w-full min-h-[48px] rounded-xl px-3 py-3 flex items-center gap-3 text-sm font-semibold text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-200 '+(isActive?'bg-[#176078] text-white':'text-blue-50 hover:bg-white/10')}><Icon className="w-5 h-5 shrink-0"/><span>{t(tab.labelEn,tab.labelAr)}</span></button>})}
+        </nav>
+        <div className="mt-auto p-4 lg:p-5 border-t border-white/10 relative"><div aria-hidden="true" className="absolute -bottom-36 -end-28 w-72 h-72 rounded-full border-[32px] border-teal-100/10 pointer-events-none"/><p className="text-xs text-blue-100/80">{t('Current camp','الكامب الحالي')}</p><p className="text-sm font-semibold mt-1 break-words">{activeCamp?t(activeCamp.nameEn,activeCamp.nameAr):'—'}</p></div>
+      </aside>
+      <div className="md:ms-48 lg:ms-56 flex flex-col flex-1 min-w-0">
+      {/* Workspace header */}
       <header className="sticky top-0 z-30 h-14 app-glass-header px-4 sm:px-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -95,33 +105,6 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
             </div>
           </button>
         </div>
-
-        {/* Desktop Primary Tabs */}
-        <nav
-          aria-label={t('Instructor navigation', 'قائمة تنقل المحاضر')}
-          className="hidden md:flex items-center gap-1"
-        >
-          {INSTRUCTOR_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = instructorRoute === tab.id || (tab.id === 'schedule' && instructorRoute === 'attendance');
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setInstructorRoute(tab.id)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`px-3 py-1.5 rounded-lg text-[13px] flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-50 dark:bg-[#293747]/60 text-[#355F82] dark:text-[#88A9CC] font-semibold'
-                    : 'text-slate-600 dark:text-[#C0C5C9] font-medium hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{t(tab.labelEn, tab.labelAr)}</span>
-              </button>
-            );
-          })}
-        </nav>
 
         {/* Quiet Utility Controls + Instructor Account */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -267,6 +250,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         {children}
       </main>
 
+      </div>
       {/* Fixed Light Mobile Bottom Tab Bar */}
       <nav
         aria-label={t('Mobile bottom navigation', 'التنقل السفلي للمحاضر')}

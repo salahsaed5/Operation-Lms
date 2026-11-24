@@ -20,6 +20,7 @@ import {
   MapPin,
   Play,
   CalendarDays,
+  IdCard, Mail, ShieldCheck, Layers, GraduationCap, Star, MessageSquare, Hourglass, ChartNoAxesCombined, AtSign, Phone, Laptop,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { sessionState, sessionCounts, sessionLabel, cairoClock } from '../../domain/sessionLifecycle';
@@ -1719,14 +1720,17 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
     instructors,
     lectures,
     groups,
+    students,
+    rooms,
     surveys,
     entitlements,
     requests,
     submitInstructorRequest,
+    setInstructorRoute,
     t,
   } = useApp();
 
-  const [subTab, setSubTab] = useState<'groups' | 'links' | 'history' | 'requests'>('groups');
+  const [subTab, setSubTab] = useState<'groups' | 'personal' | 'links' | 'requests'>('groups');
   const [reqSubject, setReqSubject] = useState('');
   const [reqDetails, setReqDetails] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -1744,10 +1748,15 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
     );
   }
 
-  const myGroups = groups.filter((g) => g.primaryInstructorId === currentInstructor.id);
+
   const mySurveys = surveys.filter((s) => s.instructorId === currentInstructor.id);
   const myLectures=lectures.filter(l=>l.campId===activeCamp?.id&&(l.substituteInstructorId||l.instructorId)===currentInstructor.id&&l.status!=='cancelled');
   const progress=sessionCounts(myLectures,attendanceSheets,entitlements,currentInstructor.id);
+  const myGroups=groups.filter(g=>g.campId===activeCamp?.id && (g.primaryInstructorId===currentInstructor.id || myLectures.some(l=>l.groupId===g.id)));
+  const percent=progress.assigned ? Math.round(progress.counted/progress.assigned*100) : 0;
+  const displayName=t(currentInstructor.fullNameEn,currentInstructor.fullNameAr);
+  const initials=displayName.trim().split(/\s+/).slice(0,2).map(w=>Array.from(w)[0]).join('').toUpperCase() || 'IN';
+  const campName=activeCamp?t(activeCamp.nameEn,activeCamp.nameAr)+' · '+activeCamp.code:t('No camp selected','لم يتم اختيار كامب');
   const myRequests = requests.filter((r) => r.instructorId === currentInstructor.id);
 
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -1774,81 +1783,62 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5">
-      <div className={`${SURFACE_CARD} p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
-        <div>
-          <p className="text-xs font-mono text-[#355F82] dark:text-[#88A9CC]">
-            {currentInstructor.instructorCode} · {currentInstructor.username}
-          </p>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-0.5">
-            {t(currentInstructor.fullNameEn, currentInstructor.fullNameAr)}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
-            {currentInstructor.specialization} · {currentInstructor.email}
-          </p>
+    <div className="space-y-5 sm:space-y-6">
+      <PageHeader title={t('Profile','الملف الشخصي')} subtitle={t('Instructor profile & account information','بيانات المحاضر ومتابعة الإنجاز')}/>
+      <section aria-label={t('Instructor profile','ملف المحاضر')} className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-[#102b46] via-[#16435a] to-[#08747b] text-white p-5 sm:p-7">
+        <div aria-hidden="true" className="absolute -z-10 w-[420px] h-[420px] rounded-full border-[45px] border-white/5 -end-24 -bottom-72 pointer-events-none"/>
+        <div aria-hidden="true" className="absolute -z-10 w-[360px] h-[360px] rounded-full border-[35px] border-teal-200/10 -end-40 -top-52 pointer-events-none"/>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-6 xl:gap-8 items-center">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 min-w-0">
+            <div aria-hidden="true" className="w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-full border-4 border-white/90 bg-gradient-to-br from-[#4bada5] to-[#235b78] flex items-center justify-center text-3xl sm:text-4xl font-bold shadow-lg">{initials}</div>
+            <div className="min-w-0 space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-blue-100/80">{t('Instructor profile','ملف المحاضر')}</p>
+              <h2 className="text-2xl sm:text-3xl font-bold break-words tracking-tight">{displayName}</h2><p className="text-sm sm:text-base text-blue-100 break-words">{currentInstructor.specialization}</p>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold"><ShieldCheck className="w-4 h-4 text-[#9ce5d3]"/>{currentInstructor.isActive?t('Active instructor','محاضر نشط'):t('Inactive instructor','محاضر غير نشط')}</span></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 border-t xl:border-t-0 xl:border-s border-white/20 pt-5 xl:pt-0 xl:ps-7">
+            {[{Icon:IdCard,label:t('Instructor ID','كود المحاضر'),value:currentInstructor.instructorCode},{Icon:Layers,label:t('Current camp','الكامب الحالي'),value:campName},{Icon:Mail,label:t('Email','البريد الإلكتروني'),value:currentInstructor.email}].map(({Icon,label,value})=><div className="flex items-start gap-3 min-w-0" key={label}><Icon className="w-5 h-5 mt-1 shrink-0 text-blue-100"/><div className="min-w-0"><p className="text-xs text-blue-100/85">{label}</p><p className="text-sm font-semibold break-words mt-0.5">{value||'—'}</p></div></div>)}
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3 text-center">
-          {[[t('Assigned','المسندة'),progress.assigned],[t('Counted','المحتسبة'),progress.counted],[t('Remaining','المتبقية'),progress.remaining]].map(([label,n])=><div className={SURFACE_SUBTLE+' p-3'} key={label}><p className="text-xs text-slate-500">{label}</p><p className="text-xl font-bold tabular-nums">{n}</p></div>)}
+      </section>
+      <section aria-label={t('Teaching progress','تقدم المحاضرات')} className={SURFACE_CARD+' rounded-2xl p-5 sm:p-6'}>
+        <div className="flex items-center gap-2 mb-5"><ChartNoAxesCombined className="w-5 h-5 text-[#355F82] dark:text-[#88A9CC]"/><h2 className="text-lg font-bold">{t('Teaching progress','تقدم المحاضرات')}</h2></div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-5 items-center">
+          <div className="flex items-center gap-4 sm:gap-6 lg:border-e border-slate-200 dark:border-slate-700 lg:pe-5">
+            <div role="progressbar" aria-label={t('Camp completion','إنجاز الكامب')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="relative w-24 h-24 sm:w-28 sm:h-28 shrink-0">
+              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90" aria-hidden="true"><circle cx="60" cy="60" r="49" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-200 dark:text-slate-700"/>{percent>0&&<circle cx="60" cy="60" r="49" fill="none" stroke="#159c91" strokeWidth="10" pathLength="100" strokeDasharray={percent+' 100'} strokeLinecap="round"/>}</svg><span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tabular-nums">{percent}%</span>
+            </div>
+            <div className="min-w-0"><p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">{t('Camp completion','إنجاز الكامب')}</p><p className="text-xl sm:text-2xl font-bold tabular-nums mt-1">{progress.counted} / {progress.assigned}</p><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Counted sessions','المحاضرات المحتسبة')}</p></div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            {[{Icon:CalendarDays,label:t('Assigned','المسندة'),n:progress.assigned,style:'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200'},{Icon:CheckCircle2,label:t('Counted','المحتسبة'),n:progress.counted,style:'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'},{Icon:Hourglass,label:t('Remaining','المتبقية'),n:progress.remaining,style:'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}].map(({Icon,label,n,style})=><div key={label} className={'rounded-xl p-2.5 sm:p-4 flex flex-col xl:flex-row xl:items-center gap-2 min-w-0 '+style}><Icon className="w-5 h-5 shrink-0"/><div className="min-w-0"><p className="text-[11px] sm:text-xs font-medium break-words">{label}</p><p className="text-xl sm:text-2xl font-bold tabular-nums">{n}</p></div></div>)}
+            <div className="col-span-3 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2" aria-hidden="true"><div className="bg-[#159c91] h-full rounded-full" style={{width:percent+'%'}}/></div>
+          </div>
         </div>
+      </section>
+      <div role="group" aria-label={t('Profile sections','أقسام الملف الشخصي')} className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        {([{id:'groups',en:'My Groups',ar:'مجموعاتي',Icon:Users},{id:'personal',en:'Personal Info',ar:'البيانات الشخصية',Icon:UserCircle},{id:'links',en:'Evaluations',ar:'التقييمات',Icon:Star},{id:'requests',en:'Requests',ar:'طلباتي',Icon:MessageSquare}] as const).map(({id,en,ar,Icon})=><button type="button" key={id} onClick={()=>setSubTab(id)} aria-pressed={subTab===id} className={'flex justify-center items-center gap-2 rounded-xl px-3 py-3 min-h-[48px] text-xs sm:text-sm font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 '+(subTab===id?'bg-[#175e70] border-[#175e70] text-white':'bg-white dark:bg-[#1D2023] border-slate-200 dark:border-[#353A3F] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800')}><Icon className="w-4 h-4 shrink-0"/>{t(en,ar)}</button>)}
       </div>
-
-      {/* Sub-section Tabs */}
-      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        {(
-          [
-            { id: 'groups', en: 'Groups', ar: 'مجموعاتي' },
-            { id: 'links', en: 'Evaluations', ar: 'التقييمات' },
-            { id: 'history', en: 'Session History', ar: 'سجل المحاضرات' },
-            { id: 'requests', en: 'My Requests', ar: 'طلباتي' },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setSubTab(tab.id)}
-            className={`min-h-[40px] px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer ${
-              subTab === tab.id
-                ? 'bg-[#355F82] text-white'
-                : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
-            }`}
-          >
-            {t(tab.en, tab.ar)}
-          </button>
-        ))}
-      </div>
-
-      {subTab === 'groups' && (
-        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('Assigned Training Groups', 'المجموعات التدريبية المسندة')}
-          </h2>
-          {myGroups.length === 0 ? (
-            <p className="text-slate-500 py-4">{t('No primary groups assigned yet.', 'لا توجد مجموعات مسندة.')}</p>
-          ) : (
-            myGroups.map((g) => (
-              <div
-                key={g.id}
-                className={`${SURFACE_SUBTLE} p-4 flex items-center justify-between gap-3`}
-              >
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">
-                    {t(g.nameEn, g.nameAr)}
-                  </p>
-                  <p className="text-slate-500 mt-0.5">{g.track}</p>
-                </div>
-                <StatusBadge tone="neutral">
-                  <span className="font-mono tabular-nums">
-                    {t(`Capacity: ${g.capacity}`, `السعة: ${g.capacity}`)}
-                  </span>
-                </StatusBadge>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {subTab==='groups'&&<section aria-label={t('Assigned training groups','المجموعات التدريبية المسندة')} className={SURFACE_CARD+' rounded-2xl p-4 sm:p-6 space-y-4'}>
+        <div className="flex justify-between items-start gap-3"><div className="flex items-start gap-3"><Users className="w-6 h-6 text-[#355F82] dark:text-[#88A9CC] shrink-0 mt-1"/><div><h2 className="font-bold text-lg">{t('Assigned Training Groups','المجموعات التدريبية المسندة')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Your groups in the selected camp','مجموعاتك في الكامب المحدد')}</p></div></div><StatusBadge tone="info">{myGroups.length} {t('Groups','مجموعات')}</StatusBadge></div>
+        {!myGroups.length?<EmptyState icon={Users} title={t('No groups assigned in this camp','لا توجد مجموعات مسندة في هذا الكامب')}/>:myGroups.map(g=>{
+          const ls=myLectures.filter(l=>l.groupId===g.id), gs=sessionCounts(ls,attendanceSheets,entitlements,currentInstructor.id);
+          const n=students.filter(st=>st.campId===g.campId&&st.groupId===g.id&&st.isActive).length, room=rooms.find(r=>r.id===g.defaultRoomId);
+          const pct=gs.assigned?Math.round(gs.finished/gs.assigned*100):0;
+          return <article key={g.id} className="rounded-xl border border-slate-200 dark:border-[#353A3F] p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,.8fr)] items-center gap-4">
+            <div className="flex gap-3 items-center min-w-0"><div className="rounded-xl bg-[#235e79] text-white p-3 shrink-0"><Laptop className="w-6 h-6"/></div><div className="min-w-0"><h3 className="font-bold break-words">{t(g.nameEn,g.nameAr)}</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-all">{g.code}{room?' · '+room.name:''}</p><p className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mt-1"><Users className="w-3.5 h-3.5"/>{n} {t('students','طلاب')} · {t('Capacity','السعة')} {g.capacity}</p></div></div>
+            <div className="grid grid-cols-3 gap-2 text-center border-t lg:border-t-0 lg:border-s border-slate-200 dark:border-slate-700 pt-3 lg:pt-0 lg:ps-3">{[[t('Sessions','المحاضرات'),gs.assigned],[t('Finished','المنتهية'),gs.finished],[t('Remaining','المتبقية'),gs.assigned-gs.finished]].map(([label,value])=><div key={label}><p className="text-[11px] text-slate-500 dark:text-slate-400">{label}</p><p className="text-lg font-bold tabular-nums">{value}</p></div>)}</div>
+            <div className="min-w-0 space-y-2"><div className="flex justify-between text-xs"><span>{t('Completion','الإنجاز')}</span><strong className="text-emerald-700 dark:text-emerald-300">{pct}%</strong></div><div role="progressbar" aria-label={t('Group completion','إنجاز المجموعة')+' '+t(g.nameEn,g.nameAr)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"><div className="bg-[#159c91] h-full rounded-full" style={{width:pct+'%'}}/></div></div>
+          </article>})}
+        <button type="button" className={BTN_SECONDARY+' min-h-[44px]'} onClick={()=>setInstructorRoute('schedule')}>{t('View all sessions','عرض كل المحاضرات')} <ArrowUpRight className="w-4 h-4"/></button>
+      </section>}
+      {subTab==='personal'&&<section aria-label={t('Personal information','البيانات الشخصية')} className={SURFACE_CARD+' rounded-2xl p-5 sm:p-6 space-y-4'}>
+        <div><h2 className="text-lg font-bold">{t('Personal information','البيانات الشخصية')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Contact Operations to update account information.','تواصل مع الإدارة لتعديل بيانات الحساب.')}</p></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{[{Icon:UserCircle,label:t('Full name','الاسم الكامل'),value:displayName},{Icon:IdCard,label:t('Instructor ID','كود المحاضر'),value:currentInstructor.instructorCode},{Icon:AtSign,label:t('Username','اسم المستخدم'),value:currentInstructor.username},{Icon:Mail,label:t('Email address','البريد الإلكتروني'),value:currentInstructor.email},{Icon:Phone,label:t('Phone','الهاتف'),value:currentInstructor.phone},{Icon:GraduationCap,label:t('Specialization','التخصص'),value:currentInstructor.specialization}].map(({Icon,label,value})=><div key={label} className={SURFACE_SUBTLE+' p-4 flex items-start gap-3 min-w-0'}><Icon className="w-5 h-5 text-[#355F82] dark:text-[#88A9CC] shrink-0"/><div className="min-w-0"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className="font-semibold text-sm break-all mt-1">{value||'—'}</p></div></div>)}</div>
+        {currentInstructor.bio&&<p className="text-sm whitespace-pre-wrap break-words">{currentInstructor.bio}</p>}
+      </section>}
 
       {subTab === 'links' && (
-        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
+        <div className={`${SURFACE_CARD} rounded-2xl p-5 sm:p-6 space-y-4 text-sm`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('My Survey & Evaluation Links', 'روابط التقييم والاستبيانات')}
           </h2>
@@ -1874,13 +1864,8 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
         </div>
       )}
 
-      {subTab==='history'&&<section aria-label={t('Session completion history','سجل إنجاز المحاضرات')} className={SURFACE_CARD+' p-5 space-y-3'}>
-        <h2 className="font-bold">{t('Session completion history','سجل إنجاز المحاضرات')}</h2>
-        {myLectures.map(l=>{const e=entitlements.find(x=>x.lectureId===l.id&&x.instructorId===currentInstructor.id);return <div key={l.id} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 py-3 text-sm"><span>{l.topic} · {l.lectureDate}</span><StatusBadge tone={e&&['eligible','approved'].includes(e.status)?'success':'neutral'}>{e&&['eligible','approved'].includes(e.status)?t('Counted','محتسبة'):t('Not counted','غير محتسبة')}</StatusBadge></div>})}
-      </section>}
-
       {subTab === 'requests' && (
-        <div className={`${SURFACE_CARD} p-5 space-y-4 text-xs`}>
+        <div className={`${SURFACE_CARD} rounded-2xl p-5 sm:p-6 space-y-4 text-sm`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Submit & Track Requests', 'تقديم ومتابعة الطلبات')}
           </h2>
