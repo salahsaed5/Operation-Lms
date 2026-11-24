@@ -290,12 +290,16 @@ test('Admin Finance reconciles primary, backup, transportation and immutable pay
     .getByRole('button',{name:/Instructor.*Ahmed Khalil/}).first().click();
   await page.getByRole('navigation',{name:'Instructor navigation'})
     .getByRole('button',{name:'Profile',exact:true}).click();
-  await page.getByRole('button',{name:'Session History'}).click();
-  const own=page.getByRole('region',{name:'Session completion history'});
+  await expect(page.getByRole('button',{name:'Session History'})).toHaveCount(0);
+  const own=page.getByRole('region',{name:'Teaching progress'});
   await expect(own).toBeVisible();
   await expect(own).not.toContainText('EGP');
   await expect(page.locator('main').first()).not.toContainText('EGP');
   await expect(own).not.toContainText('Eng. Karim Adel');
+  await page.getByRole('button',{name:'Personal Info',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Personal information'})).toBeVisible();
+  await page.getByRole('button',{name:'My Groups',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Assigned training groups'})).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
