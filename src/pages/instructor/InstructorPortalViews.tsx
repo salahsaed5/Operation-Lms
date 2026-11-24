@@ -112,21 +112,21 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
   const dates=Array.from(new Set(shown.map(l=>l.lectureDate)));
   const formatDate=(d:string)=>new Intl.DateTimeFormat(lang==='ar'?'ar-EG':'en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'));
   const filters=[{id:'all',en:'All sessions',ar:'كل المحاضرات',n:counts.assigned},{id:'running',en:'Running',ar:'جارية',n:running},{id:'pending',en:'Pending',ar:'معلقة',n:pending},{id:'finished',en:'Finished',ar:'منتهية',n:counts.finished},{id:'missed',en:'Missed',ar:'لم تبدأ',n:missed}];
-  return <div className="space-y-6">
+  return <div className="space-y-4 sm:space-y-6 min-w-0">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-[11px] font-bold tracking-widest text-[#355F82] dark:text-[#88A9CC] uppercase">{t('Instructor workspace','مساحة عمل المحاضر')} · {activeCamp.code}</p>
-      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-1">{todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')}</h1>
+      <h1 className="text-xl sm:text-3xl font-bold tracking-tight mt-1">{todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')}</h1>
       <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t(activeCamp.nameEn,activeCamp.nameAr)} · {formatDate(today)}</p></div>
       {todayOnly&&<button type="button" className={BTN_SECONDARY+' min-h-[44px]'} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>}
     </header>
     {!todayOnly&&<section aria-label={t('Session progress','تقدم المحاضرات')} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-3">
-      <div className="rounded-2xl bg-[#203b53] dark:bg-[#203548] text-white p-5 sm:p-6 relative overflow-hidden">
+      <div className="rounded-2xl bg-[#203b53] dark:bg-[#203548] text-white p-4 sm:p-6 relative overflow-hidden">
         <div aria-hidden="true" className="absolute end-[-35px] top-[-65px] w-52 h-52 rounded-full border-[24px] border-white/5 pointer-events-none"/>
         <div className="relative space-y-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-slate-200">{t('Camp completion','إنجاز الكامب')}</p><p className="mt-2 text-4xl font-bold tabular-nums tracking-tight">{counts.counted}<span className="text-xl font-medium text-slate-300"> / {counts.assigned}</span></p><p className="mt-1 text-xs text-slate-200">{t('Counted sessions','محاضرات محتسبة')}</p></div><span className="rounded-xl bg-white/10 px-3 py-2 text-lg font-bold tabular-nums">{percent}%</span></div>
         <div role="progressbar" aria-label={t('Counted sessions progress','نسبة المحاضرات المحتسبة')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-2 rounded-full bg-white/15 overflow-hidden"><div className="h-full rounded-full bg-[#8dd3c5]" style={{width:percent+'%'}}/></div>
         <div className="flex justify-between gap-3 text-xs text-slate-200"><span>{t('Assigned','المسندة')}: {counts.assigned}</span><span>{t('Remaining','المتبقية')}: {counts.remaining}</span></div></div>
       </div>
-      <div className={SURFACE_CARD+' rounded-2xl p-4 sm:p-5 grid grid-cols-2 gap-3'}>
+      <div className={SURFACE_CARD+' rounded-2xl p-3 sm:p-5 grid grid-cols-2 gap-2 sm:gap-3'}>
         {[{label:t('Running','جارية'),n:running,Icon:Play,style:'text-blue-700 dark:text-blue-300'},{label:t('Pending','معلقة'),n:pending,Icon:Clock3,style:'text-amber-700 dark:text-amber-300'},{label:t('Finished','منتهية'),n:counts.finished,Icon:CheckCircle2,style:'text-emerald-700 dark:text-emerald-300'},{label:t('Today','اليوم'),n:todayCount,Icon:CalendarDays,style:'text-[#355F82] dark:text-[#88A9CC]'}].map(({label,n,Icon,style})=><div key={label} className="flex items-center gap-3 min-w-0 rounded-xl bg-slate-50 dark:bg-[#25292D] p-3"><Icon aria-hidden="true" className={'w-5 h-5 shrink-0 '+style}/><div className="min-w-0"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className="text-xl font-bold tabular-nums">{n}</p></div></div>)}
       </div>
     </section>}
@@ -144,12 +144,12 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
           const present=sheet?.records.filter(r=>r.mark==='present'||r.mark==='late').length||0;
           const absent=sheet?.records.filter(r=>r.mark==='absent').length||0;
           const rosterCount=studentsForSelectedLecture({lecture:l,students,transfers:studentTransfers}).length;
-          return <article key={l.id} data-session-id={l.id} className="grid grid-cols-[76px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)_auto] gap-3 sm:gap-5 px-4 sm:px-6 py-5 items-start sm:items-center hover:bg-slate-50/70 dark:hover:bg-[#25292D]/50 transition-colors">
+          return <article key={l.id} data-session-id={l.id} className="grid grid-cols-[58px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)_auto] gap-2 sm:gap-5 px-3 sm:px-6 py-3 sm:py-5 items-start sm:items-center hover:bg-slate-50/70 dark:hover:bg-[#25292D]/50 transition-colors">
             <div className="border-e border-slate-200 dark:border-[#42474D] pe-3 self-stretch flex flex-col justify-center"><p dir="ltr" className="text-start text-lg font-bold tabular-nums">{l.startTime.slice(0,5)}</p><p dir="ltr" className="text-start text-xs text-slate-500 dark:text-slate-400 tabular-nums">{l.endTime.slice(0,5)}</p><p className="text-[10px] text-slate-500 mt-2">{t('Period','الفترة')} {l.periodNumber}</p></div>
             <div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={s==='finished'?'success':s==='missed'?'danger':s==='ready'||s==='running'?'info':'neutral'}>{t(label.en,label.ar)}</StatusBadge>{counted&&<StatusBadge tone="success">{t('Counted','محتسبة')}</StatusBadge>}{s==='finished'&&!counted&&<StatusBadge tone="warning">{t('Not counted','غير محتسبة')}</StatusBadge>}</div>
-            <h3 className="font-bold text-base break-words">{l.topic}</h3><div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5 min-w-0"><Users className="w-3.5 h-3.5 shrink-0"/><span className="break-words">{group?t(group.nameEn,group.nameAr):t('Unknown group','مجموعة غير معروفة')} · {rosterCount} {t('students','طلاب')}</span></span><span className="inline-flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 shrink-0"/>{room?.name||t('Room unavailable','القاعة غير متاحة')}</span></div>
+            <h3 className="font-bold text-base break-words">{l.topic}</h3><div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5 min-w-0"><Users className="w-3.5 h-3.5 shrink-0"/><span className="break-words">{group?t(group.nameEn,group.nameAr):t('Unknown group','مجموعة غير معروفة')} · {rosterCount} {t('students','طلاب')}</span></span><span className="inline-flex items-center gap-1.5 min-w-0 break-words"><MapPin className="w-3.5 h-3.5 shrink-0"/>{room?.name||t('Room unavailable','القاعة غير متاحة')}</span></div>
             {s==='finished'&&<div className="flex flex-wrap gap-3 text-xs font-semibold"><span className="text-emerald-700 dark:text-emerald-300">{t('Present','حاضر')} {present}</span><span className="text-rose-700 dark:text-rose-300">{t('Absent','غائب')} {absent}</span></div>}</div>
-            <button type="button" onClick={()=>openInstructorAttendance(l.id)} className={(s==='ready'||s==='running'?BTN_PRIMARY:BTN_SECONDARY)+' min-h-[44px] col-start-2 sm:col-start-auto justify-self-start sm:justify-self-end'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>
+            <button type="button" onClick={()=>openInstructorAttendance(l.id)} className={(s==='ready'||s==='running'?BTN_PRIMARY:BTN_SECONDARY)+' min-h-[44px] col-span-2 sm:col-span-1 sm:col-start-auto w-full sm:w-auto justify-self-stretch sm:justify-self-end'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>
           </article>})}</div>
       </div>)}
     </section>
@@ -536,7 +536,7 @@ export const InstructorCheckinView: React.FC = () => {
         </div>
       )}
 
-      <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-5`}>
+      <form onSubmit={handleCheckin} className={`${SURFACE_CARD} p-3 sm:p-6 space-y-4 sm:space-y-5`}>
 
         {isOffDay && (
           <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm">
@@ -1210,10 +1210,10 @@ export const InstructorAttendanceView: React.FC = () => {
                   key={rec.studentId}
                   role="group"
                   aria-label={t(`Attendance for ${rec.studentName}`, `حضور ${rec.studentName}`)}
-                  className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border border-slate-200 dark:border-[#42474D] bg-slate-50/60 dark:bg-[#121416]/40"
+                  className="p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 rounded-xl border border-slate-200 dark:border-[#42474D] bg-slate-50/60 dark:bg-[#121416]/40"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="grid grid-cols-3 gap-2 w-full md:w-[280px] shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 w-full min-w-0">
                       <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">
                         {highlightAttendanceSearchMatch(rec.studentName, searchTerm)}
                       </p>
@@ -1241,7 +1241,7 @@ export const InstructorAttendanceView: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 min-[400px]:grid-cols-4 md:flex md:items-center gap-2 min-w-0">
                     <button
                       type="button"
                       disabled={isBusy || (isLockedOrSubmitted && (!canCorrectSubmitted || rec.mark === 'unmarked'))}
@@ -1688,7 +1688,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 type="button"
                 disabled={isBusy || !canFinalizeAttendance}
                 onClick={handleSubmitAndSync}
-                className={`${BTN_PRIMARY} min-h-[48px] px-6`}
+                className={`${BTN_PRIMARY} min-h-[48px] px-3 sm:px-6 whitespace-normal text-center`}
               >
                 <RefreshCw className={`w-4 h-4 ${isBusy ? 'animate-spin' : ''}`} />
                 <span>
@@ -1783,62 +1783,63 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="instructor-profile space-y-3 sm:space-y-6 min-w-0">
       <PageHeader title={t('Profile','الملف الشخصي')} subtitle={t('Instructor profile & account information','بيانات المحاضر ومتابعة الإنجاز')}/>
-      <section aria-label={t('Instructor profile','ملف المحاضر')} className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-[#102b46] via-[#16435a] to-[#08747b] text-white p-5 sm:p-7">
+      <section aria-label={t('Instructor profile','ملف المحاضر')} className="instructor-profile-banner relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-[#102b46] via-[#16435a] to-[#08747b] text-white p-3.5 sm:p-7">
         <div aria-hidden="true" className="absolute -z-10 w-[420px] h-[420px] rounded-full border-[45px] border-white/5 -end-24 -bottom-72 pointer-events-none"/>
         <div aria-hidden="true" className="absolute -z-10 w-[360px] h-[360px] rounded-full border-[35px] border-teal-200/10 -end-40 -top-52 pointer-events-none"/>
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-6 xl:gap-8 items-center">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 min-w-0">
-            <div aria-hidden="true" className="w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-full border-4 border-white/90 bg-gradient-to-br from-[#4bada5] to-[#235b78] flex items-center justify-center text-3xl sm:text-4xl font-bold shadow-lg">{initials}</div>
-            <div className="min-w-0 space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-blue-100/80">{t('Instructor profile','ملف المحاضر')}</p>
-              <h2 className="text-2xl sm:text-3xl font-bold break-words tracking-tight">{displayName}</h2><p className="text-sm sm:text-base text-blue-100 break-words">{currentInstructor.specialization}</p>
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold"><ShieldCheck className="w-4 h-4 text-[#9ce5d3]"/>{currentInstructor.isActive?t('Active instructor','محاضر نشط'):t('Inactive instructor','محاضر غير نشط')}</span></div>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-3 sm:gap-6 xl:gap-8 items-center">
+          <div className="flex flex-row items-center gap-3 sm:gap-5 min-w-0">
+            <div aria-hidden="true" className="w-14 h-14 sm:w-28 sm:h-28 shrink-0 rounded-full border-2 sm:border-4 border-white/90 bg-gradient-to-br from-[#4bada5] to-[#235b78] flex items-center justify-center text-xl sm:text-4xl font-bold shadow-lg">{initials}</div>
+            <div className="min-w-0 space-y-1 sm:space-y-2"><p className="hidden sm:block text-xs font-semibold uppercase tracking-widest text-blue-100/80">{t('Instructor profile','ملف المحاضر')}</p>
+              <h2 className="text-lg sm:text-3xl font-bold break-words tracking-tight">{displayName}</h2><p className="text-xs sm:text-base text-blue-100 break-words">{currentInstructor.specialization}</p>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold"><ShieldCheck className="w-4 h-4 text-[#9ce5d3]"/>{currentInstructor.isActive?t('Active instructor','محاضر نشط'):t('Inactive instructor','محاضر غير نشط')}</span></div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 border-t xl:border-t-0 xl:border-s border-white/20 pt-5 xl:pt-0 xl:ps-7">
+          <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 border-t xl:border-t-0 xl:border-s border-white/20 pt-5 xl:pt-0 xl:ps-7">
             {[{Icon:IdCard,label:t('Instructor ID','كود المحاضر'),value:currentInstructor.instructorCode},{Icon:Layers,label:t('Current camp','الكامب الحالي'),value:campName},{Icon:Mail,label:t('Email','البريد الإلكتروني'),value:currentInstructor.email}].map(({Icon,label,value})=><div className="flex items-start gap-3 min-w-0" key={label}><Icon className="w-5 h-5 mt-1 shrink-0 text-blue-100"/><div className="min-w-0"><p className="text-xs text-blue-100/85">{label}</p><p className="text-sm font-semibold break-words mt-0.5">{value||'—'}</p></div></div>)}
           </div>
         </div>
+        <div className="sm:hidden flex items-center gap-2 border-t border-white/20 pt-2.5 mt-3 text-xs"><Layers className="w-4 h-4 shrink-0 text-blue-100"/><span className="min-w-0 break-words">{campName}</span></div>
       </section>
-      <section aria-label={t('Teaching progress','تقدم المحاضرات')} className={SURFACE_CARD+' rounded-2xl p-5 sm:p-6'}>
-        <div className="flex items-center gap-2 mb-5"><ChartNoAxesCombined className="w-5 h-5 text-[#355F82] dark:text-[#88A9CC]"/><h2 className="text-lg font-bold">{t('Teaching progress','تقدم المحاضرات')}</h2></div>
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-5 items-center">
+      <section aria-label={t('Teaching progress','تقدم المحاضرات')} className={SURFACE_CARD+' instructor-profile-progress rounded-2xl p-3.5 sm:p-6'}>
+        <div className="flex items-center gap-2 mb-3 sm:mb-5"><ChartNoAxesCombined className="w-5 h-5 text-[#355F82] dark:text-[#88A9CC]"/><h2 className="text-base sm:text-lg font-bold">{t('Teaching progress','تقدم المحاضرات')}</h2></div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 sm:gap-5 items-center">
           <div className="flex items-center gap-4 sm:gap-6 lg:border-e border-slate-200 dark:border-slate-700 lg:pe-5">
-            <div role="progressbar" aria-label={t('Camp completion','إنجاز الكامب')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="relative w-24 h-24 sm:w-28 sm:h-28 shrink-0">
-              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90" aria-hidden="true"><circle cx="60" cy="60" r="49" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-200 dark:text-slate-700"/>{percent>0&&<circle cx="60" cy="60" r="49" fill="none" stroke="#159c91" strokeWidth="10" pathLength="100" strokeDasharray={percent+' 100'} strokeLinecap="round"/>}</svg><span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tabular-nums">{percent}%</span>
+            <div role="progressbar" aria-label={t('Camp completion','إنجاز الكامب')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="relative w-16 h-16 sm:w-28 sm:h-28 shrink-0">
+              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90" aria-hidden="true"><circle cx="60" cy="60" r="49" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-200 dark:text-slate-700"/>{percent>0&&<circle cx="60" cy="60" r="49" fill="none" stroke="#159c91" strokeWidth="10" pathLength="100" strokeDasharray={percent+' 100'} strokeLinecap="round"/>}</svg><span className="absolute inset-0 flex items-center justify-center text-lg sm:text-2xl font-bold tabular-nums">{percent}%</span>
             </div>
             <div className="min-w-0"><p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">{t('Camp completion','إنجاز الكامب')}</p><p className="text-xl sm:text-2xl font-bold tabular-nums mt-1">{progress.counted} / {progress.assigned}</p><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Counted sessions','المحاضرات المحتسبة')}</p></div>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            {[{Icon:CalendarDays,label:t('Assigned','المسندة'),n:progress.assigned,style:'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200'},{Icon:CheckCircle2,label:t('Counted','المحتسبة'),n:progress.counted,style:'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'},{Icon:Hourglass,label:t('Remaining','المتبقية'),n:progress.remaining,style:'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}].map(({Icon,label,n,style})=><div key={label} className={'rounded-xl p-2.5 sm:p-4 flex flex-col xl:flex-row xl:items-center gap-2 min-w-0 '+style}><Icon className="w-5 h-5 shrink-0"/><div className="min-w-0"><p className="text-[11px] sm:text-xs font-medium break-words">{label}</p><p className="text-xl sm:text-2xl font-bold tabular-nums">{n}</p></div></div>)}
-            <div className="col-span-3 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2" aria-hidden="true"><div className="bg-[#159c91] h-full rounded-full" style={{width:percent+'%'}}/></div>
+            {[{Icon:CalendarDays,label:t('Assigned','المسندة'),n:progress.assigned,style:'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200'},{Icon:CheckCircle2,label:t('Counted','المحتسبة'),n:progress.counted,style:'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'},{Icon:Hourglass,label:t('Remaining','المتبقية'),n:progress.remaining,style:'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}].map(({Icon,label,n,style})=><div key={label} className={'rounded-xl p-2 sm:p-4 flex flex-col xl:flex-row xl:items-center gap-1 sm:gap-2 min-w-0 '+style}><Icon className="hidden sm:block w-5 h-5 shrink-0"/><div className="min-w-0"><p className="text-[11px] sm:text-xs font-medium break-words">{label}</p><p className="text-xl sm:text-2xl font-bold tabular-nums">{n}</p></div></div>)}
+            <div className="hidden sm:block col-span-3 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2" aria-hidden="true"><div className="bg-[#159c91] h-full rounded-full" style={{width:percent+'%'}}/></div>
           </div>
         </div>
       </section>
-      <div role="group" aria-label={t('Profile sections','أقسام الملف الشخصي')} className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        {([{id:'groups',en:'My Groups',ar:'مجموعاتي',Icon:Users},{id:'personal',en:'Personal Info',ar:'البيانات الشخصية',Icon:UserCircle},{id:'links',en:'Evaluations',ar:'التقييمات',Icon:Star},{id:'requests',en:'Requests',ar:'طلباتي',Icon:MessageSquare}] as const).map(({id,en,ar,Icon})=><button type="button" key={id} onClick={()=>setSubTab(id)} aria-pressed={subTab===id} className={'flex justify-center items-center gap-2 rounded-xl px-3 py-3 min-h-[48px] text-xs sm:text-sm font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 '+(subTab===id?'bg-[#175e70] border-[#175e70] text-white':'bg-white dark:bg-[#1D2023] border-slate-200 dark:border-[#353A3F] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800')}><Icon className="w-4 h-4 shrink-0"/>{t(en,ar)}</button>)}
+      <div role="group" aria-label={t('Profile sections','أقسام الملف الشخصي')} className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-3">
+        {([{id:'groups',en:'My Groups',ar:'مجموعاتي',Icon:Users},{id:'personal',en:'Personal Info',ar:'البيانات الشخصية',Icon:UserCircle},{id:'links',en:'Evaluations',ar:'التقييمات',Icon:Star},{id:'requests',en:'Requests',ar:'طلباتي',Icon:MessageSquare}] as const).map(({id,en,ar,Icon})=><button type="button" key={id} onClick={()=>setSubTab(id)} aria-pressed={subTab===id} className={'flex justify-center items-center gap-2 rounded-lg sm:rounded-xl px-2 sm:px-3 py-2 sm:py-3 min-h-[44px] sm:min-h-[48px] text-xs sm:text-sm font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 '+(subTab===id?'bg-[#175e70] border-[#175e70] text-white':'bg-white dark:bg-[#1D2023] border-slate-200 dark:border-[#353A3F] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800')}><Icon className="w-4 h-4 shrink-0"/>{t(en,ar)}</button>)}
       </div>
-      {subTab==='groups'&&<section aria-label={t('Assigned training groups','المجموعات التدريبية المسندة')} className={SURFACE_CARD+' rounded-2xl p-4 sm:p-6 space-y-4'}>
-        <div className="flex justify-between items-start gap-3"><div className="flex items-start gap-3"><Users className="w-6 h-6 text-[#355F82] dark:text-[#88A9CC] shrink-0 mt-1"/><div><h2 className="font-bold text-lg">{t('Assigned Training Groups','المجموعات التدريبية المسندة')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Your groups in the selected camp','مجموعاتك في الكامب المحدد')}</p></div></div><StatusBadge tone="info">{myGroups.length} {t('Groups','مجموعات')}</StatusBadge></div>
+      {subTab==='groups'&&<section aria-label={t('Assigned training groups','المجموعات التدريبية المسندة')} className={SURFACE_CARD+' rounded-2xl p-3 sm:p-6 space-y-3 sm:space-y-4'}>
+        <div className="flex justify-between items-start gap-3"><div className="flex items-start gap-3"><Users className="w-6 h-6 text-[#355F82] dark:text-[#88A9CC] shrink-0 mt-1"/><div><h2 className="font-bold text-base sm:text-lg">{t('Assigned Training Groups','المجموعات التدريبية المسندة')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Your groups in the selected camp','مجموعاتك في الكامب المحدد')}</p></div></div><StatusBadge tone="info">{myGroups.length} {t('Groups','مجموعات')}</StatusBadge></div>
         {!myGroups.length?<EmptyState icon={Users} title={t('No groups assigned in this camp','لا توجد مجموعات مسندة في هذا الكامب')}/>:myGroups.map(g=>{
           const ls=myLectures.filter(l=>l.groupId===g.id), gs=sessionCounts(ls,attendanceSheets,entitlements,currentInstructor.id);
           const n=students.filter(st=>st.campId===g.campId&&st.groupId===g.id&&st.isActive).length, room=rooms.find(r=>r.id===g.defaultRoomId);
           const pct=gs.assigned?Math.round(gs.finished/gs.assigned*100):0;
-          return <article key={g.id} className="rounded-xl border border-slate-200 dark:border-[#353A3F] p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,.8fr)] items-center gap-4">
-            <div className="flex gap-3 items-center min-w-0"><div className="rounded-xl bg-[#235e79] text-white p-3 shrink-0"><Laptop className="w-6 h-6"/></div><div className="min-w-0"><h3 className="font-bold break-words">{t(g.nameEn,g.nameAr)}</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-all">{g.code}{room?' · '+room.name:''}</p><p className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mt-1"><Users className="w-3.5 h-3.5"/>{n} {t('students','طلاب')} · {t('Capacity','السعة')} {g.capacity}</p></div></div>
+          return <article key={g.id} className="rounded-xl border border-slate-200 dark:border-[#353A3F] p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,.8fr)] items-center gap-3 sm:gap-4">
+            <div className="flex gap-3 items-center min-w-0"><div className="rounded-xl bg-[#235e79] text-white p-2 sm:p-3 shrink-0"><Laptop className="w-6 h-6"/></div><div className="min-w-0"><h3 className="font-bold break-words">{t(g.nameEn,g.nameAr)}</h3><p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-all">{g.code}{room?' · '+room.name:''}</p><p className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mt-1"><Users className="w-3.5 h-3.5"/>{n} {t('students','طلاب')} · {t('Capacity','السعة')} {g.capacity}</p></div></div>
             <div className="grid grid-cols-3 gap-2 text-center border-t lg:border-t-0 lg:border-s border-slate-200 dark:border-slate-700 pt-3 lg:pt-0 lg:ps-3">{[[t('Sessions','المحاضرات'),gs.assigned],[t('Finished','المنتهية'),gs.finished],[t('Remaining','المتبقية'),gs.assigned-gs.finished]].map(([label,value])=><div key={label}><p className="text-[11px] text-slate-500 dark:text-slate-400">{label}</p><p className="text-lg font-bold tabular-nums">{value}</p></div>)}</div>
             <div className="min-w-0 space-y-2"><div className="flex justify-between text-xs"><span>{t('Completion','الإنجاز')}</span><strong className="text-emerald-700 dark:text-emerald-300">{pct}%</strong></div><div role="progressbar" aria-label={t('Group completion','إنجاز المجموعة')+' '+t(g.nameEn,g.nameAr)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"><div className="bg-[#159c91] h-full rounded-full" style={{width:pct+'%'}}/></div></div>
           </article>})}
         <button type="button" className={BTN_SECONDARY+' min-h-[44px]'} onClick={()=>setInstructorRoute('schedule')}>{t('View all sessions','عرض كل المحاضرات')} <ArrowUpRight className="w-4 h-4"/></button>
       </section>}
-      {subTab==='personal'&&<section aria-label={t('Personal information','البيانات الشخصية')} className={SURFACE_CARD+' rounded-2xl p-5 sm:p-6 space-y-4'}>
+      {subTab==='personal'&&<section aria-label={t('Personal information','البيانات الشخصية')} className={SURFACE_CARD+' rounded-2xl p-3.5 sm:p-6 space-y-3 sm:space-y-4'}>
         <div><h2 className="text-lg font-bold">{t('Personal information','البيانات الشخصية')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('Contact Operations to update account information.','تواصل مع الإدارة لتعديل بيانات الحساب.')}</p></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{[{Icon:UserCircle,label:t('Full name','الاسم الكامل'),value:displayName},{Icon:IdCard,label:t('Instructor ID','كود المحاضر'),value:currentInstructor.instructorCode},{Icon:AtSign,label:t('Username','اسم المستخدم'),value:currentInstructor.username},{Icon:Mail,label:t('Email address','البريد الإلكتروني'),value:currentInstructor.email},{Icon:Phone,label:t('Phone','الهاتف'),value:currentInstructor.phone},{Icon:GraduationCap,label:t('Specialization','التخصص'),value:currentInstructor.specialization}].map(({Icon,label,value})=><div key={label} className={SURFACE_SUBTLE+' p-4 flex items-start gap-3 min-w-0'}><Icon className="w-5 h-5 text-[#355F82] dark:text-[#88A9CC] shrink-0"/><div className="min-w-0"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className="font-semibold text-sm break-all mt-1">{value||'—'}</p></div></div>)}</div>
         {currentInstructor.bio&&<p className="text-sm whitespace-pre-wrap break-words">{currentInstructor.bio}</p>}
       </section>}
 
       {subTab === 'links' && (
-        <div className={`${SURFACE_CARD} rounded-2xl p-5 sm:p-6 space-y-4 text-sm`}>
+        <div className={`${SURFACE_CARD} rounded-2xl p-3.5 sm:p-6 space-y-3 sm:space-y-4 text-sm`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('My Survey & Evaluation Links', 'روابط التقييم والاستبيانات')}
           </h2>
@@ -1865,7 +1866,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
       )}
 
       {subTab === 'requests' && (
-        <div className={`${SURFACE_CARD} rounded-2xl p-5 sm:p-6 space-y-4 text-sm`}>
+        <div className={`${SURFACE_CARD} rounded-2xl p-3.5 sm:p-6 space-y-3 sm:space-y-4 text-sm`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Submit & Track Requests', 'تقديم ومتابعة الطلبات')}
           </h2>

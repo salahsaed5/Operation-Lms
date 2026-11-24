@@ -98,3 +98,39 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 /* Unlayered glass styles must respect the responsive breakpoint of each portal. */
 @media (min-width:768px){.mobile-glass-nav.instructor-mobile-only{display:none;}}
 @media (min-width:1024px){.mobile-glass-nav.admin-mobile-only{display:none;}}
+
+/* Instructor-only responsive layout. The old five-column glass grid was shared with Admin. */
+.instructor-shell { min-height:100dvh; }
+.instructor-workspace { min-width:0; }
+.instructor-main { overflow-wrap:anywhere; }
+.instructor-bottom-nav { display:none; }
+@media (max-width:1023px) {
+  .instructor-shell { padding-bottom:calc(78px + env(safe-area-inset-bottom,0px)); }
+  .instructor-desktop-nav { display:none; }
+  .instructor-workspace { margin-inline-start:0; width:100%; }
+  .instructor-bottom-nav {
+    display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+    position:fixed; z-index:40; inset-inline:0; bottom:0;
+    width:100%; box-sizing:border-box; gap:3px;
+    padding:5px max(8px,env(safe-area-inset-right,0px)) calc(5px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));
+    background:var(--bg-surface); border-top:1px solid var(--border-subtle);
+    box-shadow:0 -4px 18px rgba(15,23,42,.08);
+  }
+  .instructor-bottom-item { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:0; min-height:56px; gap:4px; border-radius:10px; padding:4px 2px; color:#64748b; }
+  .instructor-bottom-item span { font-size:11px; line-height:1.2; font-weight:600; text-align:center; }
+  .instructor-bottom-item[aria-current="page"] { color:#155e75; background:#e7f4f5; }
+  .dark .instructor-bottom-item { color:#bfc8d1; }
+  .dark .instructor-bottom-item[aria-current="page"] { color:#a5f3e6; background:#193d48; }
+  .instructor-camp-bar select { flex:1; width:0; max-width:360px; min-height:38px; }
+}
+@media (max-width:639px) {
+  .instructor-header { padding-inline:10px; gap:6px; }
+  .instructor-header-actions { gap:3px; }
+  .instructor-header-actions > button { min-height:34px; min-width:32px; padding:5px; display:inline-flex; align-items:center; justify-content:center; }
+  .instructor-header-actions > button svg { flex-shrink:0; }
+  .instructor-header-actions > button[aria-expanded] span { max-width:20px; overflow:hidden; }
+  .instructor-main input:not([type=checkbox]):not([type=radio]), .instructor-main textarea, .instructor-main select, .instructor-camp-bar select { font-size:16px; }
+  .instructor-main button { max-width:100%; }
+  .instructor-profile-banner { min-width:0; }
+  .instructor-profile-progress { min-width:0; }
+}

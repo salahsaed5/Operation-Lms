@@ -369,6 +369,49 @@ test('Instructor mobile glass tabs reach check-in and attendance without overflo
 });
 
 
+test('Instructor responsive layout uses four equal bottom tabs and compact profile in LTR and RTL', async ({ page }) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/');
+  await page.getByRole('button',{name:'Open navigation menu'}).click();
+  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Logout'}).click();
+  await page.getByRole('region',{name:'Local sandbox account selector'}).getByRole('button',{name:/Instructor/}).first().click();
+  const bar=page.locator('.instructor-bottom-nav');
+  for(const width of [320,390,430,820]){
+    await page.setViewportSize({width,height:844});
+    await expect(bar).toBeVisible();
+    await expect(page.locator('.instructor-desktop-nav')).toBeHidden();
+    await expect(bar.getByRole('button')).toHaveCount(4);
+    for(const route of ['Home','Sessions','Check-in','Profile']){
+      await bar.getByRole('button',{name:route,exact:true}).click();
+      await expect(page.locator('.instructor-main')).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
+      const bounds=await bar.boundingBox();
+      expect(bounds!.x).toBeLessThanOrEqual(1);
+      expect(bounds!.width).toBeGreaterThanOrEqual(width-2);
+      const widths=await bar.getByRole('button').evaluateAll(bs=>bs.map(b=>b.getBoundingClientRect().width));
+      expect(Math.max(...widths)-Math.min(...widths)).toBeLessThan(2);
+    }
+    if(width<640){
+      expect((await page.locator('.instructor-profile-banner').boundingBox())!.height).toBeLessThan(230);
+      await bar.getByRole('button',{name:'Profile',exact:true}).click();
+      await page.getByRole('button',{name:'Personal Info',exact:true}).click();
+      await expect(page.getByRole('region',{name:'Personal information'})).toBeVisible();
+    }
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'Switch Language'}).click();
+  await expect(page.locator('html')).toHaveAttribute('dir','rtl');
+  await bar.getByRole('button',{name:'حسابي',exact:true}).click();
+  await expect(page.locator('.instructor-profile-banner')).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
+  const rtlBounds=await bar.boundingBox();
+  expect(rtlBounds!.x).toBeLessThanOrEqual(1);
+  expect(rtlBounds!.width).toBeGreaterThanOrEqual(388);
+  await page.setViewportSize({width:1365,height:900});
+  await expect(bar).toBeHidden();
+  await expect(page.locator('.instructor-desktop-nav')).toBeVisible();
+});
+
 test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload never blank the screen', async ({ page }) => {
   const jsErrors: string[] = [];
   page.on('pageerror', err => jsErrors.push(err.message));
