@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export const SURFACE_CARD =
-  'rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)]';
+  'admin-surface-card rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)]';
 
 export const SURFACE_SUBTLE =
   'rounded-lg border border-slate-200/80 dark:border-[#353A3F] bg-slate-50/70 dark:bg-[#121416]/60';
@@ -24,10 +24,10 @@ export const SELECT_CLASS =
   'w-full px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#121416] text-slate-900 dark:text-white focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 disabled:opacity-60 transition-colors';
 
 export const BTN_PRIMARY =
-  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
+  'admin-primary-action inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
 
 export const BTN_SECONDARY =
-  'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 text-slate-700 dark:text-[#DEE1E4] text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
+  'admin-secondary-action inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 text-slate-700 dark:text-[#DEE1E4] text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
 
 export const BTN_DANGER_OUTLINE =
   'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 dark:border-red-900/70 bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-60 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed';
@@ -63,7 +63,7 @@ export const PageHeader: React.FC<{
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
 }> = ({ title, subtitle, actions }) => (
-  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+  <div className="admin-page-header flex flex-col lg:flex-row lg:items-center justify-between gap-4">
     <div className="min-w-0">
       <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
         {title}

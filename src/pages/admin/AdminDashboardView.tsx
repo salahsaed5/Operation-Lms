@@ -276,7 +276,7 @@ export const AdminDashboardView: React.FC = () => {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="admin-dashboard space-y-5">
       {/* Header Row: Title + Subtitle on Left, Search + Filter + Schedule Action on Right */}
       <PageHeader
         title={t('Daily Operations', 'العمليات اليومية')}
@@ -388,14 +388,14 @@ export const AdminDashboardView: React.FC = () => {
 
       {/* 4 Compact Stat Cards (Right-Aligned Tinted Circular Icons matching reference) */}
       <section aria-label={t('Operational metrics summary', 'ملخص مؤشرات التشغيل')}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-3.5">
           {/* Card 1: Sessions */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="admin-dashboard-metric px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Selected Day Sessions', 'جلسات يوم الدراسة المحدد')}
               </p>
-              <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+              <p className="admin-metric-value text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {todayLectures.length}
               </p>
               <p className="text-[11px] font-medium tabular-nums mt-0.5 text-slate-500 dark:text-[#A0A5AA] truncate">
@@ -416,12 +416,12 @@ export const AdminDashboardView: React.FC = () => {
           </div>
 
           {/* Card 2: Finalized attendance sheets */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="admin-dashboard-metric px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Finalized Attendance', 'كشوف الحضور المكتملة')}
               </p>
-              <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+              <p className="admin-metric-value text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {syncedCount}/{todayLectures.length}
               </p>
               <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5">
@@ -434,12 +434,12 @@ export const AdminDashboardView: React.FC = () => {
           </div>
 
           {/* Card 3: Instructor Check-ins */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="admin-dashboard-metric px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Instructor Check-ins', 'وصول المحاضرين')}
               </p>
-              <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+              <p className="admin-metric-value text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {checkedInScheduledCount}/{scheduledInstructorIds.size}
               </p>
               <p className="text-[11px] tabular-nums mt-0.5 truncate">
@@ -461,12 +461,12 @@ export const AdminDashboardView: React.FC = () => {
           </div>
 
           {/* Card 4: Action queue */}
-          <div className="px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-[0_1px_2px_rgba(15,23,42,0.03)] flex items-center justify-between gap-3">
+          <div className="admin-dashboard-metric px-4 py-3.5 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500 dark:text-[#A0A5AA] truncate">
                 {t('Needs Attention', 'تحتاج متابعة')}
               </p>
-              <p className="text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+              <p className="admin-metric-value text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                 {totalActionItems}
               </p>
               <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA] mt-0.5 truncate">
@@ -533,8 +533,8 @@ export const AdminDashboardView: React.FC = () => {
 
       {/* Primary Operational Table (Desktop Table + Responsive Mobile Cards) */}
       <section aria-labelledby="daily-sessions-table-heading">
-        <div className={`${SURFACE_CARD} overflow-hidden`}>
-          <div className="px-5 py-3 border-b border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between gap-3">
+        <div className={`${SURFACE_CARD} admin-dashboard-agenda overflow-hidden`}>
+          <div className="admin-dashboard-agenda-header px-5 py-3 border-b border-slate-200/80 dark:border-[#353A3F] flex items-center justify-between gap-3">
             <div>
               <h2
                 id="daily-sessions-table-heading"
@@ -562,8 +562,8 @@ export const AdminDashboardView: React.FC = () => {
           </div>
 
           {filteredRows.length === 0 ? (
-            <div className="py-12 px-6 text-center space-y-2.5">
-              <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-[#42474D] bg-slate-50 dark:bg-[#25292D] text-slate-400 flex items-center justify-center mx-auto">
+            <div className="admin-dashboard-empty py-12 px-6 text-center space-y-2.5">
+              <div className="admin-dashboard-empty-icon w-10 h-10 rounded-lg border flex items-center justify-center mx-auto">
                 <Calendar className="w-5 h-5" />
               </div>
               <p className="text-sm font-medium text-slate-600 dark:text-[#C0C5C9]">
@@ -592,7 +592,7 @@ export const AdminDashboardView: React.FC = () => {
                   const instName = inst ? t(inst.fullNameEn, inst.fullNameAr) : lec.instructorId;
                   const groupLabel = grp ? t(grp.nameEn, grp.nameAr) : lec.groupId;
                   return (
-                    <div key={lec.id} className="p-4 space-y-2.5 text-xs">
+                    <div key={lec.id} data-synced={isSynced} className="admin-dashboard-mobile-row p-4 space-y-2.5 text-xs">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-mono tabular-nums text-[11px] font-semibold text-[#355F82] dark:text-[#88A9CC]">
