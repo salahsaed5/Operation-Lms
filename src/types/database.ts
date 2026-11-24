@@ -565,6 +565,12 @@ export interface Database {
         };
         Relationships: [];
       };
+      lecture_session_runs: {
+        Row: { lecture_id:string; revision_number:number; instructor_id:string; camp_id:string; group_id:string; room_id:string; lecture_date:string; start_time:string; end_time:string; started_at:string };
+        Insert: { lecture_id:string; revision_number:number; instructor_id:string; camp_id:string; group_id:string; room_id:string; lecture_date:string; start_time:string; end_time:string; started_at?:string };
+        Update: never;
+        Relationships: [];
+      };
       daily_checkins: {
         Row: {
           id: string;
@@ -1136,6 +1142,7 @@ export interface Database {
         };
         Returns: Json;
       };
+      run_lecture_session_tx: { Args: {p_lecture_id:string}; Returns: Json };
       submit_attendance_sheet_tx: {
         Args: { p_sheet_id: string };
         Returns: {
@@ -1465,6 +1472,7 @@ export interface Student {
 }
 
 export interface Lecture {
+  sessionStartedAt?: string | null;
   id: string;
   campId: string;
   campDay: number;
