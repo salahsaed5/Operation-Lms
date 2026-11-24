@@ -157,17 +157,27 @@ export const AuthView: React.FC = () => {
             <linearGradient id="auth-deep" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#092b39"/><stop offset=".58" stopColor="#103c4a"/><stop offset="1" stopColor="#075b69"/></linearGradient>
             <linearGradient id="auth-ribbon" x1="0" y1="0" x2="1" y2=".8"><stop stopColor="#097789"/><stop offset=".48" stopColor="#27bcc9"/><stop offset="1" stopColor="#c6e9e8"/></linearGradient>
           </defs>
-          <path d="M0 0H760C615 85 587 214 568 342C542 560 486 759 342 900H0Z" fill="url(#auth-ribbon)" opacity=".9"/>
-          <path d="M0 0H698C550 102 542 220 522 351C495 568 442 764 289 900H0Z" fill="#6cc2ce" opacity=".55"/>
-          <path d="M0 0H646C522 110 515 234 496 365C470 574 409 763 245 900H0Z" fill="url(#auth-deep)"/>
-          <path d="M698 0C550 102 542 220 522 351C495 568 442 764 289 900" stroke="#b8edf1" strokeWidth="1.5" opacity=".65" fill="none"/>
-          <path d="M0 812C142 866 268 867 408 727C372 801 313 864 245 900H0Z" fill="#08798a" opacity=".55"/>
+          <path d="M0 0H780C650 95 620 212 611 345C597 565 658 754 494 900H0Z" fill="url(#auth-ribbon)" opacity=".9"/>
+          <path d="M0 0H744C619 103 589 217 580 349C566 565 627 755 458 900H0Z" fill="#6cc2ce" opacity=".55"/>
+          <path d="M0 0H712C590 110 557 224 549 353C536 565 595 755 419 900H0Z" fill="url(#auth-deep)"/>
+          <path d="M744 0C619 103 589 217 580 349C566 565 627 755 458 900" stroke="#b8edf1" strokeWidth="1.5" opacity=".65" fill="none"/>
+          <path d="M0 810C176 873 345 866 550 733C524 798 482 854 419 900H0Z" fill="#08798a" opacity=".55"/>
         </svg>
         <div className="cits-auth-hero-brand">
           <CitsBrand inverse className="cits-auth-hero-logo"/>
           <p>{t('Learning Management System','نظام إدارة التعلم')}</p>
         </div>
-        <img className="cits-auth-hero-art" src="/assets/cits-login-hero.webp" alt="" width={490} height={341} decoding="async"/>
+        <svg className="cits-auth-hero-art" viewBox="0 0 490 285" aria-hidden="true" focusable="false">
+          <defs>
+            {/* Isolate the illustration from the baked-in mockup background. */}
+            <clipPath id="cits-auth-art-silhouette">
+              <path d="M28 59Q56 49 73 63Q88 75 95 101Q89 80 69 73Q50 62 28 59Z M27 106Q51 87 73 96Q88 102 99 127L103 140L100 140Q88 112 75 109Q48 99 27 106Z M91 85Q83 48 107 29Q119 23 136 20Q124 32 119 49Q111 72 101 82L106 139H102Z M104 109Q114 82 149 76Q147 89 132 101L112 121L109 140H106Z M79 139L128 139Q131 154 135 165Q136 178 123 184H87Q69 180 73 166Z M43 181Q38 182 35 189L35 207Q37 214 43 215L32 217Q24 220 25 235Q26 246 38 249L180 252L186 244L175 182Z M165 49Q153 48 153 61L177 223Q177 231 184 236L184 241L249 257Q265 261 283 258L467 239Q476 238 477 232L377 215L350 78Q348 68 338 67Z"/>
+            </clipPath>
+            <radialGradient id="cits-art-shadow"><stop stopColor="#031823" stopOpacity=".60"/><stop offset="1" stopColor="#031823" stopOpacity="0"/></radialGradient>
+          </defs>
+          <ellipse cx="253" cy="263" rx="232" ry="19" fill="url(#cits-art-shadow)"/>
+          <image href="/assets/cits-login-hero.webp" width="490" height="341" clipPath="url(#cits-auth-art-silhouette)"/>
+        </svg>
       </aside>
       <div className="cits-auth-form-side">
         {/* Unobtrusive Top Utility Header */}
