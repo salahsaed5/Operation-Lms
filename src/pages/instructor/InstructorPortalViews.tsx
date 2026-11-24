@@ -20,6 +20,9 @@ import {
   MapPin,
   Play,
   CalendarDays,
+  CalendarCheck,
+  ArrowRight,
+  AlertCircle,
   IdCard, Mail, ShieldCheck, Layers, GraduationCap, Star, MessageSquare, Hourglass, ChartNoAxesCombined, AtSign, Phone, Laptop,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -111,13 +114,13 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
     (!term||[l.topic,groups.find(g=>g.id===l.groupId)?.code,groups.find(g=>g.id===l.groupId)?.nameAr,groups.find(g=>g.id===l.groupId)?.nameEn].some(x=>x?.toLowerCase().includes(term)))).sort((a,b)=>a.lectureDate.localeCompare(b.lectureDate)||a.startTime.localeCompare(b.startTime));
   const dates=Array.from(new Set(shown.map(l=>l.lectureDate)));
   const formatDate=(d:string)=>new Intl.DateTimeFormat(lang==='ar'?'ar-EG':'en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'));
+  const agendaTime=(time:string)=>{const [h,m]=time.split(':').map(Number);return new Intl.DateTimeFormat(lang==='ar'?'ar-EG':'en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'UTC'}).format(new Date(Date.UTC(2000,0,1,h,m)));};
   const filters=[{id:'all',en:'All sessions',ar:'كل المحاضرات',n:counts.assigned},{id:'running',en:'Running',ar:'جارية',n:running},{id:'pending',en:'Pending',ar:'معلقة',n:pending},{id:'finished',en:'Finished',ar:'منتهية',n:counts.finished},{id:'missed',en:'Missed',ar:'لم تبدأ',n:missed}];
   return <div className="space-y-4 sm:space-y-6 min-w-0">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-[11px] font-bold tracking-widest text-[#355F82] dark:text-[#88A9CC] uppercase">{t('Instructor workspace','مساحة عمل المحاضر')} · {activeCamp.code}</p>
       <h1 className="text-xl sm:text-3xl font-bold tracking-tight mt-1">{todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')}</h1>
       <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t(activeCamp.nameEn,activeCamp.nameAr)} · {formatDate(today)}</p></div>
-      {todayOnly&&<button type="button" className={BTN_SECONDARY+' min-h-[44px]'} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>}
     </header>
     {!todayOnly&&<section aria-label={t('Session progress','تقدم المحاضرات')} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-3">
       <div className="rounded-2xl bg-[#203b53] dark:bg-[#203548] text-white p-4 sm:p-6 relative overflow-hidden">
@@ -130,26 +133,37 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
         {[{label:t('Running','جارية'),n:running,Icon:Play,style:'text-blue-700 dark:text-blue-300'},{label:t('Pending','معلقة'),n:pending,Icon:Clock3,style:'text-amber-700 dark:text-amber-300'},{label:t('Finished','منتهية'),n:counts.finished,Icon:CheckCircle2,style:'text-emerald-700 dark:text-emerald-300'},{label:t('Today','اليوم'),n:todayCount,Icon:CalendarDays,style:'text-[#355F82] dark:text-[#88A9CC]'}].map(({label,n,Icon,style})=><div key={label} className="flex items-center gap-3 min-w-0 rounded-xl bg-slate-50 dark:bg-[#25292D] p-3"><Icon aria-hidden="true" className={'w-5 h-5 shrink-0 '+style}/><div className="min-w-0"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className="text-xl font-bold tabular-nums">{n}</p></div></div>)}
       </div>
     </section>}
-    <section aria-label={t('Session agenda','قائمة المحاضرات')} className={SURFACE_CARD+' rounded-2xl overflow-hidden'}>
+    <section aria-label={t('Session agenda','قائمة المحاضرات')} className={SURFACE_CARD+' instructor-agenda rounded-2xl overflow-hidden'}>
       <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-[#353A3F] space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="font-bold text-lg">{todayOnly?t('Your agenda','جدولك اليوم'):t('Session agenda','جدول المحاضرات')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{shown.length} {t('sessions shown','محاضرات معروضة')}</p></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><CalendarCheck className="w-8 h-8 shrink-0 instructor-agenda-heading-icon" aria-hidden="true"/><div className="min-w-0"><h2 className="font-bold text-lg">{todayOnly?t('Your agenda','جدولك اليوم'):t('Session agenda','جدول المحاضرات')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{todayOnly?t(shown.length===1?'1 session scheduled for today':shown.length+' sessions scheduled for today',shown.length+' محاضرات مجدولة اليوم'):shown.length+' '+t('sessions shown','محاضرات معروضة')}</p></div></div>
+          {todayOnly&&<button type="button" className="instructor-agenda-all" onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')} <ArrowRight className="w-4 h-4 rtl:rotate-180"/></button>}
           {!todayOnly&&<div className="relative w-full sm:w-72"><Search aria-hidden="true" className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/><input type="search" aria-label={t('Search sessions','بحث المحاضرات')} placeholder={t('Search topic or group','ابحث بالموضوع أو الجروب')} value={query} onChange={e=>setQuery(e.target.value)} className={INPUT_CLASS+' ps-9 min-h-[44px]'}/></div>}</div>
         {!todayOnly&&<div role="group" aria-label={t('Filter sessions','تصفية المحاضرات')} className="flex flex-wrap gap-2">{filters.map(x=><button key={x.id} type="button" aria-pressed={filter===x.id} onClick={()=>setFilter(x.id)} className={'min-h-[40px] rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 '+(filter===x.id?'bg-[#355F82] text-white':'bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700')}>{t(x.en,x.ar)} <span className="ms-1 tabular-nums opacity-80">{x.n}</span></button>)}</div>}
       </div>
-      {shown.length===0?<div className="p-4"><EmptyState icon={CalendarClock} title={todayOnly?t('No sessions scheduled for today','لا توجد محاضرات اليوم'):t('No matching sessions','لا توجد محاضرات مطابقة')}/>{!todayOnly&&<button type="button" className={BTN_SECONDARY+' mx-auto flex mt-3'} onClick={()=>{setQuery('');setFilter('all');}}>{t('Clear filters','مسح التصفية')}</button>}</div>:dates.map(d=><div key={d}>
-        <div className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-slate-50 dark:bg-[#25292D] border-b border-slate-100 dark:border-[#353A3F] text-xs font-semibold text-slate-600 dark:text-slate-300"><CalendarDays className="w-4 h-4"/><span>{formatDate(d)}</span>{d===today&&<StatusBadge tone="info">{t('Today','اليوم')}</StatusBadge>}</div>
-        <div className="divide-y divide-slate-100 dark:divide-[#353A3F]">{shown.filter(l=>l.lectureDate===d).map(l=>{
+      {shown.length===0?<div className="instructor-agenda-empty-wrap">
+        <div className="instructor-agenda-empty" data-agenda-empty>
+          <div className="instructor-agenda-illustration" aria-hidden="true"><span/><CalendarDays className="relative w-11 h-11" strokeWidth={1.5}/></div>
+          <h3 className="font-bold text-base">{todayOnly?t('No sessions scheduled for today','لا توجد محاضرات اليوم'):t('No matching sessions','لا توجد محاضرات مطابقة')}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">{todayOnly?t('When sessions are assigned, they will appear here. You can view your full camp schedule anytime.','ستظهر المحاضرات هنا عند إسنادها إليك. يمكنك عرض جدول الكامب بالكامل في أي وقت.'):t('Try a different search or clear the filters.','جرّب البحث بكلمة أخرى أو امسح التصفية.')}</p>
+          <button type="button" className="instructor-agenda-empty-action" onClick={()=>{if(todayOnly)setInstructorRoute('schedule');else{setQuery('');setFilter('all');}}}>{todayOnly?t('View all sessions','عرض كل المحاضرات'):t('Clear filters','مسح التصفية')} <ArrowRight className="w-4 h-4 rtl:rotate-180"/></button>
+        </div>
+      </div>:dates.map(d=><div key={d}>
+        {!todayOnly&&<div className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-slate-50 dark:bg-[#25292D] border-b border-slate-100 dark:border-[#353A3F] text-xs font-semibold text-slate-600 dark:text-slate-300"><CalendarDays className="w-4 h-4"/><span>{formatDate(d)}</span>{d===today&&<StatusBadge tone="info">{t('Today','اليوم')}</StatusBadge>}</div>}
+        <div className="instructor-agenda-list">{shown.filter(l=>l.lectureDate===d).map(l=>{
           const s=stateOf(l),label=sessionLabel(s),sheet=attendanceSheets.find(x=>x.lectureId===l.id),group=groups.find(g=>g.id===l.groupId),room=rooms.find(r=>r.id===l.roomId);
           const counted=entitlements.some(e=>e.lectureId===l.id&&e.instructorId===inst.id&&['eligible','approved'].includes(e.status));
           const present=sheet?.records.filter(r=>r.mark==='present'||r.mark==='late').length||0;
           const absent=sheet?.records.filter(r=>r.mark==='absent').length||0;
           const rosterCount=studentsForSelectedLecture({lecture:l,students,transfers:studentTransfers}).length;
-          return <article key={l.id} data-session-id={l.id} className="grid grid-cols-[58px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)_auto] gap-2 sm:gap-5 px-3 sm:px-6 py-3 sm:py-5 items-start sm:items-center hover:bg-slate-50/70 dark:hover:bg-[#25292D]/50 transition-colors">
-            <div className="border-e border-slate-200 dark:border-[#42474D] pe-3 self-stretch flex flex-col justify-center"><p dir="ltr" className="text-start text-lg font-bold tabular-nums">{l.startTime.slice(0,5)}</p><p dir="ltr" className="text-start text-xs text-slate-500 dark:text-slate-400 tabular-nums">{l.endTime.slice(0,5)}</p><p className="text-[10px] text-slate-500 mt-2">{t('Period','الفترة')} {l.periodNumber}</p></div>
-            <div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={s==='finished'?'success':s==='missed'?'danger':s==='ready'||s==='running'?'info':'neutral'}>{t(label.en,label.ar)}</StatusBadge>{counted&&<StatusBadge tone="success">{t('Counted','محتسبة')}</StatusBadge>}{s==='finished'&&!counted&&<StatusBadge tone="warning">{t('Not counted','غير محتسبة')}</StatusBadge>}</div>
-            <h3 className="font-bold text-base break-words">{l.topic}</h3><div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5 min-w-0"><Users className="w-3.5 h-3.5 shrink-0"/><span className="break-words">{group?t(group.nameEn,group.nameAr):t('Unknown group','مجموعة غير معروفة')} · {rosterCount} {t('students','طلاب')}</span></span><span className="inline-flex items-center gap-1.5 min-w-0 break-words"><MapPin className="w-3.5 h-3.5 shrink-0"/>{room?.name||t('Room unavailable','القاعة غير متاحة')}</span></div>
-            {s==='finished'&&<div className="flex flex-wrap gap-3 text-xs font-semibold"><span className="text-emerald-700 dark:text-emerald-300">{t('Present','حاضر')} {present}</span><span className="text-rose-700 dark:text-rose-300">{t('Absent','غائب')} {absent}</span></div>}</div>
-            <button type="button" onClick={()=>openInstructorAttendance(l.id)} className={(s==='ready'||s==='running'?BTN_PRIMARY:BTN_SECONDARY)+' min-h-[44px] col-span-2 sm:col-span-1 sm:col-start-auto w-full sm:w-auto justify-self-stretch sm:justify-self-end'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>
+          const StatusIcon=s==='finished'?CheckCircle2:s==='running'?Clock3:s==='ready'?Play:s==='missed'?AlertCircle:Hourglass;
+          const statusText=s==='finished'?t('Completed','منتهية'):s==='running'?t('In progress','جارية'):t(label.en,label.ar);
+          const actionText=s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة');
+          return <article key={l.id} data-session-id={l.id} data-session-state={s} className="instructor-agenda-row">
+            <div className="instructor-agenda-time"><p dir="ltr" className="font-bold tabular-nums text-sm">{agendaTime(l.startTime)}</p><p dir="ltr" className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{agendaTime(l.endTime)}</p></div>
+            <div className="instructor-agenda-group"><span className="instructor-agenda-group-icon"><Users className="w-5 h-5" aria-hidden="true"/></span><div className="min-w-0"><h3 className="font-bold text-sm break-words">{group?t(group.nameEn,group.nameAr):t('Unknown group','مجموعة غير معروفة')}</h3><p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 break-words">{l.topic}</p><p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 break-words">{room?.name||t('Room unavailable','القاعة غير متاحة')} · {rosterCount} {t('students','طلاب')}</p>
+            {s==='finished'&&<p className="text-[11px] mt-1 text-slate-500 dark:text-slate-400">{t('Present','حاضر')} {present} · {t('Absent','غائب')} {absent} · <span className={counted?'text-emerald-700 dark:text-emerald-300':'text-amber-700 dark:text-amber-300'}>{counted?t('Counted','محتسبة'):t('Not counted','غير محتسبة')}</span></p>}</div></div>
+            <span className="instructor-agenda-kind"><Laptop className="w-4 h-4" aria-hidden="true"/>{t('Lecture','محاضرة')}</span>
+            <button type="button" aria-label={actionText} title={actionText} onClick={()=>openInstructorAttendance(l.id)} className="instructor-agenda-status"><StatusIcon className="w-4 h-4 shrink-0" aria-hidden="true"/><span>{statusText}</span><ArrowRight className="w-3.5 h-3.5 shrink-0 rtl:rotate-180" aria-hidden="true"/></button>
           </article>})}</div>
       </div>)}
     </section>
