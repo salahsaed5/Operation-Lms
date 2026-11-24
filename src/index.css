@@ -485,3 +485,11 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
   .admin-dashboard-metric {min-height:96px;padding:13px!important;}
 }
 @media(max-width:359px) {.admin-topbar-context .instructor-topbar-day svg,.admin-topbar-camp>svg {display:none;}.admin-topbar-actions {gap:4px;}.admin-mobile-only .mobile-glass-item span {font-size:9px;}}
+
+/* Keep the desktop rail toggle and mobile drawer trigger mutually exclusive.
+   Mobile browsers use overlay scrollbars; avoid reserving a phantom desktop gutter. */
+@media(min-width:1024px) {.admin-topbar .admin-topbar-context > button:first-child {display:none;}}
+@media(max-width:1023px) {
+  html:has(.admin-shell),html:has(.instructor-shell) {scrollbar-gutter:auto;}
+  .admin-topbar .admin-topbar-context > button:first-child {display:inline-flex;}
+}
