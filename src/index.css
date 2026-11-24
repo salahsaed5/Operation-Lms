@@ -277,3 +277,24 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .cits-brand-auth .cits-brand-subtitle {font-size:12px;}
 .cits-brand-auth-mobile {width:128px;}
 @media(min-width:1024px){.instructor-sidebar-brand {padding:23px 16px 19px;}.instructor-sidebar-brand .cits-brand {width:174px;align-items:center;}.instructor-sidebar-brand .cits-brand-subtitle {font-size:11px;}}
+
+/* Minimal brand loading screen. Indeterminate animation is visual only;
+   the existing authentication lifecycle exclusively controls its duration. */
+.cits-loading-screen {
+  min-height:100vh; min-height:100dvh; display:grid; place-items:center;
+  box-sizing:border-box; padding:24px;
+  background:var(--bg-canvas,#f4f6f9); color:var(--text-primary,#102f45);
+}
+.cits-loading-content {width:100%;max-width:344px;text-align:center;display:flex;flex-direction:column;align-items:center;}
+.cits-loading-content .cits-loading-brand {width:216px;max-width:78%;margin:0 auto 24px;}
+.cits-loading-content .cits-loading-brand .cits-brand-mark {max-height:none;}
+.cits-loading-content h1 {font-size:clamp(18px,3.5vw,22px);font-weight:700;letter-spacing:-.025em;line-height:1.4;margin:0;}
+.cits-loading-message {display:flex;justify-content:center;align-items:center;gap:7px;font-size:12px;line-height:1.5;color:var(--text-secondary,#64748b);margin:9px 0 0;}
+.cits-loading-shield {width:17px;height:17px;flex-shrink:0;color:#0895a6;}
+.cits-loading-track {position:relative;width:100%;max-width:300px;height:6px;border-radius:999px;overflow:hidden;background:#dce5ed;margin-top:24px;direction:ltr;}
+.cits-loading-track span {position:absolute;inset-block:0;left:0;width:46%;border-radius:inherit;background:linear-gradient(90deg,#07545f,#08d8e6);animation:cits-loading-sweep 1.45s ease-in-out infinite;}
+@keyframes cits-loading-sweep {0%{transform:translateX(-105%);}100%{transform:translateX(225%);}}
+.dark .cits-loading-screen {background:var(--bg-canvas,#121416);color:var(--text-primary,#f0f1f2);}
+.dark .cits-loading-track {background:#33414d;}
+.dark .cits-loading-shield {color:#43ced7;}
+@media(prefers-reduced-motion:reduce) {.cits-loading-track span {animation:none;transform:translateX(58%);}}

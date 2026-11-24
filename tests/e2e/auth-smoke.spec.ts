@@ -23,6 +23,7 @@ test('guest receives the sign-in form instead of any role dashboard', async ({ p
   await expect(page.locator('#login-identifier')).toBeVisible();
   await expect(page.locator('#login-password')).toBeVisible();
   await expect(page.locator('#login-password')).toHaveAttribute('type', 'password');
+  await expect(page.locator('.cits-loading-screen')).toHaveCount(0);
   await expect(page.locator('form').first()).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 });

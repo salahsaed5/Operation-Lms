@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
 import { UserRole } from './types/database';
 import { AuthView } from './pages/auth/AuthView';
@@ -39,14 +40,17 @@ const AppRouter: React.FC = () => {
 
   if (isInitializingSession) {
     return (
-      <div className="min-h-screen bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6">
-        <div className="text-center space-y-2">
-          <CitsBrand className="mx-auto"/>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('Verifying secure Supabase session & RLS context...', 'جاري التحقق من الجلسة الآمنة وصلاحيات RLS...')}
+      <main className="cits-loading-screen" aria-busy="true">
+        <div className="cits-loading-content" role="status" aria-live="polite">
+          <CitsBrand className="cits-loading-brand"/>
+          <h1>{t('Loading your workspace...', 'جاري تحميل مساحة عملك...')}</h1>
+          <p className="cits-loading-message">
+            <ShieldCheck aria-hidden="true" className="cits-loading-shield"/>
+            <span>{t('Establishing a secure session', 'جاري إنشاء جلسة آمنة')}</span>
           </p>
+          <div className="cits-loading-track" aria-hidden="true"><span/></div>
         </div>
-      </div>
+      </main>
     );
   }
 
