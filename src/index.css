@@ -266,10 +266,10 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 @media(max-width:639px) {.instructor-agenda-list {padding:8px;gap:8px;} .instructor-agenda-row {grid-template-columns:76px minmax(0,1fr);gap:8px;padding:10px 10px 10px 17px;padding-inline-start:17px;padding-inline-end:10px;} .instructor-agenda-row::before {inset-inline-start:6px;width:4px;inset-block:11px;} .instructor-agenda-group-icon {display:none;} .instructor-agenda-status {grid-column:2;justify-self:start;white-space:normal;text-align:start;min-height:40px;} .instructor-agenda-time p:first-child {font-size:12px;} .instructor-agenda-empty {min-height:210px;} .instructor-agenda-empty-wrap {padding:9px;} }
 
 /* One brand, role-specific captions; no changes to navigation or operational data. */
-.cits-brand {--cits-word:#102f45;--cits-swoosh:#09a7b5;--cits-chip-ink:#082f44;display:flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:100%;width:152px;gap:2px;}
+.cits-brand {--cits-word:#102f45;--cits-swoosh:#08b4c5;--cits-chip-ink:#082f44;display:flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:100%;width:152px;gap:2px;}
 .cits-brand-mark {display:block;width:100%;height:auto;max-height:46px;overflow:visible;}
 .cits-brand-subtitle {display:block;color:var(--text-muted);font-size:10px;line-height:1.4;font-weight:500;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
-.cits-brand-inverse,.dark .cits-brand {--cits-word:#fff;--cits-swoosh:#37d4e4;--cits-chip-ink:#082f44;}
+.cits-brand-inverse,.dark .cits-brand {--cits-word:#fff;--cits-swoosh:#08d8e6;--cits-chip-ink:#082f44;}
 .cits-brand-inverse .cits-brand-subtitle {color:#c5dbe5;}
 .cits-brand-compact {width:46px;}
 .cits-brand-auth {width:205px;}

@@ -57,7 +57,19 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
     .getByRole('button', { name: /Instructor/ }).first().click();
 
   await expect(page.locator('.instructor-desktop-nav [data-cits-brand]')).toContainText('Instructor Workspace');
-  await expect(page.locator('.instructor-desktop-nav [data-cits-brand] svg')).toHaveAttribute('aria-label','CITS LMS');
+  const brand=page.locator('.instructor-desktop-nav [data-cits-brand] svg');
+  await expect(brand).toHaveAttribute('aria-label','CITS LMS');
+  await expect(brand.locator('text')).toHaveCount(0);
+  const overlap=await brand.evaluate(svg=>{
+    const word=svg.querySelector('[data-brand-part="word"]') as SVGGeometryElement;
+    const swoosh=svg.querySelector('[data-brand-part="swoosh"]') as SVGGeometryElement;
+    for(let y=0;y<42;y+=.25)for(let x=0;x<95;x+=.25){
+      const pt=new DOMPoint(x,y);
+      if(word.isPointInFill(pt)&&swoosh.isPointInFill(pt))return true;
+    }
+    return false;
+  });
+  expect(overlap).toBe(false);
   const nav = page.getByRole('navigation', { name: 'Instructor navigation' });
   await nav.getByRole('button', { name: 'Sessions', exact: true }).click();
   await page.locator('[data-session-id="lec-d4-p1-g1"]').getByRole('button').click();
