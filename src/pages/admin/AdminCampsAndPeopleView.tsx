@@ -105,7 +105,7 @@ function campEndPreview(start: string, duration: number, weekdays: number[]): st
   try { return calculateCampDayDate(start, duration, weekdays); }
   catch { return null; }
 }
-type InstructorFilter = 'all' | 'active' | 'disabled';
+type InstructorFilter = 'all' | 'active' | 'disabled' | 'archived';
 
 export const AdminCampsView: React.FC = () => {
   const {
@@ -1125,6 +1125,7 @@ export const AdminInstructorsView: React.FC = () => {
     updateInstructorAccount,
     triggerInstructorPasswordReset,
     updateInstructorCredential,
+    manageInstructorRemoval,
     t,
   } = useApp();
 
@@ -1168,6 +1169,7 @@ export const AdminInstructorsView: React.FC = () => {
   const [assignedToCamp, setAssignedToCamp] = useState(true);
 
   // Confirmation dialog targets
+  const [removalTarget,setRemovalTarget]=useState<{inst:Instructor;action:'archive'|'restore'|'delete'}|null>(null);
   const [toggleStatusTarget, setToggleStatusTarget] = useState<Instructor | null>(null);
   const [resetTarget, setResetTarget] = useState<Instructor | null>(null);
 
@@ -1202,6 +1204,7 @@ export const AdminInstructorsView: React.FC = () => {
   const filteredInstructors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return instructors.filter((inst) => {
+      if (statusFilter==='archived' ? !inst.archivedAt : Boolean(inst.archivedAt)) return false;
       if (statusFilter === 'active' && !inst.isActive) return false;
       if (statusFilter === 'disabled' && inst.isActive) return false;
       if (!q) return true;
@@ -1442,6 +1445,16 @@ export const AdminInstructorsView: React.FC = () => {
     }
   };
 
+  const handleConfirmRemoval=async()=>{
+    if(!removalTarget||isBusy)return;
+    setIsBusy(true);
+    try{
+      const result=await manageInstructorRemoval(removalTarget.inst.id,removalTarget.action);
+      setFeedback({ok:result.ok,text:result.ok?t('Account list updated.','تم تحديث قائمة المحاضرين.'):(result.error||t('Removal failed.','تعذر إزالة الحساب.'))});
+      setRemovalTarget(null);
+      if(result.ok){setEditingInst(null);setViewingInst(null);}
+    } finally {setIsBusy(false);}
+  };
   const handleConfirmToggleStatus = async () => {
     if (!toggleStatusTarget || isBusy) return;
     const nextActive = !toggleStatusTarget.isActive;
@@ -2226,13 +2239,14 @@ export const AdminInstructorsView: React.FC = () => {
         <div className="flex items-center gap-1.5 text-xs">
           {(
             [
-              { id: 'all', en: `All (${instructors.length})`, ar: `الكل (${instructors.length})` },
+              { id: 'all', en: `All (${instructors.filter(i=>!i.archivedAt).length})`, ar: `الكل (${instructors.filter(i=>!i.archivedAt).length})` },
               { id: 'active', en: `Active (${activeCount})`, ar: `نشط (${activeCount})` },
               {
                 id: 'disabled',
-                en: `Disabled (${instructors.length - activeCount})`,
-                ar: `معطل (${instructors.length - activeCount})`,
+                en: `Disabled (${instructors.filter(i=>!i.archivedAt&&!i.isActive).length})`,
+                ar: `معطل (${instructors.filter(i=>!i.archivedAt&&!i.isActive).length})`,
               },
+              {id:'archived',en:`Archived (${instructors.filter(i=>i.archivedAt).length})`,ar:`الأرشيف (${instructors.filter(i=>i.archivedAt).length})`},
             ] as const
           ).map((tab) => (
             <button
@@ -2327,7 +2341,7 @@ export const AdminInstructorsView: React.FC = () => {
                         <Pencil className="w-3 h-3" />
                         <span>{t('Edit', 'تعديل')}</span>
                       </button>
-                      <button
+                      {!inst.archivedAt && (<button
                         type="button"
                         onClick={() => setToggleStatusTarget(inst)}
                         className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
@@ -2336,7 +2350,9 @@ export const AdminInstructorsView: React.FC = () => {
                         <span>
                           {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                         </span>
-                      </button>
+                      </button>)}
+                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:inst.archivedAt?'restore':'archive'})} className="px-2 py-1 rounded-md border border-slate-300 text-xs font-medium whitespace-nowrap">{inst.archivedAt?t('Restore','استعادة من الأرشيف'):t('Archive','أرشفة')}</button>}
+                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:'delete'})} className="px-2 py-1 rounded-md border border-red-300 text-red-600 text-xs font-medium whitespace-nowrap">{t('Delete','حذف نهائي')}</button>}
                     </div>
                   </div>
                 </div>
@@ -2448,7 +2464,7 @@ export const AdminInstructorsView: React.FC = () => {
                             <KeyRound className="w-3 h-3" />
                             <span>{t('Reset', 'استعادة')}</span>
                           </button>
-                          <button
+                          {!inst.archivedAt && (<button
                             type="button"
                             onClick={() => setToggleStatusTarget(inst)}
                             className={`px-2 py-1 rounded-md border font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer ${
@@ -2461,7 +2477,9 @@ export const AdminInstructorsView: React.FC = () => {
                             <span>
                               {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                             </span>
-                          </button>
+                          </button>)}
+                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:inst.archivedAt?'restore':'archive'})} className="px-2 py-1 rounded-md border border-slate-300 text-xs font-medium whitespace-nowrap">{inst.archivedAt?t('Restore','استعادة من الأرشيف'):t('Archive','أرشفة')}</button>}
+                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:'delete'})} className="px-2 py-1 rounded-md border border-red-300 text-red-600 text-xs font-medium whitespace-nowrap">{t('Delete','حذف نهائي')}</button>}
                         </div>
                       </td>
                     </tr>
@@ -2625,6 +2643,12 @@ export const AdminInstructorsView: React.FC = () => {
         </div>
       )}
 
+      <ConfirmDialog open={Boolean(removalTarget)}
+        title={removalTarget?.action==='delete'?t('Permanently delete instructor?','حذف المحاضر نهائيًا؟'):removalTarget?.action==='restore'?t('Restore instructor?','استعادة المحاضر؟'):t('Archive instructor?','أرشفة المحاضر؟')}
+        description={removalTarget ? (removalTarget.inst.fullNameEn+' · '+removalTarget.inst.instructorCode+' — '+(removalTarget.action==='delete'?t('This cannot be undone. Accounts linked to any operational records cannot be deleted; archive them instead.','الحذف غير قابل للتراجع. لو مرتبط بسجلات تشغيل، استخدم الأرشفة بدلًا منه.'):removalTarget.action==='restore'?t('Returns to the disabled list.','يرجع لقائمة المعطلين.'):t('Hide from the normal list; keep attendance and finance history.','إخفاء من القائمة مع الاحتفاظ بالحضور والحسابات.'))):''}
+        confirmLabel={removalTarget?.action==='delete'?t('Delete permanently','حذف نهائي'):removalTarget?.action==='restore'?t('Restore','استعادة'):t('Archive','أرشفة')}
+        cancelLabel={t('Cancel','إلغاء')} tone={removalTarget?.action==='delete'?'danger':'primary'} isBusy={isBusy}
+        onConfirm={handleConfirmRemoval} onCancel={()=>setRemovalTarget(null)} />
       {/* Confirm Deactivate / Activate Dialog */}
       <ConfirmDialog
         open={Boolean(toggleStatusTarget)}

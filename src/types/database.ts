@@ -118,6 +118,7 @@ export interface Database {
       };
       instructors: {
         Row: {
+          archived_at: string | null;
           id: string;
           profile_id: string;
           instructor_code: string;
@@ -1162,6 +1163,7 @@ export interface Database {
           cross_group_count: number;
         };
       };
+      manage_instructor_removal_tx: { Args: { p_instructor_id: string; p_action: string }; Returns: Json };
       instructor_correct_submitted_attendance_tx: {
         Args: { p_sheet_id: string; p_student_id: string; p_mark: DbAttendanceMark; p_note: string; p_expected_mark: DbAttendanceMark };
         Returns: Json;
@@ -1368,6 +1370,7 @@ export interface AdminAccount {
 }
 
 export interface Instructor {
+  archivedAt?: string | null;
   id: string;
   profileId: string;
   instructorCode: string;
