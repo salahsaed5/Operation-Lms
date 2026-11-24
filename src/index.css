@@ -373,7 +373,7 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .cits-auth-hero {padding:clamp(38px,7vh,72px) 5% 45px 3%;gap:clamp(24px,5vh,58px);overflow:visible;}
 .cits-auth-curves {width:112%;max-width:none;inset-inline-start:0;inset-inline-end:auto;z-index:-1;}
 .cits-auth-hero-brand {margin-inline-end:10%;}
-.cits-auth-hero-art {width:min(92%,640px);height:auto;max-height:52vh;object-fit:contain;margin-inline-start:0;margin-inline-end:3%;mask-image:none;-webkit-mask-image:none;border-radius:0;overflow:visible;filter:drop-shadow(0 15px 25px rgba(2,21,31,.15));}
+.cits-auth-hero-art {width:min(92%,628px);height:auto;max-height:52vh;object-fit:contain;margin-inline-start:0;margin-inline-end:3%;mask-image:none;-webkit-mask-image:none;border-radius:0;overflow:visible;filter:drop-shadow(0 15px 25px rgba(2,21,31,.15));}
 .cits-auth-form-side {padding:88px clamp(28px,4.4vw,74px) 48px 24px;background:radial-gradient(ellipse at 45% 66%,rgba(141,208,213,.11),transparent 65%);}
 .cits-auth-card {max-width:620px;padding:clamp(34px,4vw,58px);border-radius:32px;min-height:0;box-shadow:0 14px 44px rgba(17,53,72,.10);}
 .cits-auth-standard {display:flex;flex-direction:column;justify-content:center;gap:28px;min-height:388px;}
