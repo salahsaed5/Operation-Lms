@@ -98,10 +98,10 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
   return <div className="space-y-5">
     <PageHeader title={todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')} subtitle={t(activeCamp.nameEn,activeCamp.nameAr)+' · '+today}
       actions={todayOnly?<button type="button" className={BTN_SECONDARY} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')}</button>:undefined}/>
-    {!todayOnly&&<div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    {!todayOnly&&<div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
       {[
         [t('Assigned','المسندة'),counts.assigned],[t('Running','جارية'),all.filter(l=>stateOf(l)==='running').length],
-        [t('Finished','المنتهية'),counts.finished],[t('Counted','المحتسبة'),counts.counted],[t('Remaining','المتبقية للحساب'),counts.remaining]
+        [t('Pending','معلقة'),all.filter(l=>['upcoming','ready','missed'].includes(stateOf(l))).length],[t('Finished','المنتهية'),counts.finished],[t('Counted','المحتسبة'),counts.counted],[t('Remaining','المتبقية للحساب'),counts.remaining]
       ].map(([label,n])=><div key={label} className={SURFACE_CARD+' p-4'}><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-bold tabular-nums mt-1">{n}</p></div>)}
     </div>}
     {!todayOnly&&<div className={SURFACE_CARD+' p-3 flex flex-wrap gap-2 items-center'}>
@@ -804,7 +804,7 @@ export const InstructorAttendanceView: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     const term = studentSearch.trim();
-    if (!isSupabaseMode || !selectedLectureId || term.length < 2) {
+    if (!isSupabaseMode || !selectedLectureId || !lectures.find(l=>l.id===selectedLectureId)?.sessionStartedAt || term.length < 2) {
       setSecureVisitingMatches([]);
       setVisitingLookupError(null);
       setVisitingSearchBusy(false);
@@ -831,7 +831,7 @@ export const InstructorAttendanceView: React.FC = () => {
       }
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [isSupabaseMode, selectedLectureId, studentSearch]);
+  }, [isSupabaseMode, selectedLectureId, studentSearch, lectures]);
 
   if (!activeCamp || !currentInstructor) {
     return (
@@ -1712,7 +1712,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 <span>
                   {isBusy
                     ? t('Submitting...', 'جاري الاعتماد...')
-                    : t('Submit & Sync Attendance', 'اعتماد ومزامنة الكشف')}
+                    : t('Finish Session & Submit Attendance', 'إنهاء المحاضرة واعتماد الحضور')}
                 </span>
               </button>
             </div>
@@ -1893,7 +1893,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
         </div>
       )}
 
-      {subTab==='history'&&<section className={SURFACE_CARD+' p-5 space-y-3'}>
+      {subTab==='history'&&<section aria-label={t('Session completion history','سجل إنجاز المحاضرات')} className={SURFACE_CARD+' p-5 space-y-3'}>
         <h2 className="font-bold">{t('Session completion history','سجل إنجاز المحاضرات')}</h2>
         {myLectures.map(l=>{const e=entitlements.find(x=>x.lectureId===l.id&&x.instructorId===currentInstructor.id);return <div key={l.id} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 py-3 text-sm"><span>{l.topic} · {l.lectureDate}</span><StatusBadge tone={e&&['eligible','approved'].includes(e.status)?'success':'neutral'}>{e&&['eligible','approved'].includes(e.status)?t('Counted','محتسبة'):t('Not counted','غير محتسبة')}</StatusBadge></div>})}
       </section>}
