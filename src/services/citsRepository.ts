@@ -439,6 +439,7 @@ export async function fetchOperationalSnapshot(
     studentsRes,
     transfersRes,
     lecturesRes,
+    sessionRunsRes,
     checkinsRes,
     exceptionsRes,
     sheetsRes,
@@ -467,6 +468,7 @@ export async function fetchOperationalSnapshot(
     attendanceExportCampId ? fetchAllPages((start,end)=>client.from('students').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('students').select('*').order('student_code', { ascending: true }),
     attendanceExportCampId ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('student_transfers').select('*').order('created_at', { ascending: false }),
     attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lectures').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lecture_session_runs').select('*').eq('camp_id',attendanceExportCampId).order('lecture_id').order('revision_number').range(start,end)) : fetchAllPages((start,end)=>client.from('lecture_session_runs').select('*').order('lecture_id').order('revision_number').range(start,end)),
     client.from('daily_checkins').select('*').order('camp_day', { ascending: false }),
     client.from('checkin_exceptions').select('*').order('created_at', { ascending: false }),
     attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
@@ -496,6 +498,7 @@ export async function fetchOperationalSnapshot(
     studentsRes.error,
     transfersRes.error,
     lecturesRes.error,
+    sessionRunsRes.error,
     checkinsRes.error,
     sheetsRes.error,
     recordsRes.error,
@@ -686,7 +689,12 @@ export async function fetchOperationalSnapshot(
     createdAt: tr.created_at,
   }));
 
-  const lectures: Lecture[] = (lecturesRes.data || []).map((l) => ({
+  const sessionRuns = new Map((sessionRunsRes.data||[]).map(r=>[r.lecture_id+':'+r.revision_number+':'+r.instructor_id,r]));
+  const lectures: Lecture[] = (lecturesRes.data || []).map((l) => {
+    const run=sessionRuns.get(l.id+':'+l.revision_number+':'+(l.substitute_instructor_id||l.instructor_id));
+    return ({ 
+    sessionStartedAt: run && run.camp_id===l.camp_id && run.group_id===l.group_id && run.room_id===l.room_id &&
+      run.lecture_date===l.lecture_date && run.start_time===l.start_time && run.end_time===l.end_time ? run.started_at : null,
     id: l.id,
     campId: l.camp_id,
     campDay: l.camp_day,
@@ -704,7 +712,7 @@ export async function fetchOperationalSnapshot(
     frozenRateEgp: l.frozen_rate_egp,
     instructorAcknowledgedAt: l.instructor_acknowledged_at,
     revisionNumber: l.revision_number,
-  }));
+  }); });
   const lectureById = new Map(lectures.map((l) => [l.id, l]));
 
   const checkinExceptions: CheckinExceptionItem[] = (exceptionsRes.data || []).map((ex) => ({
@@ -1688,6 +1696,11 @@ export async function updateLectureInDb(input: {
     .update(payload)
     .eq('id', input.lectureId);
   if (error) throw new Error(error.message);
+}
+
+export async function runLectureSessionInDb(lectureId:string):Promise<void> {
+  const {error}=await getClient().rpc('run_lecture_session_tx',{p_lecture_id:lectureId});
+  if(error)throw new Error(error.message);
 }
 
 export async function acknowledgeLectureInDb(lectureId: string): Promise<void> {

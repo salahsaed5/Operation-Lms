@@ -30,7 +30,7 @@ test('local sandbox Instructor can reach Dashboard, Schedule, Check-in, Attendan
     .getByRole('button',{name:/Instructor/}).first().click();
   const nav=page.getByRole('navigation',{name:'Instructor navigation'});
   await expect(nav).toBeVisible();
-  for(const title of ['Dashboard','Schedule','Check-in','Attendance','Profile']){
+  for(const title of ['Dashboard','Sessions','Check-in','Attendance','Profile']){
     const button=nav.getByRole('button',{name:title,exact:true});
     await button.click();
     await expect(button).toHaveAttribute('aria-current','page');
@@ -62,7 +62,7 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
   await expect(lecturePicker).toHaveValue('lec-d4-p1-g1');
 
   await nav.getByRole('button', { name: 'Dashboard', exact: true }).click();
-  await page.getByRole('button', { name: 'Take Attendance', exact: true }).click();
+  await page.getByRole('article').filter({hasText:'Minimum Spanning Trees & Disjoint Set Union'}).getByRole('button',{name:'Open session',exact:true}).click();
 
   // Dashboard P2 was clicked, so the attendance screen MUST switch to that
   // lecture and its roster, not use stale P1 state.
@@ -297,11 +297,11 @@ test('Admin Finance reconciles primary, backup, transportation and immutable pay
     .getByRole('button',{name:/Instructor.*Ahmed Khalil/}).first().click();
   await page.getByRole('navigation',{name:'Instructor navigation'})
     .getByRole('button',{name:'Profile',exact:true}).click();
-  await page.getByRole('button',{name:'Entitlement History'}).click();
-  const own=page.getByRole('region',{name:'My complete finance account'});
+  await page.getByRole('button',{name:'Session History'}).click();
+  const own=page.getByRole('region',{name:'Session completion history'});
   await expect(own).toBeVisible();
-  await expect(own.getByText('450 EGP')).toBeVisible();
-  await expect(own.getByText('400 EGP')).toBeVisible();
+  await expect(own).not.toContainText('EGP');
+  await expect(page.locator('main').first()).not.toContainText('EGP');
   await expect(own).not.toContainText('Eng. Karim Adel');
   expect(runtimeErrors).toEqual([]);
 });

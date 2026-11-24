@@ -100,6 +100,7 @@ import {
 } from '../services/financeRepository';
 import {
   acknowledgeLectureInDb,
+  runLectureSessionInDb,
   adminCorrectAttendanceRecordInDb,
   instructorCorrectSubmittedAttendanceInDb,
   archiveCampInDb,
@@ -362,6 +363,7 @@ interface AppContextValue {
     status?: LectureStatus;
   }) => Promise<ActionResult>;
 
+  runLectureSession: (lectureId:string) => Promise<ActionResult>;
   acknowledgeLecture: (lectureId: string) => Promise<ActionResult>;
 
   submitInstructorCheckin: (input: {
@@ -2465,6 +2467,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const runLectureSession = async(lectureId:string):Promise<ActionResult>=>{
+    const lec=lectures.find(l=>l.id===lectureId);
+    if(!lec||!activeCamp||lec.campId!==activeCamp.id||activeCamp.status!==CampStatus.ACTIVE||
+      auth.currentProfile.role!==UserRole.INSTRUCTOR||(lec.substituteInstructorId||lec.instructorId)!==auth.activeInstructorId)
+      return {ok:false,error:'Only your assigned session in an active camp can be started.'};
+    if(isSupabaseMode){
+      try { await runLectureSessionInDb(lectureId); await refreshOperationalData(); return {ok:true}; }
+      catch(err){return {ok:false,error:err instanceof Error?err.message:'Could not start session.'};}
+    }
+    if(!isSandboxMode)return {ok:false,error:'Connection required.'};
+    setLectures(prev=>prev.map(l=>l.id===lectureId?{...l,sessionStartedAt:l.sessionStartedAt||new Date().toISOString()}:l));
+    return {ok:true};
+  };
   const acknowledgeLecture = async (lectureId: string): Promise<ActionResult> => {
     if (isSupabaseMode) {
       try {
@@ -2762,6 +2777,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const lec = lectures.find((l) => l.id === lectureId);
     if (!lec) return { ok: false, error: 'Lecture not found.' };
 
+    if(isSupabaseMode && auth.currentProfile.role===UserRole.INSTRUCTOR && !lec.sessionStartedAt)
+      return {ok:false,error:'Run the session before taking attendance.'};
     const existingSheet = attendanceSheets.find((s) => s.lectureId === lectureId);
     if (existingSheet?.status === AttendanceSheetStatus.SUBMITTED || existingSheet?.status === AttendanceSheetStatus.LOCKED) {
       return {
@@ -3006,6 +3023,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!sheet || !lec) {
       return { ok: false, error: 'Attendance sheet not found for this lecture.' };
     }
+
+    if(isSupabaseMode && auth.currentProfile.role===UserRole.INSTRUCTOR && !lec.sessionStartedAt)
+      return {ok:false,error:'Run the session before submitting attendance.'};
 
     // Shared authorization gate: protects BOTH Instructor and Admin UI
     // before any draft records are uploaded or submit RPC is called.
@@ -4020,6 +4040,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addScheduleLecture,
         updateScheduleLecture,
         acknowledgeLecture,
+        runLectureSession,
         submitInstructorCheckin,
         reviewCheckinException,
         saveAttendanceDraft,

@@ -24,7 +24,7 @@ const INSTRUCTOR_TABS: {
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
   { id: 'dashboard', labelEn: 'Dashboard', labelAr: 'الرئيسية', icon: LayoutDashboard },
-  { id: 'schedule', labelEn: 'Schedule', labelAr: 'الجدول', icon: CalendarClock },
+  { id: 'schedule', labelEn: 'Sessions', labelAr: 'المحاضرات', icon: CalendarClock },
   { id: 'checkin', labelEn: 'Check-in', labelAr: 'الوصول', icon: MapPinCheck },
   { id: 'attendance', labelEn: 'Attendance', labelAr: 'الحضور', icon: ClipboardCheck },
   { id: 'profile', labelEn: 'Profile', labelAr: 'حسابي', icon: UserCircle },

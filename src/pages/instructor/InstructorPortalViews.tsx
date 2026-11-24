@@ -15,7 +15,7 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { calculateInstructorFinancialStatement } from '../../domain/instructorFinance';
+import { sessionState, sessionCounts, sessionLabel, cairoClock } from '../../domain/sessionLifecycle';
 import { calculateCampDayDate, calculateHaversineDistanceMeters, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import { classifyGpsVerification, requiredGpsAccuracyMeters } from '../../domain/checkinGpsQuality';
 import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
@@ -23,11 +23,11 @@ import { studentsForSelectedLecture } from '../../domain/instructorLectureRoster
 import { compressSelfieUnderLimit, getSignedSelfieUrl, searchVisitingStudentsInDb, type VisitingStudentLookupResult } from '../../services/citsRepository';
 import {
   AttendanceMark,
+  type Lecture,
   AttendanceRecordItem,
   AttendanceSheetStatus,
   CheckinStatus,
   CampStatus,
-  EntitlementStatus,
   OfflineSyncState,
   RequestStatus,
 } from '../../types/database';
@@ -76,441 +76,59 @@ const cairoTodayIso = (): string => {
   return `${part('year')}-${part('month')}-${part('day')}`;
 };
 
-export const InstructorDashboardView: React.FC = () => {
-  const {
-    activeCamp,
-    auth,
-    instructors,
-    lectures,
-    groups,
-    rooms,
-    checkins,
-    attendanceSheets,
-    setInstructorRoute,
-    openInstructorAttendance,
-    t,
-  } = useApp();
+function useSessionClock(){
+  const [clock,setClock]=useState(()=>cairoClock(new Date()));
+  useEffect(()=>{const tick=window.setInterval(()=>setClock(cairoClock(new Date())),1000);return ()=>window.clearInterval(tick);},[]);
+  return clock;
+}
 
-  const currentInstructor =
-    instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
-
-  if (!activeCamp || !currentInstructor) {
-    return (
-      <EmptyState
-        icon={CalendarClock}
-        title={t('No active camp assignment', 'لا يوجد تعيين معسكر نشط')}
-        description={t(
-          'Your account does not have an active camp assignment at the moment.',
-          'حسابك غير مرتبط بمعسكر نشط حالياً.'
-        )}
-      />
-    );
-  }
-
-  const myLecturesToday = lectures
-    .filter(
-      (l) =>
-        l.campId === activeCamp.id &&
-        l.campDay === activeCamp.currentCampDay &&
-        (l.instructorId === currentInstructor.id ||
-          l.substituteInstructorId === currentInstructor.id)
-    )
-    .sort((a, b) => a.periodNumber - b.periodNumber);
-
-  const myCheckinToday = checkins.find(
-    (c) =>
-      c.campId === activeCamp.id &&
-      c.instructorId === currentInstructor.id &&
-      c.campDay === activeCamp.currentCampDay
-  );
-
-  const nextLecture =
-    myLecturesToday.find((l) => l.status !== 'completed') || myLecturesToday[0];
-
-  const assignedLectureIds = new Set(
-    lectures
-      .filter(
-        (l) =>
-          l.campId === activeCamp.id &&
-          (l.instructorId === currentInstructor.id ||
-            l.substituteInstructorId === currentInstructor.id)
-      )
-      .map((l) => l.id)
-  );
-
-  const myDraftSheets = attendanceSheets.filter(
-    (s) =>
-      s.campId === activeCamp.id &&
-      s.status === AttendanceSheetStatus.DRAFT &&
-      assignedLectureIds.has(s.lectureId)
-  );
-
-  const checkinDisplay = myCheckinToday
-    ? instructorCheckinBadge(myCheckinToday.status, t)
-    : null;
-  const scheduledTeachingDate = calculateCampDayDate(
-    activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays
-  );
-  const isOffDay = (activeCamp.operatingWeekdays?.length ?? 7) < 7 &&
-    scheduledTeachingDate !== cairoTodayIso();
-
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t(
-          `Welcome, ${currentInstructor.fullNameEn}`,
-          `مرحباً، ${currentInstructor.fullNameAr}`
-        )}
-        subtitle={
-          <>
-            {t(activeCamp.nameEn, activeCamp.nameAr)} ·{' '}
-            <span className="font-mono tabular-nums">
-              {t(
-                `Day ${activeCamp.currentCampDay} of ${activeCamp.durationDays}`,
-                `اليوم ${activeCamp.currentCampDay} من ${activeCamp.durationDays}`
-              )} · {scheduledTeachingDate}
-            </span>
-          </>
-        }
-      />
-
-      {/* 1. Daily Check-in Priority Card */}
-      <section aria-labelledby="inst-priority-checkin" className={`${SURFACE_CARD} p-5`}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                {t('1. Daily Venue Check-in', '1. تسجيل الوصول اليومي')}
-              </span>
-              {checkinDisplay ? (
-                <StatusBadge tone={checkinDisplay.tone}>{checkinDisplay.label}</StatusBadge>
-              ) : isOffDay ? (
-                <StatusBadge tone="neutral">
-                  {t('Not a teaching date', 'مش يوم دراسة')}
-                </StatusBadge>
-              ) : (
-                <StatusBadge tone="warning">
-                  {t('Action Required', 'مطلوب قبل المحاضرة')}
-                </StatusBadge>
-              )}
-            </div>
-
-            <h2
-              id="inst-priority-checkin"
-              className="text-base sm:text-lg font-bold text-slate-900 dark:text-white"
-            >
-              {myCheckinToday
-                ? checkinDisplay?.label
-                : isOffDay
-                ? t(`Check-in opens on the scheduled teaching date: ${scheduledTeachingDate}`,
-                    `تسجيل الوصول هيفتح يوم الدراسة ${scheduledTeachingDate}`)
-                : t(
-                    'Complete your GPS & selfie venue check-in before starting',
-                    'أكمل تسجيل الوصول بالموقع وصورة التحقق قبل بدء المحاضرة'
-                  )}
-            </h2>
-
-            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] font-mono tabular-nums">
-              {myCheckinToday
-                ? `${myCheckinToday.distanceFromVenueMeters}m ${t('from venue', 'عن المقر')} · ${myCheckinToday.selfieSizeKb}KB`
-                : t(
-                    `Geofence: ${activeCamp.settings.geofenceRadiusMeters}m · Compressed photo <= ${activeCamp.settings.maxSelfieKb}KB`,
-                    `النطاق: ${activeCamp.settings.geofenceRadiusMeters}م · صورة التحقق <= ${activeCamp.settings.maxSelfieKb}KB`
-                  )}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setInstructorRoute('checkin')}
-            disabled={isOffDay && !myCheckinToday}
-            className={`${BTN_PRIMARY} min-h-[44px] px-4 disabled:opacity-50`}
-          >
-            <MapPinCheck className="w-4 h-4" />
-            <span>
-              {myCheckinToday
-                ? t('View Check-in Receipt', 'عرض إيصال التسجيل')
-                : t('Check In Now', 'تسجيل الوصول الآن')}
-            </span>
-          </button>
-        </div>
-      </section>
-
-      {/* 2. Next Assigned Lecture */}
-      {nextLecture && (
-        <section aria-labelledby="inst-priority-next-lecture" className={`${SURFACE_CARD} p-5`}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-[#355F82] dark:text-[#88A9CC] font-mono tabular-nums">
-                {t('2. Next Assigned Lecture', '2. المحاضرة التالية')} · P
-                {nextLecture.periodNumber} ({nextLecture.startTime}–{nextLecture.endTime})
-              </p>
-              <h2
-                id="inst-priority-next-lecture"
-                className="text-base sm:text-lg font-bold text-slate-900 dark:text-white"
-              >
-                {nextLecture.topic}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
-                {groups.find((g) => g.id === nextLecture.groupId)?.code} ·{' '}
-                {rooms.find((r) => r.id === nextLecture.roomId)?.code} ·{' '}
-                <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-[#C0C5C9]">
-                  {nextLecture.frozenRateEgp} EGP
-                </span>
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => openInstructorAttendance(nextLecture.id)}
-              className={`${BTN_SECONDARY} min-h-[44px] px-4`}
-            >
-              <ClipboardCheck className="w-4 h-4 text-[#355F82]" />
-              <span>{t('Open Attendance Sheet', 'فتح كشف الحضور')}</span>
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* 3. Today's Schedule & 4. Pending Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        <section
-          aria-labelledby="inst-daily-schedule"
-          className={`lg:col-span-7 ${SURFACE_CARD} p-5 space-y-4`}
-        >
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
-            <h2
-              id="inst-daily-schedule"
-              className="text-sm font-bold text-slate-900 dark:text-white"
-            >
-              {t('3. Current Teaching Day Schedule', '3. جدول يوم الدراسة المحدد')} · {scheduledTeachingDate}
-            </h2>
-            <span className="text-xs font-mono tabular-nums text-slate-500">
-              {myLecturesToday.length} {t('Lectures', 'محاضرات')}
-            </span>
-          </div>
-
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {myLecturesToday.length === 0 ? (
-              <p className="py-6 text-xs text-slate-500 text-center">
-                {t('No lectures assigned to you today.', 'لا توجد محاضرات مسندة لك اليوم.')}
-              </p>
-            ) : (
-              myLecturesToday.map((lec) => {
-                const grp = groups.find((g) => g.id === lec.groupId);
-                const room = rooms.find((r) => r.id === lec.roomId);
-                const sheet = attendanceSheets.find((s) => s.lectureId === lec.id);
-                const isSynced =
-                  sheet?.status === AttendanceSheetStatus.SUBMITTED ||
-                  sheet?.status === AttendanceSheetStatus.LOCKED;
-                return (
-                  <div
-                    key={lec.id}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                        P{lec.periodNumber} · {lec.startTime}–{lec.endTime} · {room?.code}
-                      </p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5 truncate">
-                        {lec.topic}
-                      </p>
-                      <p className="text-slate-500 truncate">
-                        {grp ? t(grp.nameEn, grp.nameAr) : lec.groupId}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isSynced ? (
-                        <StatusBadge tone="success">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>{t('Submitted', 'معتمد')}</span>
-                        </StatusBadge>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => openInstructorAttendance(lec.id)}
-                          className={`${BTN_PRIMARY} min-h-[40px]`}
-                        >
-                          {t('Take Attendance', 'تسجيل الحضور')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="inst-pending-actions"
-          className={`lg:col-span-5 ${SURFACE_CARD} p-5 space-y-4`}
-        >
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
-            <h2
-              id="inst-pending-actions"
-              className="text-sm font-bold text-slate-900 dark:text-white"
-            >
-              {t('4. Pending Actions', '4. إجراءات معلقة')}
-            </h2>
-            <span className="text-xs font-mono tabular-nums text-slate-500">
-              {myDraftSheets.length}
-            </span>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {myDraftSheets.map((draft) => (
-              <div
-                key={draft.id}
-                className="p-3.5 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 flex items-center justify-between gap-3"
-              >
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">
-                    {t(
-                      `Pending Sheet — Period ${draft.periodNumber}`,
-                      `مسودة كشف حضور — الفترة ${draft.periodNumber}`
-                    )}
-                  </p>
-                  <p className="text-slate-600 dark:text-[#A0A5AA] mt-0.5">
-                    {t(
-                      'Submit your attendance sheet once marking is complete.',
-                      'يرجى اعتماد وإرسال كشف الحضور فور الانتهاء.'
-                    )}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openInstructorAttendance(draft.lectureId)}
-                  className={`${BTN_PRIMARY} min-h-[40px]`}
-                >
-                  {t('Review', 'مراجعة')}
-                </button>
-              </div>
-            ))}
-
-            {myDraftSheets.length === 0 && (
-              <p className="text-slate-500 py-5 text-center">
-                {t(
-                  'All daily tasks and attendance sheets are up to date.',
-                  'جميع المهام وكشوف الحضور محدثة بالكامل.'
-                )}
-              </p>
-            )}
-          </div>
-        </section>
-      </div>
+const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
+  const {activeCamp,auth,instructors,lectures,groups,rooms,attendanceSheets,entitlements,isSandboxMode,openInstructorAttendance,setInstructorRoute,t}=useApp();
+  const clock=useSessionClock();
+  const [filter,setFilter]=useState('all');
+  const [query,setQuery]=useState('');
+  const inst=instructors.find(i=>i.id===auth.activeInstructorId);
+  if(!activeCamp||!inst)return <EmptyState icon={CalendarClock} title={t('No active camp assignment','لا يوجد كامب مسند لك')} />;
+  const all=lectures.filter(l=>l.campId===activeCamp.id&&(l.substituteInstructorId||l.instructorId)===inst.id&&l.status!=='cancelled');
+  const today=isSandboxMode?calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays):clock.date;
+  const counts=sessionCounts(all,attendanceSheets,entitlements,inst.id);
+  const stateOf=(l:Lecture)=>sessionState(l,attendanceSheets.find(s=>s.lectureId===l.id),clock,activeCamp.status===CampStatus.ACTIVE);
+  const shown=all.filter(l=>(!todayOnly||l.lectureDate===today)&&(todayOnly||filter==='all'||(filter==='pending'?['upcoming','ready','missed'].includes(stateOf(l)):stateOf(l)===filter))&&
+    (!query||[l.topic,groups.find(g=>g.id===l.groupId)?.code,groups.find(g=>g.id===l.groupId)?.nameAr,groups.find(g=>g.id===l.groupId)?.nameEn].some(x=>x?.toLowerCase().includes(query.toLowerCase())))).sort((a,b)=>a.lectureDate.localeCompare(b.lectureDate)||a.startTime.localeCompare(b.startTime));
+  return <div className="space-y-5">
+    <PageHeader title={todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')} subtitle={t(activeCamp.nameEn,activeCamp.nameAr)+' · '+today}
+      actions={todayOnly?<button type="button" className={BTN_SECONDARY} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')}</button>:undefined}/>
+    {!todayOnly&&<div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      {[
+        [t('Assigned','المسندة'),counts.assigned],[t('Running','جارية'),all.filter(l=>stateOf(l)==='running').length],
+        [t('Pending','معلقة'),all.filter(l=>['upcoming','ready','missed'].includes(stateOf(l))).length],[t('Finished','المنتهية'),counts.finished],[t('Counted','المحتسبة'),counts.counted],[t('Remaining','المتبقية للحساب'),counts.remaining]
+      ].map(([label,n])=><div key={label} className={SURFACE_CARD+' p-4'}><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-bold tabular-nums mt-1">{n}</p></div>)}
+    </div>}
+    {!todayOnly&&<div className={SURFACE_CARD+' p-3 flex flex-wrap gap-2 items-center'}>
+      <input aria-label={t('Search sessions','بحث المحاضرات')} placeholder={t('Search by topic or group','ابحث بالموضوع أو الجروب')} value={query} onChange={e=>setQuery(e.target.value)} className={INPUT_CLASS+' flex-1 min-w-[180px]'}/>
+      <select aria-label={t('Filter sessions','تصفية المحاضرات')} value={filter} onChange={e=>setFilter(e.target.value)} className={SELECT_CLASS+' w-auto'}>
+        {[['all','All','الكل'],['pending','Pending','معلقة'],['running','Running','جارية'],['finished','Finished','منتهية']].map(([v,en,ar])=><option key={v} value={v}>{t(en,ar)}</option>)}
+      </select></div>}
+    <div className="space-y-3">
+      {shown.length===0?<EmptyState icon={CalendarClock} title={todayOnly?t('No sessions scheduled for today','لا توجد محاضرات اليوم'):t('No matching sessions','لا توجد محاضرات مطابقة')}/>:shown.map(l=>{
+        const s=stateOf(l);const label=sessionLabel(s);const sheet=attendanceSheets.find(x=>x.lectureId===l.id);
+        const counted=entitlements.some(e=>e.lectureId===l.id&&e.instructorId===inst.id&&['eligible','approved'].includes(e.status));
+        const present=sheet?.records.filter(r=>r.mark==='present'||r.mark==='late').length||0;
+        const absent=sheet?.records.filter(r=>r.mark==='absent').length||0;
+        return <article key={l.id} className={SURFACE_CARD+' p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4'}>
+          <div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={s==='finished'?'success':s==='missed'?'danger':s==='ready'||s==='running'?'info':'neutral'}>{t(label.en,label.ar)}</StatusBadge>
+          {counted&&<StatusBadge tone="success">{t('Counted','محتسبة')}</StatusBadge>}</div>
+          <h2 className="font-bold text-base break-words">{l.topic}</h2>
+          <p className="text-xs text-slate-500">{l.lectureDate} · {l.startTime}–{l.endTime} · {groups.find(g=>g.id===l.groupId)?.code} · {rooms.find(r=>r.id===l.roomId)?.code}</p>
+          {s==='finished'&&<p className="text-xs text-slate-600 dark:text-slate-300">{t('Present','حاضر')} {present} · {t('Absent','غائب')} {absent}</p>}
+          </div><button type="button" onClick={()=>openInstructorAttendance(l.id)} className={BTN_PRIMARY+' min-h-[44px] shrink-0'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')}</button>
+        </article>})}
     </div>
-  );
+    {todayOnly&&<button type="button" className={BTN_SECONDARY+' text-xs'} onClick={()=>setInstructorRoute('checkin')}><MapPinCheck className="w-4 h-4"/>{t('Optional venue check-in','تسجيل الوصول للمقر (اختياري)')}</button>}
+  </div>;
 };
-
-export const InstructorScheduleView: React.FC = () => {
-  const {
-    activeCamp,
-    auth,
-    instructors,
-    lectures,
-    groups,
-    rooms,
-    t,
-  } = useApp();
-
-  const [dayFilter, setDayFilter] = useState<'all' | number>('all');
-  const currentInstructor =
-    instructors.find((i) => i.id === auth.activeInstructorId) || instructors[0];
-
-  if (!activeCamp || !currentInstructor) {
-    return (
-      <EmptyState
-        icon={CalendarClock}
-        title={t('No schedule records available', 'لا توجد محاضرات مجدولة حالياً')}
-      />
-    );
-  }
-
-  const myLectures = lectures
-    .filter(
-      (l) =>
-        l.campId === activeCamp.id &&
-        (l.instructorId === currentInstructor.id ||
-          l.substituteInstructorId === currentInstructor.id) &&
-        (dayFilter === 'all' || l.campDay === dayFilter)
-    )
-    .sort((a, b) => a.campDay - b.campDay || a.periodNumber - b.periodNumber);
-
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t('My Teaching Schedule', 'جدول محاضراتي')}
-        subtitle={t(
-          'Assigned lectures appear automatically. Review dates, rooms, and revisions without an approval step.',
-          'المحاضرات بتظهر تلقائيًا بمجرد ما الإدارة تضيفها أو تعدلها، من غير ما تحتاج توافق على الجدول.'
-        )}
-        actions={
-          <select
-            aria-label={t('Filter schedule by day', 'تصفية الجدول باليوم')}
-            value={dayFilter}
-            onChange={(e) =>
-              setDayFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
-            }
-            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-xs font-semibold"
-          >
-            <option value="all">{t('All Camp Days', 'كل أيام المعسكر')}</option>
-            {Array.from({ length: activeCamp.durationDays }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>
-                {t(`Day ${d}`, `اليوم ${d}`)}
-              </option>
-            ))}
-          </select>
-        }
-      />
-
-      {myLectures.length === 0 ? (
-        <EmptyState
-          icon={CalendarClock}
-          title={t('No lectures assigned', 'لا توجد محاضرات مسندة في هذا النطاق')}
-        />
-      ) : (
-        <div className="space-y-3">
-          {myLectures.map((lec) => {
-            const grp = groups.find((g) => g.id === lec.groupId);
-            const room = rooms.find((r) => r.id === lec.roomId);
-            const isSubstitute = lec.substituteInstructorId === currentInstructor.id;
-            return (
-              <div
-                key={lec.id}
-                className={`${SURFACE_CARD} p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
-              >
-                <div className="space-y-1 text-xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                      {t(`Day ${lec.campDay}`, `اليوم ${lec.campDay}`)} · P{lec.periodNumber} (
-                      {lec.startTime}–{lec.endTime}) · {lec.lectureDate} · {room?.code}
-                    </span>
-                    {isSubstitute && (
-                      <StatusBadge tone="info">{t('Substitute', 'محاضر بديل')}</StatusBadge>
-                    )}
-                  </div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                    {lec.topic}
-                  </h2>
-                  <p className="text-slate-500">
-                    {grp ? t(grp.nameEn, grp.nameAr) : lec.groupId} ·{' '}
-                    <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-[#C0C5C9]">
-                      {lec.frozenRateEgp} EGP
-                    </span>
-                  </p>
-                </div>
-
-                <StatusBadge tone="info">{t('Assigned — No Approval Needed', 'تم الإسناد — بدون موافقة')}</StatusBadge>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
+export const InstructorDashboardView:React.FC=()=> <SessionSummary todayOnly/>;
+export const InstructorScheduleView:React.FC=()=> <SessionSummary todayOnly={false}/>;
 
 export const InstructorCheckinView: React.FC = () => {
   const {
@@ -1126,6 +744,8 @@ export const InstructorAttendanceView: React.FC = () => {
     groups,
     attendanceSheets,
     isSupabaseMode,
+    runLectureSession,
+    rooms,
     instructorAttendanceLectureId: selectedLectureId,
     setInstructorAttendanceLectureId: setSelectedLectureId,
     saveAttendanceDraft,
@@ -1144,13 +764,13 @@ export const InstructorAttendanceView: React.FC = () => {
       ? lectures.filter(
           (l) =>
             l.campId === activeCamp.id &&
-            (l.instructorId === currentInstructor.id ||
-              l.substituteInstructorId === currentInstructor.id)
+            (l.substituteInstructorId || l.instructorId) === currentInstructor.id && l.status !== 'cancelled'
         )
       : [];
 
   // One query drives both the visible roster and the scoped server-side
   // visitor lookup. No second input or separate student-selection step.
+  const sessionClock=useSessionClock();
   const [studentSearch, setStudentSearch] = useState('');
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<AttendanceRosterFilter>('all');
   const [secureVisitingMatches, setSecureVisitingMatches] = useState<VisitingStudentLookupResult[]>([]);
@@ -1184,7 +804,7 @@ export const InstructorAttendanceView: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     const term = studentSearch.trim();
-    if (!isSupabaseMode || !selectedLectureId || term.length < 2) {
+    if (!isSupabaseMode || !selectedLectureId || !lectures.find(l=>l.id===selectedLectureId)?.sessionStartedAt || term.length < 2) {
       setSecureVisitingMatches([]);
       setVisitingLookupError(null);
       setVisitingSearchBusy(false);
@@ -1211,7 +831,7 @@ export const InstructorAttendanceView: React.FC = () => {
       }
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [isSupabaseMode, selectedLectureId, studentSearch]);
+  }, [isSupabaseMode, selectedLectureId, studentSearch, lectures]);
 
   if (!activeCamp || !currentInstructor) {
     return (
@@ -1302,7 +922,14 @@ export const InstructorAttendanceView: React.FC = () => {
   const cairoToday = `${cairoDatePart('year')}-${cairoDatePart('month')}-${cairoDatePart('day')}`;
   const campOpenForAttendance = activeCamp.status === CampStatus.ACTIVE;
   const lectureIsFuture = Boolean(selectedLecture && selectedLecture.lectureDate > cairoToday);
-  const canFinalizeAttendance = campOpenForAttendance && !lectureIsFuture;
+  const lifecycle=selectedLecture?sessionState(selectedLecture,existingSheet,sessionClock,campOpenForAttendance):'upcoming';
+  const canOpenRoster=!isSupabaseMode || Boolean(selectedLecture?.sessionStartedAt) || isLockedOrSubmitted;
+  const canFinalizeAttendance = campOpenForAttendance && !lectureIsFuture && canOpenRoster;
+  const handleRun=async()=>{
+    if(!selectedLecture||isBusy)return;
+    setIsBusy(true);setFeedback(null);
+    try{const result=await runLectureSession(selectedLecture.id);setFeedback({ok:result.ok,text:result.ok?t('Session started. Take attendance below.','تم تشغيل المحاضرة، سجل الحضور بالأسفل.'):(result.error||t('Could not start session','تعذر تشغيل المحاضرة'))});}finally{setIsBusy(false);}
+  };
   const canCorrectSubmitted = isSupabaseMode && canFinalizeAttendance &&
     existingSheet?.status === AttendanceSheetStatus.SUBMITTED &&
     existingSheet.instructorId === currentInstructor.id &&
@@ -1642,7 +1269,7 @@ export const InstructorAttendanceView: React.FC = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        title={t('Lecture Attendance', 'تسجيل حضور المحاضرة')}
+        title={t('Session Details', 'تفاصيل المحاضرة')}
         subtitle={t(
           'Search, filter and mark attendance for the selected lecture.',
           'بحث وفلترة وتسجيل حضور طلاب المحاضرة المختارة.'
@@ -1710,6 +1337,7 @@ export const InstructorAttendanceView: React.FC = () => {
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
                   <span>D{selectedLecture.campDay} · {selectedLecture.lectureDate} · P{selectedLecture.periodNumber}</span>
                   <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
+                  <span>{t('Room','القاعة')}: {rooms.find(r=>r.id===selectedLecture.roomId)?.code}</span>
                   <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
                     lecture: selectedLecture, students, transfers: studentTransfers,
                   }).length}</span>
@@ -1733,6 +1361,12 @@ export const InstructorAttendanceView: React.FC = () => {
             </div>
           </section>
 
+          {!isLockedOrSubmitted && !selectedLecture.sessionStartedAt && <section className={SURFACE_CARD+' p-5 space-y-3'}>
+            <h2 className="font-bold text-base">{t('Run Session','تشغيل المحاضرة')}</h2>
+            <p className="text-sm text-slate-500">{lifecycle==='missed'?t('The start window ended. Contact operations.','انتهى وقت التشغيل. تواصل مع الإدارة.'):t('Opens 15 minutes before the scheduled start. Internet connection required.','يفتح قبل الموعد بـ 15 دقيقة. يحتاج اتصال بالإنترنت.')}</p>
+            <button type="button" disabled={isBusy||(isSupabaseMode&&lifecycle!=='ready')} onClick={handleRun} className={BTN_PRIMARY+' min-h-[44px] disabled:opacity-50'}>{t('Run Session','تشغيل المحاضرة')}</button>
+          </section>}
+          {canOpenRoster && <>
           {/* Single live search: home roster appears immediately below; the
               scoped RPC returns visitors without exposing unassigned rosters. */}
           <section aria-label={t('Find and mark student attendance', 'ابحث وسجل حضور طالب')}
@@ -2078,11 +1712,12 @@ export const InstructorAttendanceView: React.FC = () => {
                 <span>
                   {isBusy
                     ? t('Submitting...', 'جاري الاعتماد...')
-                    : t('Submit & Sync Attendance', 'اعتماد ومزامنة الكشف')}
+                    : t('Finish Session & Submit Attendance', 'إنهاء المحاضرة واعتماد الحضور')}
                 </span>
               </button>
             </div>
           )}
+          </>}
         </div>
       ) : (
         <EmptyState
@@ -2098,7 +1733,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
   const {
     auth,
     activeCamp,
-    financeSnapshot,
+    attendanceSheets,
     isSandboxMode,
     instructors,
     lectures,
@@ -2130,20 +1765,8 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
 
   const myGroups = groups.filter((g) => g.primaryInstructorId === currentInstructor.id);
   const mySurveys = surveys.filter((s) => s.instructorId === currentInstructor.id);
-  const myEntitlements = entitlements.filter((e) => e.instructorId === currentInstructor.id);
-  const myFinance = activeCamp && financeSnapshot.enabled
-    ? calculateInstructorFinancialStatement({
-        campId:activeCamp.id,instructor:currentInstructor,
-        lectures,entitlements:myEntitlements,
-        backups:financeSnapshot.backups.filter(b=>b.instructorId===currentInstructor.id),
-        payments:financeSnapshot.payments.filter(p=>p.instructorId===currentInstructor.id),
-        policies:financeSnapshot.policies,
-      })
-    : null;
-  const myBackupSessions = financeSnapshot.backups.filter(b=>
-    b.instructorId===currentInstructor.id && b.campId===activeCamp?.id);
-  const myRecordedPayments = financeSnapshot.payments.filter(p=>
-    p.instructorId===currentInstructor.id && p.campId===activeCamp?.id);
+  const myLectures=lectures.filter(l=>l.campId===activeCamp?.id&&(l.substituteInstructorId||l.instructorId)===currentInstructor.id&&l.status!=='cancelled');
+  const progress=sessionCounts(myLectures,attendanceSheets,entitlements,currentInstructor.id);
   const myRequests = requests.filter((r) => r.instructorId === currentInstructor.id);
 
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -2183,11 +1806,8 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
             {currentInstructor.specialization} · {currentInstructor.email}
           </p>
         </div>
-        <div className="text-start sm:text-end">
-          <p className="text-xs text-slate-500">{t('Default Lecture Rate', 'فئة المحاضرة الافتراضية')}</p>
-          <p className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
-            {currentInstructor.defaultLectureRateEgp} EGP
-          </p>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          {[[t('Assigned','المسندة'),progress.assigned],[t('Counted','المحتسبة'),progress.counted],[t('Remaining','المتبقية'),progress.remaining]].map(([label,n])=><div className={SURFACE_SUBTLE+' p-3'} key={label}><p className="text-xs text-slate-500">{label}</p><p className="text-xl font-bold tabular-nums">{n}</p></div>)}
         </div>
       </div>
 
@@ -2197,7 +1817,7 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
           [
             { id: 'groups', en: 'Groups', ar: 'مجموعاتي' },
             { id: 'links', en: 'Evaluations', ar: 'التقييمات' },
-            { id: 'history', en: 'Entitlement History', ar: 'سجل مستحقاتي' },
+            { id: 'history', en: 'Session History', ar: 'سجل المحاضرات' },
             { id: 'requests', en: 'My Requests', ar: 'طلباتي' },
           ] as const
         ).map((tab) => (
@@ -2273,102 +1893,10 @@ export const InstructorProfileAndSectionsView: React.FC = () => {
         </div>
       )}
 
-      {subTab === 'history' && (
-        <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('My Lecture Entitlement History (EGP)', 'سجل مستحقات محاضراتي (جنيه مصري)')}
-          </h2>
-          {myFinance ? (
-            <section aria-label={t('My complete finance account','حسابي المالي الكامل')} className="space-y-4">
-              <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{t(
-                'Only your own records are visible. Confirmed amounts include main, approved backup and once-daily primary transportation. Pending sums are not payable yet.',
-                'اللي ظاهر هنا حسابك إنت بس. المؤكد يشمل الأساسي والباك أب المعتمد وانتقالات أيام الأساسي مرة واحدة. المعلق مش ضمن المستحق.'
-              )}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  {en:'Confirmed total',ar:'إجمالي المستحق المؤكد',n:myFinance.confirmedTotalEgp},
-                  {en:'Paid',ar:'المدفوع',n:myFinance.paidEgp},
-                  {en:'Remaining',ar:'المتبقي',n:myFinance.balanceEgp},
-                  {en:'Pending estimate',ar:'المعلق تقديري',n:myFinance.pendingEstimateEgp},
-                ].map(x=><div className="rounded-xl bg-slate-50 dark:bg-[#25292D] p-3" key={x.en}>
-                  <p className="text-xs text-slate-500">{t(x.en,x.ar)}</p>
-                  <p className="text-base font-bold tabular-nums mt-1">{x.n.toLocaleString()} EGP</p>
-                </div>)}
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                {[
-                  {en:'Main',ar:'أساسي',n:myFinance.primaryEgp},
-                  {en:'Backup',ar:'باك أب',n:myFinance.backupEgp},
-                  {en:'Transport',ar:'انتقالات',n:myFinance.transportEgp},
-                ].map(x=><div key={x.en} className="rounded-lg border border-slate-200 dark:border-[#42474D] px-3 py-3">
-                  <p className="text-slate-500">{t(x.en,x.ar)}</p>
-                  <p className="font-bold mt-1 tabular-nums">{x.n.toLocaleString()} EGP</p>
-                </div>)}
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-bold text-sm">{t('My backup sessions','محاضراتي كـ باك أب')}</h3>
-                {myBackupSessions.length===0 && <p className="text-slate-500">{t('No backup sessions recorded','لا يوجد باك أب مسجل')}</p>}
-                {myBackupSessions.map(b=><div key={b.id} className="rounded-xl border border-slate-200 dark:border-[#42474D] p-3 flex flex-wrap items-center justify-between gap-2">
-                  <span>{t('Day','يوم')} {b.campDay} · {lectures.find(l=>l.id===b.lectureId)?.topic||''}</span>
-                  <span className="font-semibold">{b.frozenRateEgp} EGP · {b.status}</span>
-                </div>)}
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-bold text-sm">{t('My recorded payments','الدفعات المسجلة لي')}</h3>
-                {myRecordedPayments.length===0&&<p className="text-slate-500">{t('No payments yet','مفيش دفعات مسجلة')}</p>}
-                {myRecordedPayments.map(p=><div key={p.id} className="rounded-xl border border-slate-200 dark:border-[#42474D] p-3 flex flex-wrap items-center justify-between gap-2">
-                  <span>{new Date(p.createdAt).toLocaleDateString()} · {p.method}</span>
-                  <strong>{p.amountEgp.toLocaleString()} EGP</strong>
-                </div>)}
-              </div>
-            </section>
-          ) : (
-            <p role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300">
-              {t('Detailed backup, transport and payment history will become available after the Finance migration is reviewed and activated.',
-                'تفاصيل الباك أب والانتقالات والمدفوعات هتظهر بعد مراجعة وتفعيل تحديث Finance في قاعدة البيانات.')}
-            </p>
-          )}
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {myEntitlements.length === 0 ? (
-              <p className="py-4 text-slate-500">{t('No entitlement records yet.', 'لا توجد مستحقات مسجلة بعد.')}</p>
-            ) : (
-              myEntitlements.map((ent) => (
-                <div key={ent.id} className="py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900 dark:text-white font-mono">
-                        Day {ent.campDay} · P{ent.periodNumber}
-                      </span>
-                      <StatusBadge
-                        tone={
-                          ent.status === EntitlementStatus.ELIGIBLE ||
-                          ent.status === EntitlementStatus.APPROVED
-                            ? 'success'
-                            : ent.status === EntitlementStatus.EXCLUDED
-                            ? 'danger'
-                            : 'warning'
-                        }
-                      >
-                        {ent.status === EntitlementStatus.APPROVED
-                          ? t('Approved', 'معتمد')
-                          : ent.status === EntitlementStatus.ELIGIBLE
-                          ? t('Eligible', 'مستحق')
-                          : ent.status === EntitlementStatus.EXCLUDED
-                          ? t('Excluded', 'مستبعد')
-                          : t('Pending Review', 'قيد المراجعة')}
-                      </StatusBadge>
-                    </div>
-                    <p className="text-slate-500 mt-1">{ent.eligibilityReason}</p>
-                  </div>
-                  <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white shrink-0">
-                    {ent.entitlementAmountEgp.toLocaleString()} EGP
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {subTab==='history'&&<section aria-label={t('Session completion history','سجل إنجاز المحاضرات')} className={SURFACE_CARD+' p-5 space-y-3'}>
+        <h2 className="font-bold">{t('Session completion history','سجل إنجاز المحاضرات')}</h2>
+        {myLectures.map(l=>{const e=entitlements.find(x=>x.lectureId===l.id&&x.instructorId===currentInstructor.id);return <div key={l.id} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 py-3 text-sm"><span>{l.topic} · {l.lectureDate}</span><StatusBadge tone={e&&['eligible','approved'].includes(e.status)?'success':'neutral'}>{e&&['eligible','approved'].includes(e.status)?t('Counted','محتسبة'):t('Not counted','غير محتسبة')}</StatusBadge></div>})}
+      </section>}
 
       {subTab === 'requests' && (
         <div className={`${SURFACE_CARD} p-5 space-y-4 text-xs`}>
