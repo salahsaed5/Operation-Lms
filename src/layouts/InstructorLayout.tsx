@@ -11,10 +11,10 @@ import {
   Bell,
   RefreshCw,
   Layers,
-  GraduationCap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { CampSwitcher } from '../components/ui/CampSwitcher';
+import { CitsBrand } from '../components/ui/CitsBrand';
 import { InstructorRouteId } from '../types/database';
 
 const INSTRUCTOR_TABS: {
@@ -73,10 +73,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       )}
       {/* Desktop instructor workspace navigation; mobile keeps the bottom bar. */}
       <aside className="instructor-desktop-nav instructor-curved-sidebar hidden lg:flex fixed z-40 flex-col">
-        <div className="instructor-sidebar-brand">
-          <span className="instructor-sidebar-logo"><GraduationCap className="w-6 h-6" aria-hidden="true"/></span>
-          <div className="min-w-0"><p className="text-base font-bold tracking-tight whitespace-nowrap">Operation <span className="instructor-sidebar-accent">LMS</span></p><p className="text-[11px] instructor-sidebar-muted mt-1">{t('Instructor workspace','مساحة عمل المحاضر')}</p></div>
-        </div>
+        <div className="instructor-sidebar-brand"><CitsBrand inverse subtitle={t('Instructor Workspace','مساحة عمل المحاضر')}/></div>
         <nav aria-label={t('Instructor navigation','قائمة تنقل المحاضر')} className="instructor-sidebar-menu">
           {INSTRUCTOR_TABS.map(tab=>{
             const Icon=tab.icon;

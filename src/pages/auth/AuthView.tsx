@@ -11,6 +11,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { CitsBrand } from '../../components/ui/CitsBrand';
 import { validateInitialPasswordStrength } from '../../domain/accountProvisioning';
 import { UserRole } from '../../types/database';
 
@@ -164,19 +165,7 @@ export const AuthView: React.FC = () => {
           <rect width="100%" height="100%" fill="url(#cits-grid)" />
         </svg>
 
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[#355F82] text-white text-sm font-bold flex items-center justify-center tracking-tight">
-            CI
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
-              CITS Camp Operations
-            </p>
-            <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
-              {t('Training Operations & Attendance Platform', 'منصة إدارة المعسكرات والحضور التدريبي')}
-            </p>
-          </div>
-        </div>
+        <div className="relative z-10"><CitsBrand className="cits-brand-auth" subtitle={t('Training Operations Platform','منصة إدارة العمليات التدريبية')}/></div>
 
         <div className="relative z-10 max-w-lg space-y-6 my-auto">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
@@ -230,14 +219,7 @@ export const AuthView: React.FC = () => {
       <div className="lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#121416] flex flex-col justify-between p-6 sm:p-10">
         {/* Unobtrusive Top Utility Header */}
         <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5 lg:hidden">
-            <span className="w-7 h-7 rounded-lg bg-[#355F82] text-white text-xs font-bold flex items-center justify-center">
-              CI
-            </span>
-            <span className="text-sm font-bold text-slate-900 dark:text-white">
-              CITS Operations
-            </span>
-          </div>
+          <div className="lg:hidden min-w-0"><CitsBrand className="cits-brand-auth-mobile"/></div>
           <div className="hidden lg:block" />
 
           <div className="flex items-center gap-2">
@@ -686,7 +668,7 @@ export const AuthView: React.FC = () => {
 
         {/* Quiet Minimal Footer */}
         <footer className="text-xs text-slate-400 dark:text-[#848B91] flex items-center justify-between gap-2">
-          <span>CITS Camp Operations</span>
+          <span>CITS LMS</span>
           <span>{t('Enterprise Training Operations', 'نظام إدارة العمليات التدريبية')}</span>
         </footer>
       </div>
