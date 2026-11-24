@@ -23,6 +23,10 @@ test('guest receives the sign-in form instead of any role dashboard', async ({ p
   await expect(page.locator('#login-identifier')).toBeVisible();
   await expect(page.locator('#login-password')).toBeVisible();
   await expect(page.locator('#login-password')).toHaveAttribute('type', 'password');
+  await expect(page.locator('.cits-auth-card')).toBeVisible();
+  await expect(page.locator('.cits-auth-submit')).toBeVisible();
+  expect(await page.locator('#login-identifier').evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(48);
+  expect(await page.locator('.cits-auth-standard h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(32);
   await expect(page.locator('.cits-loading-screen')).toHaveCount(0);
   await expect(page.locator('form').first()).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
@@ -59,6 +63,9 @@ test('mobile sign-in controls are accessible without horizontal clipping', async
   await page.goto('/');
   await expect(page.locator('#login-identifier')).toBeVisible();
   await expect(page.locator('#login-password')).toBeVisible();
+  await expect(page.locator('.cits-auth-hero')).toBeHidden();
+  await expect(page.locator('.cits-auth-mobile-brand')).toBeVisible();
+  await expect(page.locator('.cits-auth-submit')).toBeVisible();
   const clipped = await page.evaluate(() =>
     document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
   );

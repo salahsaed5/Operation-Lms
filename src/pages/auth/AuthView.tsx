@@ -5,6 +5,8 @@ import {
   Globe,
   KeyRound,
   Lock,
+  Mail,
+  Headphones,
   Moon,
   RefreshCw,
   ShieldCheck,
@@ -148,86 +150,36 @@ export const AuthView: React.FC = () => {
     );
 
   return (
-    <div className="min-h-screen w-full bg-[#f4f6f9] dark:bg-[#121416] text-slate-900 dark:text-[#F0F1F2] grid grid-cols-1 lg:grid-cols-12">
-      {/* Left Brand Architectural Panel (Clean Minimalist Technical Grid matching reference) */}
-      <aside className="hidden lg:flex lg:col-span-6 xl:col-span-7 relative overflow-hidden bg-[#f8fafc] dark:bg-[#1D2023]/60 border-e border-slate-200/80 dark:border-[#353A3F] flex-col justify-between p-12">
-        {/* Restrained Technical Line Pattern */}
-        <svg
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full text-slate-200/80 dark:text-slate-800/70 pointer-events-none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
+    <div className="cits-auth-shell">
+      <aside className="cits-auth-hero" aria-hidden="true">
+        <svg className="cits-auth-curves" viewBox="0 0 780 900" preserveAspectRatio="none" focusable="false">
           <defs>
-            <pattern id="cits-grid" width="48" height="48" patternUnits="userSpaceOnUse">
-              <path d="M 48 0 L 0 0 0 48" fill="none" stroke="currentColor" strokeWidth="0.75" />
-            </pattern>
+            <linearGradient id="auth-deep" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#092b39"/><stop offset=".58" stopColor="#103c4a"/><stop offset="1" stopColor="#075b69"/></linearGradient>
+            <linearGradient id="auth-ribbon" x1="0" y1="0" x2="1" y2=".8"><stop stopColor="#097789"/><stop offset=".48" stopColor="#27bcc9"/><stop offset="1" stopColor="#c6e9e8"/></linearGradient>
           </defs>
-          <rect width="100%" height="100%" fill="url(#cits-grid)" />
+          <path d="M0 0H760C615 85 587 214 568 342C542 560 486 759 342 900H0Z" fill="url(#auth-ribbon)" opacity=".9"/>
+          <path d="M0 0H698C550 102 542 220 522 351C495 568 442 764 289 900H0Z" fill="#6cc2ce" opacity=".55"/>
+          <path d="M0 0H646C522 110 515 234 496 365C470 574 409 763 245 900H0Z" fill="url(#auth-deep)"/>
+          <path d="M698 0C550 102 542 220 522 351C495 568 442 764 289 900" stroke="#b8edf1" strokeWidth="1.5" opacity=".65" fill="none"/>
+          <path d="M0 812C142 866 268 867 408 727C372 801 313 864 245 900H0Z" fill="#08798a" opacity=".55"/>
         </svg>
-
-        <div className="relative z-10"><CitsBrand className="cits-brand-auth" subtitle={t('Training Operations Platform','منصة إدارة العمليات التدريبية')}/></div>
-
-        <div className="relative z-10 max-w-lg space-y-6 my-auto">
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-            {t(
-              'Structured daily camp coordination, verified attendance, and schedule clarity.',
-              'إدارة متكاملة لعمليات المعسكرات التدريبية والجدول والحضور اليومي.'
-            )}
-          </h2>
-          <p className="text-sm text-slate-600 dark:text-[#A0A5AA] leading-relaxed">
-            {t(
-              'Role-isolated portals for camp administrators and instructors—covering daily check-ins, roster tracking, conflict-checked scheduling, and transparent lecture entitlements.',
-              'بوابات تشغيل مستقلة للمسؤولين والمحاضرين لمتابعة تسجيل الوصول، كشوف الحضور، الجداول الدراسية، ومستحقات المحاضرات.'
-            )}
-          </p>
-
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white/85 dark:bg-[#1D2023]/80 backdrop-blur-xs">
-              <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                {t('Admin Console', 'لوحة الإدارة')}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
-                {t(
-                  'Schedules, attendance audits, camp lifecycle, and entitlement reviews.',
-                  'إدارة الجداول، مراجعة الكشوف، المعسكرات، واعتماد المستحقات.'
-                )}
-              </p>
-            </div>
-            <div className="p-4 rounded-xl border border-slate-200/90 dark:border-[#353A3F] bg-white/85 dark:bg-[#1D2023]/80 backdrop-blur-xs">
-              <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                {t('Instructor Workspace', 'بوابة المحاضر')}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
-                {t(
-                  'Assigned schedule, venue check-in verification, and attendance rosters.',
-                  'الجدول المخصص، توثيق الوصول اليومي، وكشوف حضور الطلاب.'
-                )}
-              </p>
-            </div>
-          </div>
+        <div className="cits-auth-hero-brand">
+          <CitsBrand inverse className="cits-auth-hero-logo"/>
+          <p>{t('Learning Management System','نظام إدارة التعلم')}</p>
         </div>
-
-        <p className="relative z-10 text-xs text-slate-400 dark:text-[#848B91]">
-          {t(
-            'Authorized personnel access only. Account provisioning is managed by your camp administrator.',
-            'الدخول مصرح به للمستخدمين المعتمدين فقط عبر إدارة المعسكر.'
-          )}
-        </p>
+        <img className="cits-auth-hero-art" src="/assets/cits-login-hero.webp" alt="" width={490} height={341} decoding="async"/>
       </aside>
-
-      {/* Right Clean White Sign-In Surface */}
-      <div className="lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#121416] flex flex-col justify-between p-6 sm:p-10">
+      <div className="cits-auth-form-side">
         {/* Unobtrusive Top Utility Header */}
-        <header className="flex items-center justify-between gap-4">
-          <div className="lg:hidden min-w-0"><CitsBrand className="cits-brand-auth-mobile"/></div>
-          <div className="hidden lg:block" />
+        <header className="cits-auth-controls">
+          <div className="cits-auth-mobile-brand"><CitsBrand className="cits-brand-auth-mobile"/></div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
               aria-label={t('Switch Language', 'تغيير اللغة')}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1.5 cursor-pointer"
+              className="cits-auth-utility"
             >
               <Globe className="w-3.5 h-3.5 text-slate-500" />
               <span>{lang === 'en' ? 'العربية' : 'English'}</span>
@@ -236,7 +188,7 @@ export const AuthView: React.FC = () => {
               type="button"
               onClick={toggleTheme}
               aria-label={t('Switch Light or Dark Theme', 'تبديل المظهر')}
-              className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-[#C0C5C9] cursor-pointer"
+              className="cits-auth-utility cits-auth-theme"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -244,20 +196,15 @@ export const AuthView: React.FC = () => {
         </header>
 
         {/* Centered Form Box */}
-        <main className="w-full max-w-sm mx-auto my-8">
+        <main className="cits-auth-card">
           {/* Step 1: Standard Account Sign-In */}
           {!auth.pendingTotpProfileId && !isPasswordChangeRequired && (
-            <div className="space-y-6">
+            <div className="cits-auth-standard space-y-6">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-                  {t('Sign in to your account', 'تسجيل الدخول')}
+                  {t('Sign In', 'تسجيل الدخول')}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-[#A0A5AA] mt-1">
-                  {t(
-                    'Enter your assigned username or work email to continue.',
-                    'أدخل اسم المستخدم أو البريد الإلكتروني المعتمد للمتابعة.'
-                  )}
-                </p>
+                <div className="cits-auth-accent" aria-hidden="true"/>
               </div>
 
               {isSandboxMode && (
@@ -276,17 +223,19 @@ export const AuthView: React.FC = () => {
                 </div>
               )}
 
-              <form onSubmit={handleLoginSubmit} className="space-y-4" noValidate>
+              <form onSubmit={handleLoginSubmit} className="cits-auth-login-form" noValidate>
                 <div>
                   <label
                     htmlFor="login-identifier"
-                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
+                    className="sr-only"
                   >
                     {t('Username or Email', 'اسم المستخدم أو البريد الإلكتروني')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
                       *
                     </span>
                   </label>
+                  <div className="cits-auth-field">
+                  <Mail className="cits-auth-field-icon" aria-hidden="true"/>
                   <input
                     id="login-identifier"
                     type="text"
@@ -295,22 +244,24 @@ export const AuthView: React.FC = () => {
                     disabled={isSubmitting}
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder={t('Enter username or email', 'أدخل اسم المستخدم أو البريد')}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 transition-colors"
+                    placeholder={t('Username or Email', 'أدخل اسم المستخدم أو البريد')}
+                    className="cits-auth-input"
                   />
+                  </div>
                 </div>
 
                 <div>
                   <label
                     htmlFor="login-password"
-                    className="block text-xs font-medium text-slate-700 dark:text-[#C0C5C9] mb-1.5"
+                    className="sr-only"
                   >
                     {t('Password', 'كلمة المرور')}
                     <span className="text-red-500 ms-0.5" aria-hidden="true">
                       *
                     </span>
                   </label>
-                  <div className="relative">
+                  <div className="cits-auth-field">
+                    <Lock className="cits-auth-field-icon" aria-hidden="true"/>
                     <input
                       id="login-password"
                       type={showPassword ? 'text' : 'password'}
@@ -319,8 +270,8 @@ export const AuthView: React.FC = () => {
                       disabled={isSubmitting}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t('Enter your password', 'أدخل كلمة المرور')}
-                      className="w-full ps-3.5 pe-10 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#7196B9] focus:ring-2 focus:ring-[#88A9CC]/20 transition-colors"
+                      placeholder={t('Password', 'أدخل كلمة المرور')}
+                      className="cits-auth-input cits-auth-password"
                     />
                     <button
                       type="button"
@@ -330,7 +281,7 @@ export const AuthView: React.FC = () => {
                           ? t('Hide password', 'إخفاء كلمة المرور')
                           : t('Show password', 'إظهار كلمة المرور')
                       }
-                      className="absolute end-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                      className="cits-auth-eye"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -340,7 +291,7 @@ export const AuthView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-lg bg-[#355F82] hover:bg-[#2D516F] disabled:opacity-60 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="cits-auth-submit"
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -355,12 +306,7 @@ export const AuthView: React.FC = () => {
                 </button>
               </form>
 
-              <p className="text-xs text-slate-500 dark:text-[#A0A5AA] leading-relaxed">
-                {t(
-                  'Need access or a credential reset? Contact your camp administrator.',
-                  'هل تحتاج لتفعيل حسابك أو إعادة تعيين كلمة المرور؟ تواصل مع مسؤول المعسكر.'
-                )}
-              </p>
+              <p className="cits-auth-support"><Headphones className="w-4 h-4 shrink-0" aria-hidden="true"/><span>{t('Need help? Contact your camp administrator.','تحتاج مساعدة؟ تواصل مع مسؤول المعسكر.')}</span></p>
 
               {isSandboxMode && (
                 <section
@@ -666,11 +612,6 @@ export const AuthView: React.FC = () => {
           )}
         </main>
 
-        {/* Quiet Minimal Footer */}
-        <footer className="text-xs text-slate-400 dark:text-[#848B91] flex items-center justify-between gap-2">
-          <span>CITS LMS</span>
-          <span>{t('Enterprise Training Operations', 'نظام إدارة العمليات التدريبية')}</span>
-        </footer>
       </div>
     </div>
   );
