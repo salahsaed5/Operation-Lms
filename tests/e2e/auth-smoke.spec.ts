@@ -71,3 +71,17 @@ test('mobile sign-in controls are accessible without horizontal clipping', async
   );
   expect(clipped).toBe(false);
 });
+
+ test('wide desktop sign-in uses a generous card without oversized text', async ({page})=>{
+  await page.setViewportSize({width:1600,height:900});
+  await page.goto('/');
+  const card=page.locator('.cits-auth-card');
+  await expect(card).toBeVisible();
+  const bounds=await card.boundingBox();
+  expect(bounds!.width).toBeGreaterThanOrEqual(600);
+  expect(bounds!.height).toBeGreaterThanOrEqual(490);
+  expect(await page.locator('.cits-auth-standard h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(32);
+  expect(await page.locator('#login-identifier').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(14);
+  await expect(page.locator('.cits-auth-hero-art image')).toHaveAttribute('clip-path','url(#cits-auth-art-silhouette)');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+2)).toBe(false);
+});
