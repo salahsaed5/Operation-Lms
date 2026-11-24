@@ -44,6 +44,7 @@ test('sandbox-only identity chooser is visibly isolated from server production m
   await page.goto('/');
   await expect(page.getByText('LOCAL SANDBOX PREVIEW')).toBeVisible();
   await expect(page.getByRole('complementary',{name:'Admin modules navigation'})).toBeVisible();
+  await expect(page.getByRole('complementary',{name:'Admin modules navigation'}).locator('[data-cits-brand]')).toContainText('Operations Dashboard');
 });
 
 test('Take Attendance opens the clicked lecture rather than a previously selected lecture', async ({ page }) => {
@@ -55,6 +56,8 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
   await page.getByRole('region', { name: 'Local sandbox account selector' })
     .getByRole('button', { name: /Instructor/ }).first().click();
 
+  await expect(page.locator('.instructor-desktop-nav [data-cits-brand]')).toContainText('Instructor Workspace');
+  await expect(page.locator('.instructor-desktop-nav [data-cits-brand] svg')).toHaveAttribute('aria-label','CITS LMS');
   const nav = page.getByRole('navigation', { name: 'Instructor navigation' });
   await nav.getByRole('button', { name: 'Sessions', exact: true }).click();
   await page.locator('[data-session-id="lec-d4-p1-g1"]').getByRole('button').click();

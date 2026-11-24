@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { CampSwitcher } from '../components/ui/CampSwitcher';
+import { CitsBrand } from '../components/ui/CitsBrand';
 import { AdminRouteId } from '../types/database';
 
 interface NavItem {
@@ -119,7 +120,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         {/* Top Brand + Nav List */}
         <div className="flex flex-col min-h-0 flex-1">
           <div
-            className={`h-14 flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F]/80 shrink-0 ${
+            className={`h-[76px] flex items-center justify-between gap-1 border-b border-slate-100 dark:border-[#353A3F]/80 shrink-0 ${
               !sidebarExpanded ? 'lg:px-3 lg:justify-center px-4' : 'px-4'
             }`}
           >
@@ -127,21 +128,9 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
               type="button"
               onClick={() => handleNavigate('dashboard')}
               className="flex items-center gap-2.5 text-start cursor-pointer min-w-0"
-              title="CITS Camp Operations"
+              title="CITS LMS" aria-label="CITS LMS"
             >
-              <span className="w-7 h-7 rounded-lg bg-[#355F82] text-white text-xs font-bold flex items-center justify-center shrink-0 tracking-tight">
-                CI
-              </span>
-              {showSidebarLabels && (
-                <div className="min-w-0">
-                  <span className="block text-sm font-bold tracking-tight text-slate-900 dark:text-white truncate">
-                    CITS Ops
-                  </span>
-                  <span className="block text-[11px] text-slate-400 dark:text-[#848B91] truncate">
-                    {t('Camp Console', 'إدارة المعسكر')}
-                  </span>
-                </div>
-              )}
+              <CitsBrand compact={!showSidebarLabels} subtitle={t('Operations Dashboard','لوحة إدارة العمليات')}/>
             </button>
 
             <button
