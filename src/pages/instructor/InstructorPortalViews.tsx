@@ -1,3 +1,4 @@
+import { generateEntityCode } from '../../domain/generateEntityCode';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   MapPinCheck,
@@ -1159,7 +1160,7 @@ export const InstructorAttendanceView: React.FC = () => {
   const [visitingSourceGroupCodes, setVisitingSourceGroupCodes] = useState<Record<string,string>>({});
   const [showMidcampEnrollForm, setShowMidcampEnrollForm] = useState(false);
   const [newStudentName, setNewStudentName] = useState('');
-  const [newStudentCode, setNewStudentCode] = useState('');
+  const [newStudentCode, setNewStudentCode] = useState(()=>generateEntityCode('STU'));
   const [newStudentUniversity, setNewStudentUniversity] = useState('');
   const [newStudentReason, setNewStudentReason] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -1490,7 +1491,7 @@ export const InstructorAttendanceView: React.FC = () => {
           'تم تسجيل الطالب في المجموعة. السيرفر سجل يوم الانضمام ووقت الإضافة وهوية المحاضر في سجل المراجعة.'
         )});
         setNewStudentName('');
-        setNewStudentCode('');
+        setNewStudentCode(generateEntityCode('STU'));
         setNewStudentUniversity('');
         setNewStudentReason('');
         setShowMidcampEnrollForm(false);
@@ -1952,6 +1953,7 @@ export const InstructorAttendanceView: React.FC = () => {
                       <input id="midcamp-code" required minLength={3} maxLength={32}
                         value={newStudentCode} onChange={e => setNewStudentCode(e.target.value)}
                         className={INPUT_CLASS} autoComplete="off" />
+                      <button type="button" className={BTN_SECONDARY+" mt-1"} onClick={()=>setNewStudentCode(generateEntityCode("STU"))}>{t("Generate code","توليد كود")}</button>
                     </div>
                     <div>
                       <label htmlFor="midcamp-university" className={LABEL_CLASS}>{t('University (Optional)', 'الجامعة (اختياري)')}</label>

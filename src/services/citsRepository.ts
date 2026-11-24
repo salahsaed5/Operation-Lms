@@ -405,8 +405,21 @@ export async function signOutSupabase(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+/** Export queries use stable 500-row pages to avoid the Data API default row cap. */
+async function fetchAllPages<T>(query:(start:number,end:number)=>PromiseLike<{data:T[]|null;error:{message:string}|null}>):Promise<{data:T[];error:{message:string}|null}> {
+  const rows:T[]=[];
+  const size=500;
+  for(let start=0;;start+=size){
+    const {data,error}=await query(start,start+size-1);
+    if(error)return {data:[],error};
+    const page=data||[];
+    rows.push(...page);
+    if(page.length<size)return {data:rows,error:null};
+  }
+}
 export async function fetchOperationalSnapshot(
-  ctx: SupabaseAuthContext
+  ctx: SupabaseAuthContext,
+  attendanceExportCampId?: string
 ): Promise<OperationalSnapshot> {
   const client = getClient();
   const isAdmin = ctx.profile.role === UserRole.ADMIN;
@@ -448,15 +461,15 @@ export async function fetchOperationalSnapshot(
     client.from('camps').select('*').order('start_date', { ascending: false }),
     client.from('camp_settings').select('*'),
     client.from('camp_instructors').select('*').eq('is_active', true),
-    client.from('groups').select('*').order('code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('groups').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('groups').select('*').order('code', { ascending: true }),
     client.from('group_instructors').select('*').order('effective_from_day', { ascending: true }),
-    client.from('students').select('*').order('student_code', { ascending: true }),
-    client.from('student_transfers').select('*').order('created_at', { ascending: false }),
-    client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('students').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('students').select('*').order('student_code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('student_transfers').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lectures').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
     client.from('daily_checkins').select('*').order('camp_day', { ascending: false }),
     client.from('checkin_exceptions').select('*').order('created_at', { ascending: false }),
-    client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
-    client.from('attendance_records').select('*'),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_records').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_records').select('*'),
     client.from('lecture_entitlements').select('*').order('camp_day', { ascending: false }).order('period_number', { ascending: true }),
     client.from('instructor_requests').select('*').order('created_at', { ascending: false }),
     client.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
@@ -480,6 +493,7 @@ export async function fetchOperationalSnapshot(
     settingsRes.error,
     groupsRes.error,
     studentsRes.error,
+    transfersRes.error,
     lecturesRes.error,
     checkinsRes.error,
     sheetsRes.error,
@@ -996,6 +1010,7 @@ export async function deleteCheckinSelfiePath(path: string): Promise<void> {
  * Coordinates are supplied by the operator; never derive placeholder (0,0).
  */
 export async function createVenueInDb(input: {
+  venueId?: string;
   nameEn: string;
   nameAr: string;
   address: string;
@@ -1004,14 +1019,15 @@ export async function createVenueInDb(input: {
   geofenceRadiusMeters: number;
 }): Promise<string> {
   const client = getClient();
-  const { data, error } = await client.from('venues').insert({
+  const values = {
     name_en: input.nameEn.trim(),
     name_ar: input.nameAr.trim(),
     address: input.address.trim(),
     latitude: input.latitude,
     longitude: input.longitude,
     geofence_radius_meters: input.geofenceRadiusMeters,
-  }).select('id').single();
+  };
+  const {data,error}=input.venueId ? await client.from('venues').update(values).eq('id',input.venueId).select('id').single() : await client.from('venues').insert(values).select('id').single();
   if (error || !data) {
     throw new Error(error?.message || 'Unable to create training venue.');
   }

@@ -129,6 +129,7 @@ export const AdminCampsView: React.FC = () => {
   const [roomCode, setRoomCode] = useState(() => generateEntityCode('R'));
   const [roomName, setRoomName] = useState('');
   const [roomCapacity, setRoomCapacity] = useState(30);
+  const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
   const [venueNameEn, setVenueNameEn] = useState('');
   const [venueNameAr, setVenueNameAr] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
@@ -212,6 +213,7 @@ export const AdminCampsView: React.FC = () => {
     setFeedback(null);
     try {
       const res = await createVenue({
+        venueId: editingVenueId ?? undefined,
         nameEn: venueNameEn.trim(),
         nameAr: venueNameAr.trim(),
         address: venueAddress.trim(),
@@ -222,7 +224,8 @@ export const AdminCampsView: React.FC = () => {
       if (!res.ok) {
         setFeedback({ type: 'err', text: res.error || t('Failed to save training venue.', 'فشل حفظ المقر التدريبي.') });
       } else {
-        setFeedback({ type: 'ok', text: t('Training venue saved. You can now create a Camp.', 'تم حفظ المقر ويمكنك الآن إنشاء معسكر.') });
+        setFeedback({ type: 'ok', text: editingVenueId ? t('Venue updated.', 'تم تعديل المقر.') : t('Training venue saved. You can now create a Camp.', 'تم حفظ المقر ويمكنك الآن إنشاء معسكر.') });
+        setEditingVenueId(null);
         setVenueNameEn('');
         setVenueNameAr('');
         setVenueAddress('');
@@ -386,6 +389,8 @@ export const AdminCampsView: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                setEditingVenueId(null);
+                setVenueNameEn(''); setVenueNameAr(''); setVenueAddress(''); setVenueLatitude(''); setVenueLongitude(''); setVenueGeofence(100);
                 setShowVenueForm(prev => !prev);
                 setShowNewCampForm(false);
                 setShowRoomForm(false);
@@ -484,10 +489,24 @@ export const AdminCampsView: React.FC = () => {
         </form>
       )}
 
+      {venues.length > 0 && !showVenueForm && (
+        <div className={SURFACE_CARD + ' p-3 space-y-2'}>
+          <h3 className="text-sm font-bold">{t('Training venues','المقرات التدريبية')}</h3>
+          {venues.map(v=><div key={v.id} className="flex flex-wrap items-center justify-between gap-2 border-b last:border-b-0 py-2">
+            <div><p className="font-semibold text-sm">{t(v.nameEn,v.nameAr)}</p><p className="text-xs text-slate-500">{v.address}</p></div>
+            <button type="button" className={BTN_SECONDARY} onClick={()=>{
+              setEditingVenueId(v.id); setVenueNameEn(v.nameEn); setVenueNameAr(v.nameAr);
+              setVenueAddress(v.address); setVenueLatitude(String(v.latitude)); setVenueLongitude(String(v.longitude));
+              setVenueGeofence(v.geofenceRadiusMeters); setShowVenueForm(true); setShowNewCampForm(false); setShowRoomForm(false);setEditingCamp(null);setFeedback(null);
+            }}><Pencil className="w-4 h-4"/>{t('Edit venue','تعديل المقر')}</button>
+          </div>)}
+        </div>
+      )}
       {showVenueForm && (
         <form onSubmit={handleCreateVenue} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+          {editingVenueId && <p className="text-xs text-amber-700">{t('Changes affect every Camp using this venue. GPS history is protected.','التعديل يؤثر على كل الكامبات التي تستخدم هذا المقر. سجل GPS السابق محمي.')}</p>}
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('New Training Venue', 'إضافة مقر تدريبي جديد')}
+            {editingVenueId ? t('Edit shared venue','تعديل بيانات المقر') : t('New Training Venue', 'إضافة مقر تدريبي جديد')}
           </h2>
           <p className="text-xs text-slate-500">
             {t('Use the exact physical location; GPS check-ins use these coordinates. Never use placeholder (0,0).', 'استخدم الموقع الفعلي للمقر لأن الحضور بالـ GPS يعتمد على هذه الإحداثيات.')}

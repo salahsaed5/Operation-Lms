@@ -255,6 +255,7 @@ interface AppContextValue {
     capacity: number;
   }) => Promise<ActionResult>;
   createVenue: (input: {
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     address: string;
@@ -1362,6 +1363,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createVenue = async (input: {
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     address: string;
@@ -1382,6 +1384,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { ok: false, error: 'Geofence radius must be 25–1000 meters.' };
     }
 
+    if (!auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN || !auth.currentProfile.isActive) return {ok:false,error:'Active Admin required.'};
+    if(input.venueId){
+      const old=venues.find(v=>v.id===input.venueId);
+      if(!old)return {ok:false,error:'Venue not found.'};
+      const related=camps.filter(c=>c.venueId===old.id);
+      if(related.some(c=>c.status===CampStatus.ARCHIVED))return {ok:false,error:'Venue linked to an archived Camp. Create a new venue to preserve history.'};
+      if((old.latitude!==input.latitude||old.longitude!==input.longitude||old.geofenceRadiusMeters!==input.geofenceRadiusMeters)&&checkins.some(c=>related.some(camp=>camp.id===c.campId)))return {ok:false,error:'GPS history exists for this venue. Create a new venue for future check-ins.'};
+    }
     if (isSupabaseMode) {
       try {
         await createVenueInDb(input);
@@ -1396,7 +1406,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!import.meta.env.DEV) {
       return { ok: false, error: 'A real Supabase connection is required to add venues.' };
     }
-    setVenues(prev => [...prev, { id: crypto.randomUUID(), ...input }]);
+    setVenues(prev => input.venueId ? prev.map(v=>v.id===input.venueId?{...v,...input,id:v.id}:v) : [...prev, { id: crypto.randomUUID(), ...input }]);
     return { ok: true };
   };
 
@@ -2883,7 +2893,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // Do NOT export cached/offline Instructor draft overlays: fetch a fresh
       // authenticated Admin snapshot and include only server-finalized sheets.
-      const latest = await fetchOperationalSnapshot(supabaseCtx);
+      const latest = await fetchOperationalSnapshot(supabaseCtx, activeCamp.id);
       const camp = latest.camps.find(c => c.id === activeCamp.id);
       if (!camp) return { ok: false, error: 'Selected Camp was not found on the server.' };
       if (camp.durationDays < 1 || camp.durationDays > 60) {
