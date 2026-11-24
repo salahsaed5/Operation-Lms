@@ -386,8 +386,12 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
       await expect(page.locator('.instructor-main')).toBeVisible();
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
       const bounds=await bar.boundingBox();
-      expect(bounds!.x).toBeLessThanOrEqual(1);
-      expect(bounds!.width).toBeGreaterThanOrEqual(width-2);
+      expect(bounds!.x).toBeGreaterThanOrEqual(11);
+      expect(Math.abs(bounds!.x - (width-bounds!.x-bounds!.width))).toBeLessThan(2);
+      expect(bounds!.width).toBeGreaterThanOrEqual(Math.min(width-24,520)-2);
+      expect(bounds!.width).toBeLessThanOrEqual(Math.min(width-24,520)+1);
+      expect(844-bounds!.y-bounds!.height).toBeGreaterThanOrEqual(9);
+      expect(await bar.evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThan(25);
       const widths=await bar.getByRole('button').evaluateAll(bs=>bs.map(b=>b.getBoundingClientRect().width));
       expect(Math.max(...widths)-Math.min(...widths)).toBeLessThan(2);
     }
@@ -405,8 +409,10 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
   await expect(page.locator('.instructor-profile-banner')).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
   const rtlBounds=await bar.boundingBox();
-  expect(rtlBounds!.x).toBeLessThanOrEqual(1);
-  expect(rtlBounds!.width).toBeGreaterThanOrEqual(388);
+  expect(rtlBounds!.x).toBeGreaterThanOrEqual(11);
+  expect(Math.abs(rtlBounds!.x-(390-rtlBounds!.x-rtlBounds!.width))).toBeLessThan(2);
+  expect(rtlBounds!.width).toBeGreaterThanOrEqual(364);
+  expect(rtlBounds!.width).toBeLessThanOrEqual(367);
   await page.setViewportSize({width:1365,height:900});
   await expect(bar).toBeHidden();
   await expect(page.locator('.instructor-desktop-nav')).toBeVisible();
