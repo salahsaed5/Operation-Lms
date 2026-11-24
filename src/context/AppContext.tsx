@@ -137,6 +137,7 @@ import {
   updateCampInDb,
   updateInstructorInDb,
   updateInstructorCredentialInDb,
+  manageInstructorRemovalInDb,
   updateLectureInDb,
   uploadCheckinSelfie,
   upsertGroupInDb,
@@ -318,6 +319,7 @@ interface AppContextValue {
     assignedToActiveCamp?: boolean;
   }) => Promise<ActionResult>;
 
+  manageInstructorRemoval: (id:string, action:'archive'|'restore'|'delete') => Promise<ActionResult>;
   updateInstructorCredential: (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }) => Promise<ActionResult>;
   triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
 
@@ -2006,6 +2008,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const manageInstructorRemoval = async (id:string, action:'archive'|'restore'|'delete'):Promise<ActionResult> => {
+    if(!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role!==UserRole.ADMIN || !auth.currentProfile.isActive) return {ok:false,error:'Connected Admin account required.'};
+    try {await manageInstructorRemovalInDb(id,action);await refreshOperationalData();return {ok:true};}
+    catch(err){return {ok:false,error:err instanceof Error?err.message:'Account removal failed.'};}
+  };
   const updateInstructorCredential = async (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }): Promise<ActionResult> => {
     if (!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN || !auth.currentProfile.isActive)
       return {ok:false,error:'Connected Admin account required.'};
@@ -4006,6 +4013,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateInstructorAccount,
         triggerInstructorPasswordReset,
         updateInstructorCredential,
+        manageInstructorRemoval,
         createSingleStudent,
         enrollMidcampStudent,
         transferStudent,

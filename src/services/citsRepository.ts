@@ -304,6 +304,7 @@ export async function loadAuthenticatedUserContext(
       id: instRow.id,
       profileId: instRow.profile_id,
       instructorCode: instRow.instructor_code,
+      archivedAt: instRow.archived_at,
       fullNameEn: profile.fullNameEn,
       fullNameAr: profile.fullNameAr,
       username: profile.username,
@@ -525,6 +526,7 @@ export async function fetchOperationalSnapshot(
       id: i.id,
       profileId: i.profile_id,
       instructorCode: i.instructor_code,
+      archivedAt: i.archived_at,
       fullNameEn: prof?.fullNameEn || i.instructor_code,
       fullNameAr: prof?.fullNameAr || i.instructor_code,
       username: prof?.username || i.instructor_code,
@@ -1450,6 +1452,11 @@ export async function provisionInstructorViaEdgeFunction(
   }
 
   return data as ProvisionInstructorOutcome;
+}
+
+export async function manageInstructorRemovalInDb(instructorId: string, action: 'archive'|'restore'|'delete'): Promise<void> {
+  const {error}=await getClient().rpc('manage_instructor_removal_tx',{p_instructor_id:instructorId,p_action:action});
+  if(error)throw new Error(error.message);
 }
 
 export async function updateInstructorCredentialInDb(input: {
