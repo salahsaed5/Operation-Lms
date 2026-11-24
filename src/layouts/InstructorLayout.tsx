@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   CalendarClock,
   MapPinCheck,
-  ClipboardCheck,
   UserCircle,
   Globe,
   Sun,
@@ -23,10 +22,9 @@ const INSTRUCTOR_TABS: {
   labelAr: string;
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { id: 'dashboard', labelEn: 'Dashboard', labelAr: 'الرئيسية', icon: LayoutDashboard },
+  { id: 'dashboard', labelEn: 'Home', labelAr: 'الرئيسية', icon: LayoutDashboard },
   { id: 'schedule', labelEn: 'Sessions', labelAr: 'المحاضرات', icon: CalendarClock },
   { id: 'checkin', labelEn: 'Check-in', labelAr: 'الوصول', icon: MapPinCheck },
-  { id: 'attendance', labelEn: 'Attendance', labelAr: 'الحضور', icon: ClipboardCheck },
   { id: 'profile', labelEn: 'Profile', labelAr: 'حسابي', icon: UserCircle },
 ];
 
@@ -105,7 +103,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         >
           {INSTRUCTOR_TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive = instructorRoute === tab.id;
+            const isActive = instructorRoute === tab.id || (tab.id === 'schedule' && instructorRoute === 'attendance');
             return (
               <button
                 key={tab.id}
@@ -244,8 +242,8 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         <span className="font-semibold shrink-0">{t('My Camp:', 'الكامب الخاص بي:')}</span>
         <CampSwitcher />
         <span className="hidden md:inline text-slate-500 dark:text-[#A0A5AA]">
-          {t('Switch to view your assignments, check-ins and statement for each Camp.',
-             'بدّل الكامب لعرض جدولك وحضورك وحساباتك الخاصة بكل كامب.')}
+          {t('Switch to view your sessions and check-ins for each camp.',
+             'بدّل الكامب لعرض محاضراتك وتسجيل الوصول لكل كامب.')}
         </span>
       </div>
 
@@ -276,7 +274,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       >
         {INSTRUCTOR_TABS.map((tab) => {
           const Icon = tab.icon;
-          const isActive = instructorRoute === tab.id;
+          const isActive = instructorRoute === tab.id || (tab.id === 'schedule' && instructorRoute === 'attendance');
           return (
             <button
               key={tab.id}

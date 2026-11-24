@@ -34,7 +34,7 @@ import {
 } from './pages/instructor/InstructorPortalViews';
 
 const AppRouter: React.FC = () => {
-  const { auth, isInitializingSession, adminRoute, instructorRoute, t } = useApp();
+  const { auth, isInitializingSession, adminRoute, instructorRoute, instructorAttendanceLectureId, activeCamp, t } = useApp();
 
   if (isInitializingSession) {
     return (
@@ -79,7 +79,7 @@ const AppRouter: React.FC = () => {
           {instructorRoute === 'dashboard' && <InstructorDashboardView />}
           {instructorRoute === 'schedule' && <InstructorScheduleView />}
           {instructorRoute === 'checkin' && <InstructorCheckinView />}
-          {instructorRoute === 'attendance' && <InstructorAttendanceView />}
+          {instructorRoute === 'attendance' && <InstructorAttendanceView key={(activeCamp?.id||'')+':'+instructorAttendanceLectureId} />}
           {instructorRoute === 'profile' && <InstructorProfileAndSectionsView />}
         </InstructorLayout>
       )}

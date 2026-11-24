@@ -30,12 +30,13 @@ test('local sandbox Instructor can reach Dashboard, Schedule, Check-in, Attendan
     .getByRole('button',{name:/Instructor/}).first().click();
   const nav=page.getByRole('navigation',{name:'Instructor navigation'});
   await expect(nav).toBeVisible();
-  for(const title of ['Dashboard','Sessions','Check-in','Attendance','Profile']){
+  for(const title of ['Home','Sessions','Check-in','Profile']){
     const button=nav.getByRole('button',{name:title,exact:true});
     await button.click();
     await expect(button).toHaveAttribute('aria-current','page');
     await expect(page.locator('main').first()).toBeVisible();
   }
+  await expect(nav.getByRole('button',{name:'Attendance',exact:true})).toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -55,20 +56,17 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
     .getByRole('button', { name: /Instructor/ }).first().click();
 
   const nav = page.getByRole('navigation', { name: 'Instructor navigation' });
-  await nav.getByRole('button', { name: 'Attendance', exact: true }).click();
-  const lecturePicker = page.getByRole('combobox', { name: 'Select lecture and group for attendance' });
-  // Simulate the actual reported bug: the attendance screen previously had P1 selected.
-  await lecturePicker.selectOption('lec-d4-p1-g1');
-  await expect(lecturePicker).toHaveValue('lec-d4-p1-g1');
-
-  await nav.getByRole('button', { name: 'Dashboard', exact: true }).click();
+  await nav.getByRole('button', { name: 'Sessions', exact: true }).click();
+  await page.locator('[data-session-id="lec-d4-p1-g1"]').getByRole('button').click();
+  await expect(page.getByRole('button',{name:'Back to Sessions'})).toBeVisible();
+  await expect(page.getByRole('combobox',{name:'Select lecture and group for attendance'})).toHaveCount(0);
+  await nav.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('article').filter({hasText:'Minimum Spanning Trees & Disjoint Set Union'}).getByRole('button',{name:'Open session',exact:true}).click();
 
   // Dashboard P2 was clicked, so the attendance screen MUST switch to that
   // lecture and its roster, not use stale P1 state.
-  await expect(nav.getByRole('button', { name: 'Attendance', exact: true }))
+  await expect(nav.getByRole('button', { name: 'Sessions', exact: true }))
     .toHaveAttribute('aria-current', 'page');
-  await expect(lecturePicker).toHaveValue('lec-d4-p2-g1');
   await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toContainText('Minimum Spanning Trees & Disjoint Set Union');
   expect(runtimeErrors).toEqual([]);
@@ -83,12 +81,8 @@ test('one search immediately filters roster and shows other-group student with o
   await page.getByRole('region', { name: 'Local sandbox account selector' })
     .getByRole('button', { name: /Instructor/ }).first().click();
   await page.getByRole('navigation', { name: 'Instructor navigation' })
-    .getByRole('button', { name: 'Attendance', exact: true }).click();
-
-  // The default P1 sheet is already SUBMITTED in the sandbox fixtures.
-  // Select editable P2 to test the visitor-add interaction.
-  await page.getByRole('combobox', { name: 'Select lecture and group for attendance' })
-    .selectOption('lec-d4-p2-g1');
+    .getByRole('button', { name: 'Sessions', exact: true }).click();
+  await page.locator('[data-session-id="lec-d4-p2-g1"]').getByRole('button').click();
   await expect(page.getByRole('region', { name: 'Selected lecture summary' })).toContainText('Draft');
 
   const search = page.getByRole('searchbox', { name: 'Search students by name or code' });
@@ -132,10 +126,8 @@ test('attendance status chips filter roster, combine with name search and reset 
   await page.getByRole('region', { name: 'Local sandbox account selector' })
     .getByRole('button', { name: /Instructor/ }).first().click();
   await page.getByRole('navigation', { name: 'Instructor navigation' })
-    .getByRole('button', { name: 'Attendance', exact: true }).click();
-
-  const lecturePicker = page.getByRole('combobox', { name: 'Select lecture and group for attendance' });
-  await lecturePicker.selectOption('lec-d4-p2-g1');
+    .getByRole('button', { name: 'Sessions', exact: true }).click();
+  await page.locator('[data-session-id="lec-d4-p2-g1"]').getByRole('button').click();
   const chips = page.getByRole('group', { name: 'Filter attendance by status' });
   const roster = page.getByRole('region', { name: 'Full attendance roster' });
   const present = chips.getByRole('button', { name: /^Present\s+\d+/ });
@@ -175,7 +167,8 @@ test('attendance status chips filter roster, combine with name search and reset 
   await expect(searchResults.getByRole('group', { name: /Attendance for / })).toHaveCount(1);
 
   // Prevent stale status filters from silently hiding the next group.
-  await lecturePicker.selectOption('lec-d4-p1-g1');
+  await page.getByRole('button',{name:'Back to Sessions'}).click();
+  await page.locator('[data-session-id="lec-d4-p1-g1"]').getByRole('button').click();
   await expect(chips.getByRole('button', { name: /^All\s+\d+/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(search).toHaveValue('');
 
@@ -364,8 +357,10 @@ test('Instructor mobile glass tabs reach check-in and attendance without overflo
   await expect(bar).toBeVisible();
   await bar.getByRole('button', { name: 'Check-in', exact: true }).click();
   await expect(bar.getByRole('button', { name: 'Check-in' })).toHaveAttribute('aria-current','page');
-  await bar.getByRole('button', { name: 'Attendance', exact: true }).click();
-  await expect(bar.getByRole('button', { name: 'Attendance' })).toHaveAttribute('aria-current','page');
+  await expect(bar.getByRole('button',{name:'Attendance',exact:true})).toHaveCount(0);
+  await bar.getByRole('button',{name:'Sessions',exact:true}).click();
+  await page.locator('[data-session-id="lec-d4-p2-g1"]').getByRole('button').click();
+  await expect(bar.getByRole('button',{name:'Sessions'})).toHaveAttribute('aria-current','page');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
 });
 

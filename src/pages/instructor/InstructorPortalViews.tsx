@@ -13,6 +13,13 @@ import {
   Search,
   CalendarClock,
   UserCircle,
+  ArrowUpRight,
+  ArrowLeft,
+  Clock3,
+  Users,
+  MapPin,
+  Play,
+  CalendarDays,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { sessionState, sessionCounts, sessionLabel, cairoClock } from '../../domain/sessionLifecycle';
@@ -83,7 +90,7 @@ function useSessionClock(){
 }
 
 const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
-  const {activeCamp,auth,instructors,lectures,groups,rooms,attendanceSheets,entitlements,isSandboxMode,openInstructorAttendance,setInstructorRoute,t}=useApp();
+  const {activeCamp,auth,instructors,lectures,groups,rooms,students,studentTransfers,attendanceSheets,entitlements,isSandboxMode,openInstructorAttendance,setInstructorRoute,lang,t}=useApp();
   const clock=useSessionClock();
   const [filter,setFilter]=useState('all');
   const [query,setQuery]=useState('');
@@ -93,37 +100,58 @@ const SessionSummary:React.FC<{todayOnly:boolean}> = ({todayOnly})=>{
   const today=isSandboxMode?calculateCampDayDate(activeCamp.startDate,activeCamp.currentCampDay,activeCamp.operatingWeekdays):clock.date;
   const counts=sessionCounts(all,attendanceSheets,entitlements,inst.id);
   const stateOf=(l:Lecture)=>sessionState(l,attendanceSheets.find(s=>s.lectureId===l.id),clock,activeCamp.status===CampStatus.ACTIVE);
+  const running=all.filter(l=>stateOf(l)==='running').length;
+  const pending=all.filter(l=>['upcoming','ready','missed'].includes(stateOf(l))).length;
+  const missed=all.filter(l=>stateOf(l)==='missed').length;
+  const todayCount=all.filter(l=>l.lectureDate===today).length;
+  const percent=counts.assigned?Math.round(counts.counted/counts.assigned*100):0;
+  const term=query.trim().toLowerCase();
   const shown=all.filter(l=>(!todayOnly||l.lectureDate===today)&&(todayOnly||filter==='all'||(filter==='pending'?['upcoming','ready','missed'].includes(stateOf(l)):stateOf(l)===filter))&&
-    (!query||[l.topic,groups.find(g=>g.id===l.groupId)?.code,groups.find(g=>g.id===l.groupId)?.nameAr,groups.find(g=>g.id===l.groupId)?.nameEn].some(x=>x?.toLowerCase().includes(query.toLowerCase())))).sort((a,b)=>a.lectureDate.localeCompare(b.lectureDate)||a.startTime.localeCompare(b.startTime));
-  return <div className="space-y-5">
-    <PageHeader title={todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')} subtitle={t(activeCamp.nameEn,activeCamp.nameAr)+' · '+today}
-      actions={todayOnly?<button type="button" className={BTN_SECONDARY} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')}</button>:undefined}/>
-    {!todayOnly&&<div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-      {[
-        [t('Assigned','المسندة'),counts.assigned],[t('Running','جارية'),all.filter(l=>stateOf(l)==='running').length],
-        [t('Pending','معلقة'),all.filter(l=>['upcoming','ready','missed'].includes(stateOf(l))).length],[t('Finished','المنتهية'),counts.finished],[t('Counted','المحتسبة'),counts.counted],[t('Remaining','المتبقية للحساب'),counts.remaining]
-      ].map(([label,n])=><div key={label} className={SURFACE_CARD+' p-4'}><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-bold tabular-nums mt-1">{n}</p></div>)}
-    </div>}
-    {!todayOnly&&<div className={SURFACE_CARD+' p-3 flex flex-wrap gap-2 items-center'}>
-      <input aria-label={t('Search sessions','بحث المحاضرات')} placeholder={t('Search by topic or group','ابحث بالموضوع أو الجروب')} value={query} onChange={e=>setQuery(e.target.value)} className={INPUT_CLASS+' flex-1 min-w-[180px]'}/>
-      <select aria-label={t('Filter sessions','تصفية المحاضرات')} value={filter} onChange={e=>setFilter(e.target.value)} className={SELECT_CLASS+' w-auto'}>
-        {[['all','All','الكل'],['pending','Pending','معلقة'],['running','Running','جارية'],['finished','Finished','منتهية']].map(([v,en,ar])=><option key={v} value={v}>{t(en,ar)}</option>)}
-      </select></div>}
-    <div className="space-y-3">
-      {shown.length===0?<EmptyState icon={CalendarClock} title={todayOnly?t('No sessions scheduled for today','لا توجد محاضرات اليوم'):t('No matching sessions','لا توجد محاضرات مطابقة')}/>:shown.map(l=>{
-        const s=stateOf(l);const label=sessionLabel(s);const sheet=attendanceSheets.find(x=>x.lectureId===l.id);
-        const counted=entitlements.some(e=>e.lectureId===l.id&&e.instructorId===inst.id&&['eligible','approved'].includes(e.status));
-        const present=sheet?.records.filter(r=>r.mark==='present'||r.mark==='late').length||0;
-        const absent=sheet?.records.filter(r=>r.mark==='absent').length||0;
-        return <article key={l.id} className={SURFACE_CARD+' p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4'}>
-          <div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={s==='finished'?'success':s==='missed'?'danger':s==='ready'||s==='running'?'info':'neutral'}>{t(label.en,label.ar)}</StatusBadge>
-          {counted&&<StatusBadge tone="success">{t('Counted','محتسبة')}</StatusBadge>}</div>
-          <h2 className="font-bold text-base break-words">{l.topic}</h2>
-          <p className="text-xs text-slate-500">{l.lectureDate} · {l.startTime}–{l.endTime} · {groups.find(g=>g.id===l.groupId)?.code} · {rooms.find(r=>r.id===l.roomId)?.code}</p>
-          {s==='finished'&&<p className="text-xs text-slate-600 dark:text-slate-300">{t('Present','حاضر')} {present} · {t('Absent','غائب')} {absent}</p>}
-          </div><button type="button" onClick={()=>openInstructorAttendance(l.id)} className={BTN_PRIMARY+' min-h-[44px] shrink-0'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')}</button>
-        </article>})}
-    </div>
+    (!term||[l.topic,groups.find(g=>g.id===l.groupId)?.code,groups.find(g=>g.id===l.groupId)?.nameAr,groups.find(g=>g.id===l.groupId)?.nameEn].some(x=>x?.toLowerCase().includes(term)))).sort((a,b)=>a.lectureDate.localeCompare(b.lectureDate)||a.startTime.localeCompare(b.startTime));
+  const dates=Array.from(new Set(shown.map(l=>l.lectureDate)));
+  const formatDate=(d:string)=>new Intl.DateTimeFormat(lang==='ar'?'ar-EG':'en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(d+'T12:00:00Z'));
+  const filters=[{id:'all',en:'All sessions',ar:'كل المحاضرات',n:counts.assigned},{id:'running',en:'Running',ar:'جارية',n:running},{id:'pending',en:'Pending',ar:'معلقة',n:pending},{id:'finished',en:'Finished',ar:'منتهية',n:counts.finished},{id:'missed',en:'Missed',ar:'لم تبدأ',n:missed}];
+  return <div className="space-y-6">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div><p className="text-[11px] font-bold tracking-widest text-[#355F82] dark:text-[#88A9CC] uppercase">{t('Instructor workspace','مساحة عمل المحاضر')} · {activeCamp.code}</p>
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-1">{todayOnly?t("Today's Sessions","محاضرات اليوم"):t('My Sessions','محاضراتي')}</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{t(activeCamp.nameEn,activeCamp.nameAr)} · {formatDate(today)}</p></div>
+      {todayOnly&&<button type="button" className={BTN_SECONDARY+' min-h-[44px]'} onClick={()=>setInstructorRoute('schedule')}>{t('All sessions','كل المحاضرات')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>}
+    </header>
+    {!todayOnly&&<section aria-label={t('Session progress','تقدم المحاضرات')} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-3">
+      <div className="rounded-2xl bg-[#203b53] dark:bg-[#203548] text-white p-5 sm:p-6 relative overflow-hidden">
+        <div aria-hidden="true" className="absolute end-[-35px] top-[-65px] w-52 h-52 rounded-full border-[24px] border-white/5 pointer-events-none"/>
+        <div className="relative space-y-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-slate-200">{t('Camp completion','إنجاز الكامب')}</p><p className="mt-2 text-4xl font-bold tabular-nums tracking-tight">{counts.counted}<span className="text-xl font-medium text-slate-300"> / {counts.assigned}</span></p><p className="mt-1 text-xs text-slate-200">{t('Counted sessions','محاضرات محتسبة')}</p></div><span className="rounded-xl bg-white/10 px-3 py-2 text-lg font-bold tabular-nums">{percent}%</span></div>
+        <div role="progressbar" aria-label={t('Counted sessions progress','نسبة المحاضرات المحتسبة')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-2 rounded-full bg-white/15 overflow-hidden"><div className="h-full rounded-full bg-[#8dd3c5]" style={{width:percent+'%'}}/></div>
+        <div className="flex justify-between gap-3 text-xs text-slate-200"><span>{t('Assigned','المسندة')}: {counts.assigned}</span><span>{t('Remaining','المتبقية')}: {counts.remaining}</span></div></div>
+      </div>
+      <div className={SURFACE_CARD+' rounded-2xl p-4 sm:p-5 grid grid-cols-2 gap-3'}>
+        {[{label:t('Running','جارية'),n:running,Icon:Play,style:'text-blue-700 dark:text-blue-300'},{label:t('Pending','معلقة'),n:pending,Icon:Clock3,style:'text-amber-700 dark:text-amber-300'},{label:t('Finished','منتهية'),n:counts.finished,Icon:CheckCircle2,style:'text-emerald-700 dark:text-emerald-300'},{label:t('Today','اليوم'),n:todayCount,Icon:CalendarDays,style:'text-[#355F82] dark:text-[#88A9CC]'}].map(({label,n,Icon,style})=><div key={label} className="flex items-center gap-3 min-w-0 rounded-xl bg-slate-50 dark:bg-[#25292D] p-3"><Icon aria-hidden="true" className={'w-5 h-5 shrink-0 '+style}/><div className="min-w-0"><p className="text-xs text-slate-500 dark:text-slate-400">{label}</p><p className="text-xl font-bold tabular-nums">{n}</p></div></div>)}
+      </div>
+    </section>}
+    <section aria-label={t('Session agenda','قائمة المحاضرات')} className={SURFACE_CARD+' rounded-2xl overflow-hidden'}>
+      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-[#353A3F] space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h2 className="font-bold text-lg">{todayOnly?t('Your agenda','جدولك اليوم'):t('Session agenda','جدول المحاضرات')}</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{shown.length} {t('sessions shown','محاضرات معروضة')}</p></div>
+          {!todayOnly&&<div className="relative w-full sm:w-72"><Search aria-hidden="true" className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/><input type="search" aria-label={t('Search sessions','بحث المحاضرات')} placeholder={t('Search topic or group','ابحث بالموضوع أو الجروب')} value={query} onChange={e=>setQuery(e.target.value)} className={INPUT_CLASS+' ps-9 min-h-[44px]'}/></div>}</div>
+        {!todayOnly&&<div role="group" aria-label={t('Filter sessions','تصفية المحاضرات')} className="flex flex-wrap gap-2">{filters.map(x=><button key={x.id} type="button" aria-pressed={filter===x.id} onClick={()=>setFilter(x.id)} className={'min-h-[40px] rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 '+(filter===x.id?'bg-[#355F82] text-white':'bg-slate-100 dark:bg-[#25292D] text-slate-600 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700')}>{t(x.en,x.ar)} <span className="ms-1 tabular-nums opacity-80">{x.n}</span></button>)}</div>}
+      </div>
+      {shown.length===0?<div className="p-4"><EmptyState icon={CalendarClock} title={todayOnly?t('No sessions scheduled for today','لا توجد محاضرات اليوم'):t('No matching sessions','لا توجد محاضرات مطابقة')}/>{!todayOnly&&<button type="button" className={BTN_SECONDARY+' mx-auto flex mt-3'} onClick={()=>{setQuery('');setFilter('all');}}>{t('Clear filters','مسح التصفية')}</button>}</div>:dates.map(d=><div key={d}>
+        <div className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-slate-50 dark:bg-[#25292D] border-b border-slate-100 dark:border-[#353A3F] text-xs font-semibold text-slate-600 dark:text-slate-300"><CalendarDays className="w-4 h-4"/><span>{formatDate(d)}</span>{d===today&&<StatusBadge tone="info">{t('Today','اليوم')}</StatusBadge>}</div>
+        <div className="divide-y divide-slate-100 dark:divide-[#353A3F]">{shown.filter(l=>l.lectureDate===d).map(l=>{
+          const s=stateOf(l),label=sessionLabel(s),sheet=attendanceSheets.find(x=>x.lectureId===l.id),group=groups.find(g=>g.id===l.groupId),room=rooms.find(r=>r.id===l.roomId);
+          const counted=entitlements.some(e=>e.lectureId===l.id&&e.instructorId===inst.id&&['eligible','approved'].includes(e.status));
+          const present=sheet?.records.filter(r=>r.mark==='present'||r.mark==='late').length||0;
+          const absent=sheet?.records.filter(r=>r.mark==='absent').length||0;
+          const rosterCount=studentsForSelectedLecture({lecture:l,students,transfers:studentTransfers}).length;
+          return <article key={l.id} data-session-id={l.id} className="grid grid-cols-[76px_minmax(0,1fr)] sm:grid-cols-[100px_minmax(0,1fr)_auto] gap-3 sm:gap-5 px-4 sm:px-6 py-5 items-start sm:items-center hover:bg-slate-50/70 dark:hover:bg-[#25292D]/50 transition-colors">
+            <div className="border-e border-slate-200 dark:border-[#42474D] pe-3 self-stretch flex flex-col justify-center"><p dir="ltr" className="text-start text-lg font-bold tabular-nums">{l.startTime.slice(0,5)}</p><p dir="ltr" className="text-start text-xs text-slate-500 dark:text-slate-400 tabular-nums">{l.endTime.slice(0,5)}</p><p className="text-[10px] text-slate-500 mt-2">{t('Period','الفترة')} {l.periodNumber}</p></div>
+            <div className="min-w-0 space-y-2"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={s==='finished'?'success':s==='missed'?'danger':s==='ready'||s==='running'?'info':'neutral'}>{t(label.en,label.ar)}</StatusBadge>{counted&&<StatusBadge tone="success">{t('Counted','محتسبة')}</StatusBadge>}{s==='finished'&&!counted&&<StatusBadge tone="warning">{t('Not counted','غير محتسبة')}</StatusBadge>}</div>
+            <h3 className="font-bold text-base break-words">{l.topic}</h3><div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5 min-w-0"><Users className="w-3.5 h-3.5 shrink-0"/><span className="break-words">{group?t(group.nameEn,group.nameAr):t('Unknown group','مجموعة غير معروفة')} · {rosterCount} {t('students','طلاب')}</span></span><span className="inline-flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 shrink-0"/>{room?.name||t('Room unavailable','القاعة غير متاحة')}</span></div>
+            {s==='finished'&&<div className="flex flex-wrap gap-3 text-xs font-semibold"><span className="text-emerald-700 dark:text-emerald-300">{t('Present','حاضر')} {present}</span><span className="text-rose-700 dark:text-rose-300">{t('Absent','غائب')} {absent}</span></div>}</div>
+            <button type="button" onClick={()=>openInstructorAttendance(l.id)} className={(s==='ready'||s==='running'?BTN_PRIMARY:BTN_SECONDARY)+' min-h-[44px] col-start-2 sm:col-start-auto justify-self-start sm:justify-self-end'}>{s==='finished'?t('Review session','مراجعة المحاضرة'):s==='running'?t('Continue session','استكمال المحاضرة'):t('Open session','فتح المحاضرة')} <ArrowUpRight className="w-4 h-4 rtl:rotate-[-90deg]"/></button>
+          </article>})}</div>
+      </div>)}
+    </section>
     {todayOnly&&<button type="button" className={BTN_SECONDARY+' text-xs'} onClick={()=>setInstructorRoute('checkin')}><MapPinCheck className="w-4 h-4"/>{t('Optional venue check-in','تسجيل الوصول للمقر (اختياري)')}</button>}
   </div>;
 };
@@ -747,12 +775,13 @@ export const InstructorAttendanceView: React.FC = () => {
     runLectureSession,
     rooms,
     instructorAttendanceLectureId: selectedLectureId,
-    setInstructorAttendanceLectureId: setSelectedLectureId,
+    setInstructorRoute,
     saveAttendanceDraft,
     enrollMidcampStudent,
     submitAndSyncAttendanceSheet,
     instructorCorrectSubmittedAttendance,
     reviewAttendanceDraft,
+    lang,
     t,
   } = useApp();
 
@@ -790,14 +819,6 @@ export const InstructorAttendanceView: React.FC = () => {
     localMark: string; serverMark: string; localNote?: string; serverNote?: string;
   }> | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
-
-  useEffect(() => {
-    if (myLectures.length > 0 && !myLectures.some((l) => l.id === selectedLectureId)) {
-      const preferred =
-        myLectures.find((l) => l.campDay === activeCamp?.currentCampDay) || myLectures[0];
-      setSelectedLectureId(preferred.id);
-    }
-  }, [myLectures, selectedLectureId, activeCamp?.currentCampDay]);
 
   // RLS intentionally restricts direct students reads to assigned groups.
   // Use a narrowly authorized, lecture-scoped RPC for visitors; never widen RLS.
@@ -1268,48 +1289,8 @@ export const InstructorAttendanceView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={t('Session Details', 'تفاصيل المحاضرة')}
-        subtitle={t(
-          'Search, filter and mark attendance for the selected lecture.',
-          'بحث وفلترة وتسجيل حضور طلاب المحاضرة المختارة.'
-        )}
-        actions={
-          <div className="flex flex-col gap-1.5 w-full sm:w-[380px]">
-            <label
-              htmlFor="instructor-attendance-lecture"
-              className="text-xs font-bold text-slate-700 dark:text-[#DEE1E4]"
-            >
-              {t('Lecture & group', 'المحاضرة والجروب')}
-            </label>
-            <select
-              id="instructor-attendance-lecture"
-              aria-label={t('Select lecture and group for attendance', 'اختر المحاضرة والجروب للحضور')}
-              value={selectedLectureId}
-              onChange={(e) => {
-                setSelectedLectureId(e.target.value);
-                // Search and visiting-student selections belong to the old
-                // lecture/group. Clear them before displaying the next roster.
-                setStudentSearch('');
-                setAttendanceStatusFilter('all');
-                setSecureVisitingMatches([]);
-                setLastCompletedVisitQuery('');
-                setVisitingLookupError(null);
-                setShowMidcampEnrollForm(false);
-                setFeedback(null);
-                setComparisonRows(null);
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-[#42474D] bg-white dark:bg-[#1D2023] text-sm font-semibold max-w-full focus:ring-2 focus:ring-blue-500"
-            >
-              {myLectures.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {groups.find(g => g.id === l.groupId)?.code || t('Unknown group', 'جروب غير معروف')} · D{l.campDay} ({l.lectureDate}) P{l.periodNumber} ({l.startTime}) · {l.topic}
-                </option>
-              ))}
-            </select>
-          </div>
-        }
-      />
+      <button type="button" onClick={()=>setInstructorRoute('schedule')} className={BTN_SECONDARY+' min-h-[44px]'}><ArrowLeft className="w-4 h-4 rtl:rotate-180"/>{t('Back to Sessions','العودة للمحاضرات')}</button>
+      <PageHeader title={t('Session Details','تفاصيل المحاضرة')} subtitle={t('Start your session, record attendance, then finish.','شغّل المحاضرة وسجل الحضور ثم اعتمدها.')}/>
 
       {feedback && (
         <InlineBanner
@@ -1331,13 +1312,13 @@ export const InstructorAttendanceView: React.FC = () => {
                   {t('Selected lecture', 'المحاضرة المختارة')}
                 </p>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
-                  {groups.find(g => g.id === selectedLecture.groupId)?.code || t('Unknown group', 'جروب غير معروف')}
-                  {' · '}{selectedLecture.topic}
+                  {selectedLecture.topic}
                 </h2>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-[#A0A5AA]">
-                  <span>D{selectedLecture.campDay} · {selectedLecture.lectureDate} · P{selectedLecture.periodNumber}</span>
+                  <span>{t('Day','اليوم')} {selectedLecture.campDay} · {selectedLecture.lectureDate} · {t('Period','الفترة')} {selectedLecture.periodNumber}</span>
+                  <span>{t('Group','المجموعة')}: {groups.find(g=>g.id===selectedLecture.groupId)?.[lang==='ar'?'nameAr':'nameEn']||t('Unknown group','مجموعة غير معروفة')}</span>
                   <span>{selectedLecture.startTime}–{selectedLecture.endTime}</span>
-                  <span>{t('Room','القاعة')}: {rooms.find(r=>r.id===selectedLecture.roomId)?.code}</span>
+                  <span>{t('Room','القاعة')}: {rooms.find(r=>r.id===selectedLecture.roomId)?.name}</span>
                   <span>{t('Home-group students', 'طلاب الجروب')}: {studentsForSelectedLecture({
                     lecture: selectedLecture, students, transfers: studentTransfers,
                   }).length}</span>
@@ -1347,16 +1328,16 @@ export const InstructorAttendanceView: React.FC = () => {
                 <StatusBadge tone={isLockedOrSubmitted ? 'success' : 'warning'}>
                   {isLockedOrSubmitted
                     ? (canCorrectSubmitted ? t('Submitted · Audited corrections', 'معتمد · تعديل موثق') : t('Submitted · Locked', 'معتمد · مغلق'))
-                    : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
+                    : !canOpenRoster ? t(sessionLabel(lifecycle).en,sessionLabel(lifecycle).ar) : t('Draft · Editable', 'مسودة · قابلة للتعديل')}
                 </StatusBadge>
-                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#A0A5AA]">
+                {canOpenRoster && <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-[#A0A5AA]">
                   {existingSheet?.syncState === OfflineSyncState.SYNCED
                     ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                     : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
                   {existingSheet?.syncState === OfflineSyncState.SYNCED
                     ? t('Synced', 'متزامن')
                     : t('Local draft / pending sync', 'مسودة محلية / انتظار المزامنة')}
-                </span>
+                </span>}
               </div>
             </div>
           </section>
@@ -1722,7 +1703,7 @@ export const InstructorAttendanceView: React.FC = () => {
       ) : (
         <EmptyState
           icon={ClipboardCheck}
-          title={t('No lectures assigned yet', 'لا توجد محاضرات مسندة لتسجيل الحضور')}
+          title={t('Session unavailable. Choose a session from the list.','المحاضرة غير متاحة. اختر محاضرة من القائمة.')}
         />
       )}
     </div>
