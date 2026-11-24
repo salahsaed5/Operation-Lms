@@ -7,6 +7,7 @@ import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { UserRole } from './types/database';
 import { AuthView } from './pages/auth/AuthView';
+import { CitsBrand } from './components/ui/CitsBrand';
 import { AdminLayout } from './layouts/AdminLayout';
 import { InstructorLayout } from './layouts/InstructorLayout';
 import { AdminDashboardView } from './pages/admin/AdminDashboardView';
@@ -40,7 +41,7 @@ const AppRouter: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#f4f6f9] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-6">
         <div className="text-center space-y-2">
-          <p className="text-sm font-bold tracking-tight">CITS Camp Operations</p>
+          <CitsBrand className="mx-auto"/>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {t('Verifying secure Supabase session & RLS context...', 'جاري التحقق من الجلسة الآمنة وصلاحيات RLS...')}
           </p>
