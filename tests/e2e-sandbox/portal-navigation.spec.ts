@@ -393,6 +393,11 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
       expect(await header.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
       expect(await header.evaluate(el=>getComputedStyle(el).marginTop)).toBe('0px');
       await expect(header.getByRole('combobox',{name:'Select working Camp'})).toBeVisible();
+      await expect(header.getByText('Instructor Portal',{exact:true})).toHaveCount(0);
+      await expect(header.locator('.instructor-topbar-day')).toHaveText(/Day \d+\/\d+/);
+      const campBounds=await header.locator('.instructor-topbar-camp').boundingBox();
+      const dayBounds=await header.locator('.instructor-topbar-day').boundingBox();
+      expect(Math.abs(campBounds!.y+campBounds!.height/2-dayBounds!.y-dayBounds!.height/2)).toBeLessThan(2);
       await expect(header.getByRole('button',{name:'Toggle theme'})).toBeVisible();
       const headBounds=await header.boundingBox();
       expect(headBounds!.x).toBeGreaterThanOrEqual(0);
