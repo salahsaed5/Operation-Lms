@@ -273,6 +273,7 @@ interface AppContextValue {
   }) => Promise<ActionResult>;
   updateCampAndSettings: (input: {
     campId: string;
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     startDate: string;
@@ -1480,6 +1481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCampAndSettings = async (input: {
     campId: string;
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     startDate: string;
@@ -1500,6 +1502,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
     if (calendarError) return { ok: false, error: calendarError };
+    if (input.venueId && input.venueId !== target.venueId) {
+      if (!venues.some(v => v.id === input.venueId)) return { ok: false, error: 'Choose a valid training venue.' };
+      // Historical GPS and scheduled room assignments must not silently change venue.
+      if (checkins.some(c => c.campId === target.id) ||
+          lectures.some(l => l.campId === target.id) ||
+          groups.some(g => g.campId === target.id && rooms.some(r => r.id === g.defaultRoomId && r.venueId !== input.venueId))) {
+        return { ok: false, error: 'Reconcile existing groups, scheduled lectures and check-ins before changing the venue.' };
+      }
+    }
     const conflictingLecture = lectures.find(l => l.campId === target.id &&
       (l.campDay > input.durationDays ||
        l.lectureDate !== calculateCampDayDate(input.startDate, l.campDay, input.operatingWeekdays)));
@@ -1521,6 +1532,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         c.id === input.campId
           ? {
               ...c,
+              venueId: input.venueId ?? c.venueId,
               nameEn: input.nameEn.trim(),
               nameAr: input.nameAr.trim() || input.nameEn.trim(),
               startDate: input.startDate,

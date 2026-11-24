@@ -63,3 +63,10 @@ test('workbook rejects malicious or duplicate worksheet names',()=>{
   assert.throws(()=>createXlsxWorkbook([{name:'Bad/Name',rows:[]}]),/sheet name/);
   assert.throws(()=>createXlsxWorkbook([{name:'Sheet',rows:[]},{name:'sheet',rows:[]}]),/sheet name/);
 });
+
+test('RTL worksheet places autoFilter before merged cells in OOXML schema order', async()=>{
+  const wb=createXlsxWorkbook([{name:'ملخص',rightToLeft:true,rows:[[excelCell('Title')],[excelCell('Name')]],merges:['A1:B1'],autoFilter:'A2:B2'}]);
+  const xml=getZipLocalEntries(new Uint8Array(await wb.arrayBuffer()))['xl/worksheets/sheet1.xml'];
+  assert.match(xml,/rightToLeft="1"/);
+  assert.ok(xml.indexOf('<autoFilter') < xml.indexOf('<mergeCells'));
+});

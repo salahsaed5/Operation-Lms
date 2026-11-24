@@ -1093,6 +1093,7 @@ export async function createDraftCampInDb(input: {
 
 export async function updateCampInDb(input: {
   campId: string;
+  venueId?: string;
   nameEn: string;
   nameAr: string;
   startDate: string;
@@ -1109,6 +1110,7 @@ export async function updateCampInDb(input: {
   const { error: campErr } = await client
     .from('camps')
     .update({
+      ...(input.venueId ? { venue_id: input.venueId } : {}),
       name_en: input.nameEn.trim(),
       name_ar: input.nameAr.trim(),
       start_date: input.startDate,

@@ -71,7 +71,7 @@ test('full 10-day report exports reference-style OOXML sheets with Arabic, visit
   assert.equal(bytes[1],0x4b);
   const entries=unzipStoredXml(bytes);
   assert.ok(entries['[Content_Types].xml']);
-  assert.match(entries['xl/workbook.xml'],/Summary/);
+  assert.match(entries['xl/workbook.xml'],/الملخص/);
   assert.match(entries['xl/workbook.xml'],/Daily Attendance/);
   assert.match(entries['xl/workbook.xml'],/Lecture Details/);
   assert.match(entries['xl/workbook.xml'],/إجمالي الطلاب/);
