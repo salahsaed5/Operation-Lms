@@ -61,6 +61,9 @@ test('Take Attendance opens the clicked lecture rather than a previously selecte
   await expect(page.getByRole('button',{name:'Back to Sessions'})).toBeVisible();
   await expect(page.getByRole('combobox',{name:'Select lecture and group for attendance'})).toHaveCount(0);
   await nav.getByRole('button', { name: 'Home', exact: true }).click();
+  await expect(page.locator('.instructor-agenda .instructor-agenda-all')).toBeVisible();
+  await expect(page.locator('.instructor-agenda-row').first()).toBeVisible();
+  await expect(page.locator('.instructor-agenda-row').first()).toHaveAttribute('data-session-state', /^(upcoming|ready|running|finished|missed)$/);
   await page.getByRole('article').filter({hasText:'Minimum Spanning Trees & Disjoint Set Union'}).getByRole('button',{name:'Open session',exact:true}).click();
 
   // Dashboard P2 was clicked, so the attendance screen MUST switch to that
