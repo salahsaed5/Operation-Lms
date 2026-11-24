@@ -85,7 +85,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
         <div className="instructor-topbar-brand">
           <button type="button" onClick={()=>setInstructorRoute('dashboard')} aria-label={t('Instructor home','الرئيسية للمحاضر')} className="flex items-center gap-2.5 text-start cursor-pointer min-w-0">
             <span className="instructor-topbar-logo"><GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true"/></span>
-            <span className="min-w-0"><span className="block font-bold text-sm sm:text-base truncate">{t('Instructor Portal','بوابة المحاضر')}</span><span className="hidden sm:block text-[11px] text-blue-100/85 truncate">{activeCamp ? t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,`اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`) : t('Operation LMS','Operation LMS')}</span></span>
+            <span className="min-w-0"><span className="block font-bold text-sm sm:text-base truncate">{t('Instructor Portal','بوابة المحاضر')}</span><span className="hidden sm:block text-[11px] instructor-topbar-secondary truncate">{activeCamp ? t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,`اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`) : t('Operation LMS','Operation LMS')}</span></span>
           </button>
         </div>
         <div className="instructor-camp-bar instructor-topbar-camp">
@@ -110,7 +110,7 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
           <div className="instructor-topbar-account">
             <button type="button" onClick={()=>setInstructorRoute('profile')} aria-label={t('Open my profile','فتح الملف الشخصي')} className="instructor-topbar-profile">
               <span className="instructor-topbar-avatar" aria-hidden="true">{initials}</span>
-              <span className="instructor-topbar-name"><strong className="block truncate text-sm">{displayName}</strong><span className="block text-[11px] text-blue-100/80">{t('Instructor','محاضر')}</span></span>
+              <span className="instructor-topbar-name"><strong className="block truncate text-sm">{displayName}</strong><span className="block text-[11px] instructor-topbar-secondary">{t('Instructor','محاضر')}</span></span>
             </button>
             <button type="button" onClick={()=>signOut()} aria-label={t('Logout','تسجيل الخروج')} title={t('Logout','تسجيل الخروج')} className="instructor-topbar-control instructor-topbar-logout"><LogOut className="w-4 h-4"/></button>
           </div>
