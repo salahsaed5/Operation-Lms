@@ -298,3 +298,71 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .dark .cits-loading-track {background:#33414d;}
 .dark .cits-loading-shield {color:#43ced7;}
 @media(prefers-reduced-motion:reduce) {.cits-loading-track span {animation:none;transform:translateX(58%);}}
+
+/* CITS sign-in: live form over restrained curved brand architecture. */
+.cits-auth-shell {position:relative;isolation:isolate;min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,48fr) minmax(0,52fr);background:#f5f6f7;color:var(--text-primary);}
+.cits-auth-hero {position:relative;min-width:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(24px,5vh,56px);padding:48px 9% 56px 4%;}
+.cits-auth-curves {position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;}
+.cits-auth-hero-brand {position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:10px;margin-inline-end:12%;max-width:100%;}
+.cits-auth-hero-brand .cits-auth-hero-logo {width:clamp(180px,20vw,286px);align-items:center;}
+.cits-auth-hero-logo .cits-brand-mark {max-height:none;}
+.cits-auth-hero-brand p {display:flex;align-items:center;gap:10px;color:#d8e8ed;font-size:clamp(10px,1vw,13px);letter-spacing:.09em;text-align:center;white-space:nowrap;}
+.cits-auth-hero-brand p::before,.cits-auth-hero-brand p::after {content:"";display:block;width:20px;height:1px;background:#b8d3dc;opacity:.65;}
+.cits-auth-hero-art {display:block;width:min(100%,570px);height:auto;max-height:51vh;object-fit:contain;position:relative;margin-inline-start:-3%;mask-image:linear-gradient(to bottom,transparent 0%,#000 8%,#000 87%,transparent 100%);-webkit-mask-image:linear-gradient(to bottom,transparent 0%,#000 8%,#000 87%,transparent 100%);border-radius:18px;}
+.cits-auth-form-side {min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:88px 32px 48px;background:radial-gradient(ellipse at 2% 86%,rgba(136,209,213,.14),transparent 58%);}
+.cits-auth-controls {position:absolute;inset-block-start:24px;inset-inline:28px;display:flex;justify-content:flex-end;align-items:center;gap:12px;}
+.cits-auth-mobile-brand {display:none;}
+.cits-auth-utility {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:7px 12px;border:1px solid #dbe3e9;border-radius:999px;background:rgba(255,255,255,.6);color:#344d60;font-size:12px;font-weight:600;cursor:pointer;}
+.cits-auth-utility:hover {background:#fff;}
+.cits-auth-theme {width:40px;padding:7px;background:#123849;color:white;border-color:#123849;}
+.cits-auth-theme:hover {background:#205469;}
+.cits-auth-card {width:100%;max-width:480px;box-sizing:border-box;padding:clamp(26px,3vw,42px);border:1px solid rgba(255,255,255,.9);border-radius:28px;background:rgba(255,255,255,.88);box-shadow:0 12px 36px rgba(17,53,72,.09);position:relative;}
+.cits-auth-standard h1 {font-size:32px;line-height:1.25;letter-spacing:-.035em;color:#102f45;margin:0;font-weight:750;}
+.cits-auth-accent {width:44px;height:4px;border-radius:999px;background:linear-gradient(90deg,#087a8c,#08c8c7);margin-top:12px;}
+.cits-auth-login-form {display:grid;gap:16px;}
+.cits-auth-field {position:relative;display:flex;align-items:center;min-width:0;}
+.cits-auth-field-icon {position:absolute;inset-inline-start:16px;top:50%;transform:translateY(-50%);width:18px;height:18px;pointer-events:none;color:#416477;z-index:1;}
+.cits-auth-input {box-sizing:border-box;width:100%;min-width:0;height:52px;padding-block:10px;padding-inline:46px 18px;border:1px solid #d6e0e7;border-radius:999px;background:#fff;color:#102f45;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
+.cits-auth-input::placeholder {color:#667b8b;opacity:1;}
+.cits-auth-input:focus {border-color:#168a9b;box-shadow:0 0 0 3px rgba(8,180,197,.12);}
+.cits-auth-input:disabled {opacity:.65;}
+.cits-auth-password {padding-inline-end:52px;}
+.cits-auth-eye {position:absolute;inset-inline-end:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;color:#536e80;border-radius:999px;cursor:pointer;}
+.cits-auth-eye:hover {background:#edf4f6;}
+.cits-auth-submit {display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;width:100%;border:0;border-radius:999px;background:linear-gradient(110deg,#092f46,#076477 67%,#07838c);color:white;font-size:16px;font-weight:700;margin-top:7px;cursor:pointer;box-shadow:0 5px 14px rgba(7,84,95,.14);}
+.cits-auth-submit:hover {background:linear-gradient(110deg,#123c53,#087887);}
+.cits-auth-submit:disabled {opacity:.6;cursor:not-allowed;}
+.cits-auth-support {display:flex;justify-content:center;align-items:center;gap:7px;text-align:center;font-size:12px;line-height:1.6;color:var(--text-muted);margin:0;}
+.cits-auth-support svg {color:#087a8c;}
+.dark .cits-auth-shell {background:#101c25;}
+.dark .cits-auth-card {background:#182832;border-color:#304451;box-shadow:none;}
+.dark .cits-auth-standard h1 {color:#f0f5f8;}
+.dark .cits-auth-input {background:#15232c;border-color:#3a4b58;color:#eef5fa;}
+.dark .cits-auth-input::placeholder {color:#a2b5c2;}
+.dark .cits-auth-field-icon,.dark .cits-auth-eye {color:#a8c4d2;}
+.dark .cits-auth-eye:hover {background:#263b47;}
+.dark .cits-auth-utility {color:#d9eaf2;background:#1d303b;border-color:#364c5a;}
+.dark .cits-auth-utility:hover {background:#29424e;}
+.dark .cits-auth-support svg {color:#49c8d2;}
+[dir="rtl"] .cits-auth-curves {transform:scaleX(-1);}
+[dir="rtl"] .cits-auth-hero {padding:48px 4% 56px 9%;}
+[dir="rtl"] .cits-auth-hero-brand p {letter-spacing:normal;}
+[dir="rtl"] .cits-auth-hero-art {transform:scaleX(-1);}
+@media(max-width:1023px) {
+  .cits-auth-shell {grid-template-columns:minmax(0,1fr);background:radial-gradient(ellipse at 10% 0%,rgba(8,180,197,.10),transparent 40%),#f5f6f7;}
+  .cits-auth-hero {display:none;}
+  .cits-auth-form-side {min-height:100vh;min-height:100dvh;padding:92px 20px 40px;}
+  .cits-auth-controls {justify-content:space-between;inset-block-start:20px;inset-inline:20px;}
+  .cits-auth-mobile-brand {display:block;min-width:0;}
+  .cits-auth-mobile-brand .cits-brand {width:138px;}
+  .cits-auth-card {max-width:480px;}
+  .dark .cits-auth-shell {background:#101c25;}
+}
+@media(max-width:479px) {
+  .cits-auth-form-side {padding:80px 14px 24px;}
+  .cits-auth-controls {inset-inline:16px;inset-block-start:18px;}
+  .cits-auth-card {padding:26px 20px;border-radius:22px;}
+  .cits-auth-standard h1 {font-size:28px;}
+  .cits-auth-input {font-size:16px;}
+  .cits-auth-support {font-size:11px;}
+}
