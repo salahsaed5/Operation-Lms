@@ -81,3 +81,9 @@ test('students belong to exactly one drilldown category', () => {
   assert.equal(r.noFinalizedLectureYet,1);
   assert.equal(r.enrolled,r.everAttended+r.neverAttended+r.noFinalizedLectureYet);
 });
+
+test('missing or excused finalized rows are never classified as absent',()=>{
+  const r=report([st('a'),st('b')],[lec('l',1)],[sh('s','l',[['b',AttendanceMark.EXCUSED]])]);
+  assert.equal(r.neverAttended,0);
+  assert.equal(r.noFinalizedLectureYet,2);
+});

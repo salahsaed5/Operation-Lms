@@ -1162,6 +1162,10 @@ export interface Database {
           cross_group_count: number;
         };
       };
+      instructor_correct_submitted_attendance_tx: {
+        Args: { p_sheet_id: string; p_student_id: string; p_mark: DbAttendanceMark; p_note: string; p_expected_mark: DbAttendanceMark };
+        Returns: Json;
+      };
       admin_override_entitlement_tx: {
         Args: {
           p_entitlement_id: string;

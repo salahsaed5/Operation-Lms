@@ -94,7 +94,7 @@ export function buildCampToDateReport(input: {
     const daysAbsent = [...dailyPresence.values()].filter(d => d.absent && !d.present && !d.late).length;
     const category: CampToDateCategory = attendedDays.length > 0
       ? 'attended'
-      : eligibleFinalizedLectures > 0 ? 'never_attended' : 'pending';
+      : daysAbsent > 0 ? 'never_attended' : 'pending';
     return {
       studentId: st.id,
       studentCode: st.studentCode,

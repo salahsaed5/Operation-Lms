@@ -74,10 +74,10 @@ export function buildCampAttendanceWorkbook(input: {
     ' to ' + camp.endDate + ' | ' + reportState + ' | Cairo generated ' + generated;
 
   const summaryRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  ' + reportState + ' CAMP ATTENDANCE REPORT',8),
+    headingRow('OPERATION LMS  |  تقرير الحضور والغياب  |  ' + reportState,8),
     subheadingRow(subtitle,8),
     Array.from({length:8},blank),
-    [c('CAMP SUMMARY',3),c('Value',3)],
+    [c('إجمالي الطلاب',3),c(official.enrolled,10),c('الحاضرون',3),c(official.everAttended,5),c('لم يحضروا',3),c(official.neverAttended,7),c('غير محسوم',3),c(official.noFinalizedLectureYet,9)],
     [c('Camp code',4),c(camp.code,4)],
     [c('Camp name',4),c(camp.nameEn,4)],
     [c('Period',4),c(camp.startDate + ' to ' + camp.endDate,4)],
@@ -101,8 +101,14 @@ export function buildCampAttendanceWorkbook(input: {
     [c('Student appears once, even if visiting another group or attending multiple same-day lectures.',4)],
     [c('A student joining on Day 4 has Days 1–3 marked —, NOT absent.',4)],
   ];
+  summaryRows.push(Array.from({length:8},blank),[c('المجموعة',3),c('إجمالي الطلاب',3),c('الحاضرون',3),c('لم يحضروا',3),c('غير محسوم',3)]);
+  for(const g of groups.filter(g=>g.campId===camp.id && (!groupId||g.id===groupId))){
+    const members=official.students.filter(st=>st.homeGroupId===g.id);
+    summaryRows.push([c(g.nameAr||g.nameEn,4),c(members.length,10),c(members.filter(s=>s.category==='attended').length,5),c(members.filter(s=>s.category==='never_attended').length,7),c(members.filter(s=>s.category==='pending').length,9)]);
+  }
   const summary:ExcelSheet={
-    name:'Summary',
+    name:'الملخص',
+    rightToLeft:true,
     rows:summaryRows,
     widths:[53,38,16,16,16,16,16,16],
     merges:['A1:H1','A2:H2','A15:H15','A23:H23','A24:H24','A25:H25','A26:H26'],
@@ -196,8 +202,9 @@ export function buildCampAttendanceWorkbook(input: {
       const status=st.category==='attended'?'حاضر':
         st.category==='pending'?'لم تُحسم':
         provisional?'لم يحضر حتى الآن':'غائب';
+      const rowStyle=rows.length%2===0?4:12;
       rows.push([
-        c(st.fullName,4),c(st.studentCode,4),c(codeOf(st.homeGroupId),4),
+        c(st.fullName,rowStyle),c(st.studentCode,rowStyle),c(codeOf(st.homeGroupId),rowStyle),
         c(st.joinedCampDay,10),c(counts.eligible,10),c(counts.attended,5),
         c(counts.absent,counts.absent>0?7:10),
         c(status,st.category==='attended'?5:st.category==='never_attended'?7:9),
@@ -205,7 +212,7 @@ export function buildCampAttendanceWorkbook(input: {
     }
     if(!listed.length)rows.push([c('لا يوجد طلاب في هذه الفئة',4)]);
     return {
-      name,rows,widths:[32,20,21,18,23,21,20,25],
+      name,rows,rightToLeft:true,widths:[32,20,21,18,23,21,20,25],
       merges:['A1:H1','A2:H2'],freeze:{columns:2,rows:4,topLeft:'C5'},
       autoFilter:'A4:H'+Math.max(5,rows.length),
     };

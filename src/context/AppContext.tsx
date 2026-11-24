@@ -101,6 +101,7 @@ import {
 import {
   acknowledgeLectureInDb,
   adminCorrectAttendanceRecordInDb,
+  instructorCorrectSubmittedAttendanceInDb,
   archiveCampInDb,
   activateCampInDb,
   batchImportStudentsInDb,
@@ -135,6 +136,7 @@ import {
   transferStudentInDb,
   updateCampInDb,
   updateInstructorInDb,
+  updateInstructorCredentialInDb,
   updateLectureInDb,
   uploadCheckinSelfie,
   upsertGroupInDb,
@@ -253,6 +255,7 @@ interface AppContextValue {
     capacity: number;
   }) => Promise<ActionResult>;
   createVenue: (input: {
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     address: string;
@@ -273,6 +276,7 @@ interface AppContextValue {
   }) => Promise<ActionResult>;
   updateCampAndSettings: (input: {
     campId: string;
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     startDate: string;
@@ -302,6 +306,8 @@ interface AppContextValue {
   updateInstructorAccount: (input: {
     instructorId: string;
     profileId: string;
+    instructorCode?: string;
+    username?: string;
     fullNameEn?: string;
     fullNameAr?: string;
     phone?: string;
@@ -312,6 +318,7 @@ interface AppContextValue {
     assignedToActiveCamp?: boolean;
   }) => Promise<ActionResult>;
 
+  updateInstructorCredential: (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }) => Promise<ActionResult>;
   triggerInstructorPasswordReset: (instructorId: string) => Promise<ActionResult>;
 
   createSingleStudent: (input: {
@@ -398,6 +405,10 @@ interface AppContextValue {
       serverNote?: string;
     }[];
   }>;
+
+  instructorCorrectSubmittedAttendance: (input: {
+    sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+  }) => Promise<ActionResult>;
 
   adminCorrectAttendanceRecord: (input: {
     sheetId: string;
@@ -1352,6 +1363,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createVenue = async (input: {
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     address: string;
@@ -1372,6 +1384,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { ok: false, error: 'Geofence radius must be 25–1000 meters.' };
     }
 
+    if (!auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN || !auth.currentProfile.isActive) return {ok:false,error:'Active Admin required.'};
+    if(input.venueId){
+      const old=venues.find(v=>v.id===input.venueId);
+      if(!old)return {ok:false,error:'Venue not found.'};
+      const related=camps.filter(c=>c.venueId===old.id);
+      if(related.some(c=>c.status===CampStatus.ARCHIVED))return {ok:false,error:'Venue linked to an archived Camp. Create a new venue to preserve history.'};
+      if((old.latitude!==input.latitude||old.longitude!==input.longitude||old.geofenceRadiusMeters!==input.geofenceRadiusMeters)&&checkins.some(c=>related.some(camp=>camp.id===c.campId)))return {ok:false,error:'GPS history exists for this venue. Create a new venue for future check-ins.'};
+    }
     if (isSupabaseMode) {
       try {
         await createVenueInDb(input);
@@ -1386,7 +1406,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!import.meta.env.DEV) {
       return { ok: false, error: 'A real Supabase connection is required to add venues.' };
     }
-    setVenues(prev => [...prev, { id: crypto.randomUUID(), ...input }]);
+    setVenues(prev => input.venueId ? prev.map(v=>v.id===input.venueId?{...v,...input,id:v.id}:v) : [...prev, { id: crypto.randomUUID(), ...input }]);
     return { ok: true };
   };
 
@@ -1480,6 +1500,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCampAndSettings = async (input: {
     campId: string;
+    venueId?: string;
     nameEn: string;
     nameAr: string;
     startDate: string;
@@ -1500,6 +1521,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const calendarError = validateCampWeekdays(input.startDate, input.operatingWeekdays);
     if (calendarError) return { ok: false, error: calendarError };
+    if (input.venueId && input.venueId !== target.venueId) {
+      if (!venues.some(v => v.id === input.venueId)) return { ok: false, error: 'Choose a valid training venue.' };
+      // Historical GPS and scheduled room assignments must not silently change venue.
+      if (checkins.some(c => c.campId === target.id) ||
+          lectures.some(l => l.campId === target.id) ||
+          groups.some(g => g.campId === target.id && rooms.some(r => r.id === g.defaultRoomId && r.venueId !== input.venueId))) {
+        return { ok: false, error: 'Reconcile existing groups, scheduled lectures and check-ins before changing the venue.' };
+      }
+    }
     const conflictingLecture = lectures.find(l => l.campId === target.id &&
       (l.campDay > input.durationDays ||
        l.lectureDate !== calculateCampDayDate(input.startDate, l.campDay, input.operatingWeekdays)));
@@ -1521,6 +1551,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         c.id === input.campId
           ? {
               ...c,
+              venueId: input.venueId ?? c.venueId,
               nameEn: input.nameEn.trim(),
               nameAr: input.nameAr.trim() || input.nameEn.trim(),
               startDate: input.startDate,
@@ -1850,6 +1881,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateInstructorAccount = async (input: {
     instructorId: string;
     profileId: string;
+    instructorCode?: string;
+    username?: string;
     fullNameEn?: string;
     fullNameAr?: string;
     phone?: string;
@@ -1873,11 +1906,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const target = instructors.find(i=>i.id===input.instructorId && i.profileId===input.profileId);
+    if (!target) return {ok:false,error:'Instructor account not found.'};
+    const code = input.instructorCode?.trim().toUpperCase();
+    const username = input.username?.trim().toLowerCase();
+    if (code !== undefined && (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code) || instructors.some(i=>i.id!==target.id && i.instructorCode.toUpperCase()===code))) return {ok:false,error:'Invalid or duplicate instructor code.'};
+    if (username !== undefined && (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username) || profiles.some(i=>i.id!==target.profileId && i.username?.toLowerCase()===username))) return {ok:false,error:'Invalid or duplicate username.'};
     if (isSupabaseMode) {
       try {
         await updateInstructorInDb({
           instructorId: input.instructorId,
           profileId: input.profileId,
+          instructorCode: code,
+          username,
           fullNameEn: input.fullNameEn,
           fullNameAr: input.fullNameAr,
           phone: input.phone,
@@ -1903,6 +1944,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         inst.id === input.instructorId
           ? {
               ...inst,
+              instructorCode: code ?? inst.instructorCode,
+              username: username ?? inst.username,
               fullNameEn:
                 input.fullNameEn !== undefined && input.fullNameEn.trim()
                   ? input.fullNameEn.trim()
@@ -1925,6 +1968,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         p.id === input.profileId
           ? {
               ...p,
+              username: username ?? p.username,
               fullNameEn:
                 input.fullNameEn !== undefined && input.fullNameEn.trim()
                   ? input.fullNameEn.trim()
@@ -1962,6 +2006,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { ok: true };
   };
 
+  const updateInstructorCredential = async (input: { instructorId: string; action: 'email'|'temporary_credential'; value: string }): Promise<ActionResult> => {
+    if (!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role !== UserRole.ADMIN || !auth.currentProfile.isActive)
+      return {ok:false,error:'Connected Admin account required.'};
+    try {
+      await updateInstructorCredentialInDb(input);
+      await refreshOperationalData();
+      return {ok:true};
+    } catch (err) {return {ok:false,error:err instanceof Error?err.message:'Credential update failed.'};}
+  };
   const triggerInstructorPasswordReset = async (instructorId: string): Promise<ActionResult> => {
     if (
       !auth.isAuthenticated ||
@@ -2840,7 +2893,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // Do NOT export cached/offline Instructor draft overlays: fetch a fresh
       // authenticated Admin snapshot and include only server-finalized sheets.
-      const latest = await fetchOperationalSnapshot(supabaseCtx);
+      const latest = await fetchOperationalSnapshot(supabaseCtx, activeCamp.id);
       const camp = latest.camps.find(c => c.id === activeCamp.id);
       if (!camp) return { ok: false, error: 'Selected Camp was not found on the server.' };
       if (camp.durationDays < 1 || camp.durationDays > 60) {
@@ -3145,6 +3198,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     return { ok: true };
+  };
+
+  const instructorCorrectSubmittedAttendance = async (input: {
+    sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+  }): Promise<ActionResult> => {
+    if (!isSupabaseMode || !auth.isAuthenticated || auth.currentProfile.role !== UserRole.INSTRUCTOR ||
+        activeCamp?.status !== CampStatus.ACTIVE || !input.note.trim()) {
+      return { ok: false, error: 'A connected active instructor and an audit reason are required.' };
+    }
+    const sheet = attendanceSheets.find(s => s.id === input.sheetId);
+    const lecture = lectures.find(l => l.id === sheet?.lectureId);
+    if (!sheet || sheet.campId !== activeCamp.id || sheet.status !== AttendanceSheetStatus.SUBMITTED ||
+        !auth.activeInstructorId || !lecture ||
+        sheet.instructorId !== auth.activeInstructorId ||
+        (lecture.substituteInstructorId || lecture.instructorId) !== auth.activeInstructorId) {
+      return { ok: false, error: 'Only your own submitted, unlocked lecture may be corrected.' };
+    }
+    try {
+      await instructorCorrectSubmittedAttendanceInDb(input);
+      await refreshOperationalData();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Correction failed.' };
+    }
   };
 
   const adminCorrectAttendanceRecord = async (input: {
@@ -3928,6 +4005,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         provisionInstructor,
         updateInstructorAccount,
         triggerInstructorPasswordReset,
+        updateInstructorCredential,
         createSingleStudent,
         enrollMidcampStudent,
         transferStudent,
@@ -3941,6 +4019,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reviewAttendanceDraft,
         downloadTenDayAttendanceWorkbook,
         adminCorrectAttendanceRecord,
+        instructorCorrectSubmittedAttendance,
         reviewLectureEntitlement,
         reviewInstructorRequest,
         submitInstructorRequest,

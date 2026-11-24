@@ -16,6 +16,7 @@ export interface ExcelSheet {
   merges?: string[];
   freeze?: { columns: number; rows: number; topLeft: string };
   autoFilter?: string;
+  rightToLeft?: boolean;
 }
 
 export const excelCell = (value: string | number, style = 0): ExcelCell => ({ value, style });
@@ -54,11 +55,12 @@ function cellXml(cell: ExcelCell | undefined, column: number, row: number): stri
 }
 function sheetXml(sh: ExcelSheet): string {
   const frozen = sh.freeze;
+  const viewAttrs = ' workbookViewId="0"' + (sh.rightToLeft ? ' rightToLeft="1"' : '');
   const pane = frozen
-    ? '<sheetView workbookViewId="0"><pane xSplit="' + frozen.columns +
+    ? '<sheetView' + viewAttrs + '><pane xSplit="' + frozen.columns +
       '" ySplit="' + frozen.rows + '" topLeftCell="' + x(frozen.topLeft) +
       '" activePane="bottomRight" state="frozen"/></sheetView>'
-    : '<sheetView workbookViewId="0"/>';
+    : '<sheetView' + viewAttrs + '/>';
   const widths = (sh.widths || []).map((w,i) => '<col min="' + (i+1) +
     '" max="' + (i+1) + '" width="' + Math.min(50,Math.max(8,w)) +
     '" customWidth="1"/>').join('');
@@ -73,8 +75,8 @@ function sheetXml(sh: ExcelSheet): string {
   return xmlPrefix + '<worksheet xmlns="' + main + '"><sheetViews>' +
     pane + '</sheetViews><sheetFormatPr defaultRowHeight="18"/>' +
     (widths ? '<cols>' + widths + '</cols>' : '') +
-    '<sheetData>' + data + '</sheetData>' + merges +
-    (sh.autoFilter ? '<autoFilter ref="' + x(sh.autoFilter) + '"/>' : '') +
+    '<sheetData>' + data + '</sheetData>' +
+    (sh.autoFilter ? '<autoFilter ref="' + x(sh.autoFilter) + '"/>' : '') + merges +
     '<printOptions horizontalCentered="1"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>' +
     '<pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/>' +
     '</worksheet>';
@@ -86,9 +88,9 @@ function styleXml(): string {
     '<font><b/><sz val="14"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
     '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>';
   const fills = '<fills count="9"><fill><patternFill patternType="none"/></fill>' +
-    '<fill><patternFill patternType="gray125"/></fill>' + solid('FF102A43') +
-    solid('FFE8F0F8') + solid('FF163A5F') + solid('FFE0F4E7') +
-    solid('FFFFF0C8') + solid('FFFDE4E3') + solid('FFF0F2F5') + '</fills>';
+    '<fill><patternFill patternType="gray125"/></fill>' + solid('FF1F2A44') +
+    solid('FFE8F0F8') + solid('FF163A5F') + solid('FFE7F4EC') +
+    solid('FFFFF0C8') + solid('FFFBEAEA') + solid('FFF6F7FA') + '</fills>';
   const align = '<alignment horizontal="left" vertical="center" wrapText="1"/>';
   const center = '<alignment horizontal="center" vertical="center" wrapText="1"/>';
   const xf = (font:number,fill:number,fmt=0,alignment=align) =>
@@ -99,13 +101,13 @@ function styleXml(): string {
     xf(0,0), xf(1,2), xf(0,3), xf(2,4), xf(0,0),
     xf(0,5,0,center), xf(0,6,0,center), xf(0,7,0,center),
     xf(0,8,0,center), xf(0,3,0,center), xf(0,0,0,center),
-    xf(0,0,164,center),
+    xf(0,0,164,center), xf(0,8),
   ].join('');
   return xmlPrefix + '<styleSheet xmlns="' + main + '">' +
     '<numFmts count="1"><numFmt numFmtId="164" formatCode="0%"/></numFmts>' +
     fonts + fills + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    '<cellXfs count="12">' + xfs + '</cellXfs>' +
+    '<cellXfs count="13">' + xfs + '</cellXfs>' +
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
     '</styleSheet>';
 }

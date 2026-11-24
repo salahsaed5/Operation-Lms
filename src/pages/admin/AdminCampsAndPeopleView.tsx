@@ -25,6 +25,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
 import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, RawStudentImportRow } from '../../domain/businessRules';
+import { generateEntityCode } from '../../domain/generateEntityCode';
 import { parseStudentRosterFile } from '../../domain/studentRosterFile';
 import {
   CredentialDeliveryMode,
@@ -125,9 +126,10 @@ export const AdminCampsView: React.FC = () => {
   const [showVenueForm, setShowVenueForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [roomVenueId, setRoomVenueId] = useState(venues[0]?.id || '');
-  const [roomCode, setRoomCode] = useState('');
+  const [roomCode, setRoomCode] = useState(() => generateEntityCode('R'));
   const [roomName, setRoomName] = useState('');
   const [roomCapacity, setRoomCapacity] = useState(30);
+  const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
   const [venueNameEn, setVenueNameEn] = useState('');
   const [venueNameAr, setVenueNameAr] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
@@ -140,7 +142,7 @@ export const AdminCampsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<CampFilter>('all');
   const [isBusy, setIsBusy] = useState(false);
 
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(() => generateEntityCode('CAMP'));
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [venueId, setVenueId] = useState(venues[0]?.id || '');
@@ -151,6 +153,7 @@ export const AdminCampsView: React.FC = () => {
   const [defaultRateEgp, setDefaultRateEgp] = useState(700);
 
   // Edit camp fields
+  const [editVenueId, setEditVenueId] = useState('');
   const [editNameEn, setEditNameEn] = useState('');
   const [editNameAr, setEditNameAr] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
@@ -187,6 +190,7 @@ export const AdminCampsView: React.FC = () => {
   const startEdit = (camp: Camp) => {
     setEditingCamp(camp);
     setShowNewCampForm(false);
+    setEditVenueId(camp.venueId);
     setEditNameEn(camp.nameEn);
     setEditNameAr(camp.nameAr);
     setEditStartDate(camp.startDate);
@@ -209,6 +213,7 @@ export const AdminCampsView: React.FC = () => {
     setFeedback(null);
     try {
       const res = await createVenue({
+        venueId: editingVenueId ?? undefined,
         nameEn: venueNameEn.trim(),
         nameAr: venueNameAr.trim(),
         address: venueAddress.trim(),
@@ -219,7 +224,8 @@ export const AdminCampsView: React.FC = () => {
       if (!res.ok) {
         setFeedback({ type: 'err', text: res.error || t('Failed to save training venue.', 'فشل حفظ المقر التدريبي.') });
       } else {
-        setFeedback({ type: 'ok', text: t('Training venue saved. You can now create a Camp.', 'تم حفظ المقر ويمكنك الآن إنشاء معسكر.') });
+        setFeedback({ type: 'ok', text: editingVenueId ? t('Venue updated.', 'تم تعديل المقر.') : t('Training venue saved. You can now create a Camp.', 'تم حفظ المقر ويمكنك الآن إنشاء معسكر.') });
+        setEditingVenueId(null);
         setVenueNameEn('');
         setVenueNameAr('');
         setVenueAddress('');
@@ -248,7 +254,7 @@ export const AdminCampsView: React.FC = () => {
         setFeedback({ type: 'err', text: res.error || t('Unable to save training room.', 'تعذر حفظ القاعة التدريبية.') });
       } else {
         setFeedback({ type: 'ok', text: t('Room saved. You can now assign it to a group.', 'تم حفظ القاعة ويمكن الآن ربطها بمجموعة.') });
-        setRoomCode('');
+        setRoomCode(generateEntityCode('R'));
         setRoomName('');
         setRoomCapacity(30);
         setShowRoomForm(false);
@@ -284,7 +290,7 @@ export const AdminCampsView: React.FC = () => {
             'تم إنشاء مسودة المعسكر بنجاح بالإعدادات المحددة.'
           ),
         });
-        setCode('');
+        setCode(generateEntityCode('CAMP'));
         setNameEn('');
         setNameAr('');
         setStartDate('');
@@ -307,6 +313,7 @@ export const AdminCampsView: React.FC = () => {
     try {
       const res = await updateCampAndSettings({
         campId: editingCamp.id,
+        venueId: editVenueId,
         nameEn: editNameEn.trim(),
         nameAr: editNameAr.trim(),
         startDate: editStartDate,
@@ -382,6 +389,8 @@ export const AdminCampsView: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                setEditingVenueId(null);
+                setVenueNameEn(''); setVenueNameAr(''); setVenueAddress(''); setVenueLatitude(''); setVenueLongitude(''); setVenueGeofence(100);
                 setShowVenueForm(prev => !prev);
                 setShowNewCampForm(false);
                 setShowRoomForm(false);
@@ -462,6 +471,7 @@ export const AdminCampsView: React.FC = () => {
             <div>
               <label htmlFor="room-code" className={LABEL_CLASS}>{t('Room code *', 'كود القاعة *')}</label>
               <input id="room-code" className={INPUT_CLASS} required maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="R-01" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setRoomCode(generateEntityCode('R'))}>{t('Generate code', 'توليد كود')}</button>
             </div>
             <div>
               <label htmlFor="room-name" className={LABEL_CLASS}>{t('Room name *', 'اسم القاعة *')}</label>
@@ -479,10 +489,24 @@ export const AdminCampsView: React.FC = () => {
         </form>
       )}
 
+      {venues.length > 0 && !showVenueForm && (
+        <div className={SURFACE_CARD + ' p-3 space-y-2'}>
+          <h3 className="text-sm font-bold">{t('Training venues','المقرات التدريبية')}</h3>
+          {venues.map(v=><div key={v.id} className="flex flex-wrap items-center justify-between gap-2 border-b last:border-b-0 py-2">
+            <div><p className="font-semibold text-sm">{t(v.nameEn,v.nameAr)}</p><p className="text-xs text-slate-500">{v.address}</p></div>
+            <button type="button" className={BTN_SECONDARY} onClick={()=>{
+              setEditingVenueId(v.id); setVenueNameEn(v.nameEn); setVenueNameAr(v.nameAr);
+              setVenueAddress(v.address); setVenueLatitude(String(v.latitude)); setVenueLongitude(String(v.longitude));
+              setVenueGeofence(v.geofenceRadiusMeters); setShowVenueForm(true); setShowNewCampForm(false); setShowRoomForm(false);setEditingCamp(null);setFeedback(null);
+            }}><Pencil className="w-4 h-4"/>{t('Edit venue','تعديل المقر')}</button>
+          </div>)}
+        </div>
+      )}
       {showVenueForm && (
         <form onSubmit={handleCreateVenue} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+          {editingVenueId && <p className="text-xs text-amber-700">{t('Changes affect every Camp using this venue. GPS history is protected.','التعديل يؤثر على كل الكامبات التي تستخدم هذا المقر. سجل GPS السابق محمي.')}</p>}
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-            {t('New Training Venue', 'إضافة مقر تدريبي جديد')}
+            {editingVenueId ? t('Edit shared venue','تعديل بيانات المقر') : t('New Training Venue', 'إضافة مقر تدريبي جديد')}
           </h2>
           <p className="text-xs text-slate-500">
             {t('Use the exact physical location; GPS check-ins use these coordinates. Never use placeholder (0,0).', 'استخدم الموقع الفعلي للمقر لأن الحضور بالـ GPS يعتمد على هذه الإحداثيات.')}
@@ -581,6 +605,7 @@ export const AdminCampsView: React.FC = () => {
                 onChange={(e) => setCode(e.target.value)}
                 className={`${INPUT_CLASS} font-mono`}
               />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setCode(generateEntityCode('CAMP'))}>{t('Generate code', 'توليد كود')}</button>
             </div>
             <div>
               <label htmlFor="camp-name-en" className={LABEL_CLASS}>
@@ -739,6 +764,12 @@ export const AdminCampsView: React.FC = () => {
                 onChange={(e) => setEditNameAr(e.target.value)}
                 className={INPUT_CLASS}
               />
+            </div>
+            <div>
+              <label htmlFor="edit-camp-venue" className={LABEL_CLASS}>{t('Training Venue', 'المقر التدريبي')}</label>
+              <select id="edit-camp-venue" className={SELECT_CLASS} required value={editVenueId} onChange={e => setEditVenueId(e.target.value)}>
+                {venues.map(v => <option key={v.id} value={v.id}>{t(v.nameEn,v.nameAr)}</option>)}
+              </select>
             </div>
             <div>
               <label htmlFor="edit-camp-start" className={LABEL_CLASS}>
@@ -1093,6 +1124,7 @@ export const AdminInstructorsView: React.FC = () => {
     provisionInstructor,
     updateInstructorAccount,
     triggerInstructorPasswordReset,
+    updateInstructorCredential,
     t,
   } = useApp();
 
@@ -1102,7 +1134,7 @@ export const AdminInstructorsView: React.FC = () => {
   const [newFullNameAr, setNewFullNameAr] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newUsername, setNewUsername] = useState('');
-  const [newInstructorCode, setNewInstructorCode] = useState('');
+  const [newInstructorCode, setNewInstructorCode] = useState(() => generateEntityCode('INST'));
   const [newPhone, setNewPhone] = useState('');
   const [newSpecialization, setNewSpecialization] = useState('');
   const [newRateEgp, setNewRateEgp] = useState(activeCamp?.settings.defaultLectureRateEgp ?? 700);
@@ -1122,6 +1154,10 @@ export const AdminInstructorsView: React.FC = () => {
 
   // Edit Instructor state
   const [editingInst, setEditingInst] = useState<Instructor | null>(null);
+  const [editInstructorCode, setEditInstructorCode] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editCredential, setEditCredential] = useState('');
   const [editFullNameEn, setEditFullNameEn] = useState('');
   const [editFullNameAr, setEditFullNameAr] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -1199,7 +1235,7 @@ export const AdminInstructorsView: React.FC = () => {
     setNewFullNameAr('');
     setNewEmail('');
     setNewUsername('');
-    setNewInstructorCode('');
+    setNewInstructorCode(generateEntityCode('INST'));
     setNewPhone('');
     setNewSpecialization('');
     setNewRateEgp(activeCamp?.settings.defaultLectureRateEgp ?? 700);
@@ -1326,6 +1362,10 @@ export const AdminInstructorsView: React.FC = () => {
     setShowCreateForm(false);
     setViewingInst(null);
     setEditingInst(inst);
+    setEditInstructorCode(inst.instructorCode);
+    setEditUsername(inst.username);
+    setEditEmail(inst.email);
+    setEditCredential('');
     setEditFullNameEn(inst.fullNameEn);
     setEditFullNameAr(inst.fullNameAr);
     setEditPhone(inst.phone || '');
@@ -1335,6 +1375,24 @@ export const AdminInstructorsView: React.FC = () => {
     setIsActive(inst.isActive);
     setAssignedToCamp(activeCamp ? assignedSet.has(inst.id) : true);
     setFeedback(null);
+  };
+
+  const handleCredentialUpdate = async (action: 'email' | 'temporary_credential') => {
+    if (!editingInst || isBusy) return;
+    if (action === 'email' && editEmail.trim().toLowerCase() === editingInst.email.toLowerCase()) return;
+    if (!window.confirm(t('Confirm account credential change?', 'تأكيد تعديل بيانات تسجيل الدخول؟'))) return;
+    setIsBusy(true);
+    try {
+      const result = await updateInstructorCredential({
+        instructorId: editingInst.id, action,
+        value: action === 'email' ? editEmail : editCredential,
+      });
+      setFeedback({ok: result.ok, text: result.ok ? t('Account credentials updated.', 'تم تحديث بيانات تسجيل الدخول.') : (result.error || t('Update failed.', 'تعذر حفظ البيانات.'))});
+      if (result.ok && action === 'email') setEditingInst({...editingInst,email:editEmail.trim().toLowerCase()});
+    } finally {
+      setEditCredential('');
+      setIsBusy(false);
+    }
   };
 
   const handleSaveInst = async (e: React.FormEvent) => {
@@ -1356,6 +1414,8 @@ export const AdminInstructorsView: React.FC = () => {
       const res = await updateInstructorAccount({
         instructorId: editingInst.id,
         profileId: editingInst.profileId,
+        instructorCode: editInstructorCode,
+        username: editUsername,
         fullNameEn: editFullNameEn.trim(),
         fullNameAr: editFullNameAr.trim() || editFullNameEn.trim(),
         phone: editPhone.trim(),
@@ -1757,6 +1817,7 @@ export const AdminInstructorsView: React.FC = () => {
                 placeholder="INST-05"
                 className={`${INPUT_CLASS} font-mono uppercase`}
               />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setNewInstructorCode(generateEntityCode('INST'))}>{t('Generate code', 'توليد كود')}</button>
               {createFieldErrors.instructorCode && (
                 <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
                   {createFieldErrors.instructorCode}
@@ -2036,6 +2097,26 @@ export const AdminInstructorsView: React.FC = () => {
               />
             </div>
             <div>
+              <label htmlFor="inst-edit-code" className={LABEL_CLASS}>{t('Instructor Code', 'كود المحاضر')}</label>
+              <input id="inst-edit-code" className={INPUT_CLASS} required value={editInstructorCode} onChange={e=>setEditInstructorCode(e.target.value)} maxLength={32} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} onClick={()=>setEditInstructorCode(generateEntityCode('INST'))}>{t('Generate code','توليد كود')}</button>
+            </div>
+            <div>
+              <label htmlFor="inst-edit-username" className={LABEL_CLASS}>{t('Username','اسم المستخدم')}</label>
+              <input id="inst-edit-username" className={INPUT_CLASS} required value={editUsername} onChange={e=>setEditUsername(e.target.value)} maxLength={64} />
+            </div>
+            <div>
+              <label htmlFor="inst-edit-email" className={LABEL_CLASS}>{t('Login email','البريد الإلكتروني للدخول')}</label>
+              <input id="inst-edit-email" className={INPUT_CLASS} type="email" value={editEmail} onChange={e=>setEditEmail(e.target.value)} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} disabled={isBusy || !editEmail.trim()} onClick={()=>handleCredentialUpdate('email')}>{t('Save email separately','حفظ البريد الإلكتروني')}</button>
+            </div>
+            <div>
+              <label htmlFor="inst-edit-password" className={LABEL_CLASS}>{t('New temporary password','كلمة مرور مؤقتة جديدة')}</label>
+              <input id="inst-edit-password" className={INPUT_CLASS} type="password" autoComplete="new-password" value={editCredential} onChange={e=>setEditCredential(e.target.value)} />
+              <button type="button" className={BTN_SECONDARY+' mt-1'} disabled={isBusy || editCredential.length<8} onClick={()=>handleCredentialUpdate('temporary_credential')}>{t('Set password separately','تعيين كلمة المرور')}</button>
+              <p className="text-xs text-slate-500 mt-1">{t('Requires change at next sign-in.','يجب تغييرها عند تسجيل الدخول التالي.')}</p>
+            </div>
+            <div>
               <label htmlFor="inst-edit-phone" className={LABEL_CLASS}>
                 {t('Phone Number', 'رقم الهاتف')}
               </label>
@@ -2253,7 +2334,7 @@ export const AdminInstructorsView: React.FC = () => {
                       >
                         <Power className="w-3 h-3" />
                         <span>
-                          {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                          {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                         </span>
                       </button>
                     </div>
@@ -2378,7 +2459,7 @@ export const AdminInstructorsView: React.FC = () => {
                           >
                             <Power className="w-3 h-3" />
                             <span>
-                              {inst.isActive ? t('Deactivate', 'تعطيل') : t('Activate', 'تفعيل')}
+                              {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
                             </span>
                           </button>
                         </div>
@@ -2549,7 +2630,7 @@ export const AdminInstructorsView: React.FC = () => {
         open={Boolean(toggleStatusTarget)}
         title={
           toggleStatusTarget?.isActive
-            ? t('Deactivate Instructor Account?', 'تعطيل حساب المحاضر؟')
+            ? t('Remove instructor access (retain history)?', 'إزالة حساب المحاضر مع الاحتفاظ بالسجلات؟')
             : t('Reactivate Instructor Account?', 'إعادة تفعيل حساب المحاضر؟')
         }
         description={
@@ -2645,7 +2726,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
 
   // Group Form state — clean empty initial fields with placeholders
   const [showGroupForm, setShowGroupForm] = useState(false);
-  const [grpCode, setGrpCode] = useState('');
+  const [grpCode, setGrpCode] = useState(() => generateEntityCode('GRP'));
   const [grpNameEn, setGrpNameEn] = useState('');
   const [grpNameAr, setGrpNameAr] = useState('');
   const [grpTrack, setGrpTrack] = useState('');
@@ -2655,7 +2736,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
 
   // Single Student Form
   const [showStudentForm, setShowStudentForm] = useState(false);
-  const [stuCode, setStuCode] = useState('');
+  const [stuCode, setStuCode] = useState(() => generateEntityCode('STU'));
   const [stuName, setStuName] = useState('');
   const [stuUniv, setStuUniv] = useState('');
   const [stuGroupId, setStuGroupId] = useState(campGroups[0]?.id || '');
@@ -2732,7 +2813,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         setActionNotice({ ok: false, text: res.error || t('Failed saving group.', 'تعذر حفظ المجموعة.') });
       } else {
         setActionNotice({ ok: true, text: t('Training group created.', 'تم إنشاء المجموعة التدريبية.') });
-        setGrpCode('');
+        setGrpCode(generateEntityCode('GRP'));
         setGrpNameEn('');
         setGrpNameAr('');
         setGrpTrack('');
@@ -2758,7 +2839,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         setActionNotice({ ok: false, text: res.error || t('Failed adding student.', 'تعذر تسجيل الطالب.') });
       } else {
         setActionNotice({ ok: true, text: t('Student enrolled.', 'تم تسجيل الطالب بنجاح.') });
-        setStuCode('');
+        setStuCode(generateEntityCode('STU'));
         setStuName('');
         setStuUniv('');
         setShowStudentForm(false);
@@ -2939,6 +3020,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                 onChange={(e) => setGrpCode(e.target.value)}
                 className={`${INPUT_CLASS} font-mono`}
               />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setGrpCode(generateEntityCode('GRP'))}>{t('Generate code', 'توليد كود')}</button>
             </div>
             <div>
               <label htmlFor="grp-name-en" className={LABEL_CLASS}>
@@ -3065,6 +3147,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
                 onChange={(e) => setStuCode(e.target.value)}
                 className={`${INPUT_CLASS} font-mono`}
               />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setStuCode(generateEntityCode('STU'))}>{t('Generate code', 'توليد كود')}</button>
             </div>
             <div>
               <label htmlFor="stu-name" className={LABEL_CLASS}>

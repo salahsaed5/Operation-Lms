@@ -405,8 +405,21 @@ export async function signOutSupabase(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+/** Export queries use stable 500-row pages to avoid the Data API default row cap. */
+async function fetchAllPages<T>(query:(start:number,end:number)=>PromiseLike<{data:T[]|null;error:{message:string}|null}>):Promise<{data:T[];error:{message:string}|null}> {
+  const rows:T[]=[];
+  const size=500;
+  for(let start=0;;start+=size){
+    const {data,error}=await query(start,start+size-1);
+    if(error)return {data:[],error};
+    const page=data||[];
+    rows.push(...page);
+    if(page.length<size)return {data:rows,error:null};
+  }
+}
 export async function fetchOperationalSnapshot(
-  ctx: SupabaseAuthContext
+  ctx: SupabaseAuthContext,
+  attendanceExportCampId?: string
 ): Promise<OperationalSnapshot> {
   const client = getClient();
   const isAdmin = ctx.profile.role === UserRole.ADMIN;
@@ -448,15 +461,15 @@ export async function fetchOperationalSnapshot(
     client.from('camps').select('*').order('start_date', { ascending: false }),
     client.from('camp_settings').select('*'),
     client.from('camp_instructors').select('*').eq('is_active', true),
-    client.from('groups').select('*').order('code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('groups').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('groups').select('*').order('code', { ascending: true }),
     client.from('group_instructors').select('*').order('effective_from_day', { ascending: true }),
-    client.from('students').select('*').order('student_code', { ascending: true }),
-    client.from('student_transfers').select('*').order('created_at', { ascending: false }),
-    client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('students').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('students').select('*').order('student_code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('student_transfers').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lectures').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
     client.from('daily_checkins').select('*').order('camp_day', { ascending: false }),
     client.from('checkin_exceptions').select('*').order('created_at', { ascending: false }),
-    client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
-    client.from('attendance_records').select('*'),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_records').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_records').select('*'),
     client.from('lecture_entitlements').select('*').order('camp_day', { ascending: false }).order('period_number', { ascending: true }),
     client.from('instructor_requests').select('*').order('created_at', { ascending: false }),
     client.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
@@ -480,6 +493,7 @@ export async function fetchOperationalSnapshot(
     settingsRes.error,
     groupsRes.error,
     studentsRes.error,
+    transfersRes.error,
     lecturesRes.error,
     checkinsRes.error,
     sheetsRes.error,
@@ -996,6 +1010,7 @@ export async function deleteCheckinSelfiePath(path: string): Promise<void> {
  * Coordinates are supplied by the operator; never derive placeholder (0,0).
  */
 export async function createVenueInDb(input: {
+  venueId?: string;
   nameEn: string;
   nameAr: string;
   address: string;
@@ -1004,14 +1019,15 @@ export async function createVenueInDb(input: {
   geofenceRadiusMeters: number;
 }): Promise<string> {
   const client = getClient();
-  const { data, error } = await client.from('venues').insert({
+  const values = {
     name_en: input.nameEn.trim(),
     name_ar: input.nameAr.trim(),
     address: input.address.trim(),
     latitude: input.latitude,
     longitude: input.longitude,
     geofence_radius_meters: input.geofenceRadiusMeters,
-  }).select('id').single();
+  };
+  const {data,error}=input.venueId ? await client.from('venues').update(values).eq('id',input.venueId).select('id').single() : await client.from('venues').insert(values).select('id').single();
   if (error || !data) {
     throw new Error(error?.message || 'Unable to create training venue.');
   }
@@ -1093,6 +1109,7 @@ export async function createDraftCampInDb(input: {
 
 export async function updateCampInDb(input: {
   campId: string;
+  venueId?: string;
   nameEn: string;
   nameAr: string;
   startDate: string;
@@ -1109,6 +1126,7 @@ export async function updateCampInDb(input: {
   const { error: campErr } = await client
     .from('camps')
     .update({
+      ...(input.venueId ? { venue_id: input.venueId } : {}),
       name_en: input.nameEn.trim(),
       name_ar: input.nameAr.trim(),
       start_date: input.startDate,
@@ -1256,6 +1274,8 @@ export async function upsertGroupInDb(input: {
 export async function updateInstructorInDb(input: {
   instructorId: string;
   profileId: string;
+  instructorCode?: string;
+  username?: string;
   fullNameEn?: string;
   fullNameAr?: string;
   phone?: string;
@@ -1270,11 +1290,13 @@ export async function updateInstructorInDb(input: {
   const instUpdate: {
     specialization: string;
     default_lecture_rate_egp: number;
+    instructor_code?: string;
     bio?: string | null;
   } = {
     specialization: input.specialization.trim(),
     default_lecture_rate_egp: Math.max(0, Math.round(input.defaultLectureRateEgp)),
   };
+  if (input.instructorCode !== undefined) instUpdate.instructor_code = input.instructorCode;
   if (input.bio !== undefined) {
     const cleanBio = input.bio.trim();
     instUpdate.bio = cleanBio.length > 0 ? cleanBio : null;
@@ -1283,17 +1305,19 @@ export async function updateInstructorInDb(input: {
   const { error: instErr } = await client
     .from('instructors')
     .update(instUpdate)
-    .eq('id', input.instructorId);
+    .eq('id', input.instructorId).eq('profile_id',input.profileId).select('id').single();
   if (instErr) throw new Error(instErr.message);
 
   const profUpdate: {
     is_active: boolean;
     full_name_en?: string;
     full_name_ar?: string;
+    username?: string;
     phone?: string | null;
   } = {
     is_active: input.isActive,
   };
+  if (input.username !== undefined) profUpdate.username = input.username;
   if (input.fullNameEn !== undefined && input.fullNameEn.trim().length >= 2) {
     profUpdate.full_name_en = input.fullNameEn.trim();
   }
@@ -1308,7 +1332,7 @@ export async function updateInstructorInDb(input: {
   const { error: profErr } = await client
     .from('profiles')
     .update(profUpdate)
-    .eq('id', input.profileId);
+    .eq('id', input.profileId).eq('role','instructor').select('id').single();
   if (profErr) throw new Error(profErr.message);
 
   if (input.campId && typeof input.assignedToCamp === 'boolean') {
@@ -1426,6 +1450,18 @@ export async function provisionInstructorViaEdgeFunction(
   }
 
   return data as ProvisionInstructorOutcome;
+}
+
+export async function updateInstructorCredentialInDb(input: {
+  instructorId: string; action:'email'|'temporary_credential'; value:string;
+}): Promise<void> {
+  const {data,error}=await getClient().functions.invoke('manage-instructor-credential',{body:input});
+  if(error){
+    let message=error.message;
+    try { const ctx=(error as unknown as {context?:Response}).context; if(ctx) message=(await ctx.json()).error || message; } catch {}
+    throw new Error(message);
+  }
+  if(!data?.ok)throw new Error(data?.error||'Credential update did not complete.');
 }
 
 export async function markProfileMustChangePassword(profileId: string): Promise<void> {
@@ -1762,6 +1798,17 @@ export async function adminCorrectAttendanceRecordInDb(input: {
     p_student_id: input.student.id,
     p_mark: input.mark as DbAttendanceMark,
     p_note: cleanNote,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function instructorCorrectSubmittedAttendanceInDb(input: {
+  sheetId: string; studentId: string; mark: AttendanceMark; expectedMark: AttendanceMark; note: string;
+}): Promise<void> {
+  const { error } = await getClient().rpc('instructor_correct_submitted_attendance_tx', {
+    p_sheet_id: input.sheetId, p_student_id: input.studentId,
+    p_mark: input.mark as DbAttendanceMark, p_expected_mark: input.expectedMark as DbAttendanceMark,
+    p_note: input.note.trim(),
   });
   if (error) throw new Error(error.message);
 }
