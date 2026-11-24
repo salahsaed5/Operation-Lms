@@ -426,14 +426,29 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
   await expect(bar).toBeHidden();
   await expect(page.locator('.instructor-desktop-nav')).toBeVisible();
   const rail=page.locator('.instructor-curved-sidebar');
-  expect(await rail.evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThanOrEqual(20);
+  const verifyAttachedRail=async()=>{
+    const geometry=await rail.evaluate(el=>{
+      const css=getComputedStyle(el), corner=getComputedStyle(el,'::before'), rect=el.getBoundingClientRect();
+      return {top:rect.top,bottom:window.innerHeight-rect.bottom,outer:css.borderEndEndRadius,inner:css.borderStartEndRadius,shadow:css.boxShadow,gradient:css.backgroundImage,curve:corner.content,curveWidth:corner.width,curveBackground:corner.backgroundImage};
+    });
+    expect(Math.abs(geometry.top)).toBeLessThan(1);
+    expect(Math.abs(geometry.bottom)).toBeLessThan(1);
+    expect(geometry.outer).toBe('24px');
+    expect(geometry.inner).toBe('0px');
+    expect(geometry.shadow).toBe('none');
+    expect(geometry.gradient).toContain('linear-gradient');
+    expect(geometry.curve).not.toBe('none');
+    expect(geometry.curveWidth).toBe('24px');
+    expect(geometry.curveBackground).toContain('radial-gradient');
+  };
+  await verifyAttachedRail();
   const nav=rail.getByRole('navigation');
   for(const route of ['الرئيسية','المحاضرات','الوصول','حسابي']){
     await nav.getByRole('button',{name:route,exact:true}).click();
     const active=nav.locator('[aria-current="page"]');
     await expect(active).toHaveCount(1);
-    expect(await active.evaluate(el=>getComputedStyle(el,'::before').content)).not.toBe('none');
-    expect(await active.evaluate(el=>getComputedStyle(el).borderTopLeftRadius)).toBe('0px');
+    expect(await active.evaluate(el=>getComputedStyle(el,'::before').content)).toBe('none');
+    expect(await active.evaluate(el=>getComputedStyle(el).borderTopLeftRadius)).toBe('13px');
   }
   const header=page.locator('.instructor-topbar');
   await expect(header.getByRole('combobox')).toHaveCount(1);
