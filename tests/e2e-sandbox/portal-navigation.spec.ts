@@ -385,6 +385,13 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
       await bar.getByRole('button',{name:route,exact:true}).click();
       await expect(page.locator('.instructor-main')).toBeVisible();
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBeTruthy();
+      const header=page.locator('.instructor-topbar');
+      await expect(header).toBeVisible();
+      await expect(header.getByRole('combobox',{name:'Select working Camp'})).toBeVisible();
+      await expect(header.getByRole('button',{name:'Toggle theme'})).toBeVisible();
+      const headBounds=await header.boundingBox();
+      expect(headBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(headBounds!.x+headBounds!.width).toBeLessThanOrEqual(width+1);
       const bounds=await bar.boundingBox();
       expect(bounds!.x).toBeGreaterThanOrEqual(11);
       expect(Math.abs(bounds!.x - (width-bounds!.x-bounds!.width))).toBeLessThan(2);
@@ -416,6 +423,12 @@ test('Instructor responsive layout uses four equal bottom tabs and compact profi
   await page.setViewportSize({width:1365,height:900});
   await expect(bar).toBeHidden();
   await expect(page.locator('.instructor-desktop-nav')).toBeVisible();
+  const header=page.locator('.instructor-topbar');
+  await expect(header.getByRole('combobox')).toHaveCount(1);
+  await expect(header.getByRole('button',{name:'الإشعارات'})).toBeVisible();
+  await header.getByRole('button',{name:'الإشعارات'}).click();
+  await expect(header.getByRole('button',{name:'إغلاق',exact:true})).toBeVisible();
+  await header.getByRole('button',{name:'إغلاق',exact:true}).click();
 });
 
 test('RTL Graphite sidebar unpin, mouse-leave, and persisted collapsed reload never blank the screen', async ({ page }) => {

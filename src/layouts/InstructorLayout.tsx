@@ -10,7 +10,7 @@ import {
   LogOut,
   Bell,
   RefreshCw,
-  User,
+  Layers,
   GraduationCap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -60,6 +60,8 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
     (n) => n.recipientProfileId === auth.currentProfile.id
   );
   const unreadCount = myNotifications.filter((n) => !n.isRead).length;
+  const displayName = currentInstructor ? t(currentInstructor.fullNameEn,currentInstructor.fullNameAr) : t(auth.currentProfile.fullNameEn,auth.currentProfile.fullNameAr);
+  const initials = displayName.trim().split(/\s+/).slice(0,2).map(word=>Array.from(word)[0]).join('').toUpperCase() || 'IN';
 
   return (
     <div className="instructor-shell min-h-screen w-full min-w-0 bg-[var(--bg-canvas)] dark:bg-[var(--bg-canvas)] text-slate-900 dark:text-[#F0F1F2] flex flex-col pb-8">
@@ -79,103 +81,39 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
       </aside>
       <div className="instructor-workspace lg:ms-56 flex flex-col flex-1 min-w-0">
       {/* Workspace header */}
-      <header className="instructor-header sticky top-0 z-30 min-h-14 app-glass-header px-3 sm:px-6 flex items-center justify-between gap-2 lg:gap-4">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={() => setInstructorRoute('dashboard')}
-            className="flex items-center gap-2.5 text-start cursor-pointer min-w-0"
-          >
-            <span className="w-7 h-7 rounded-lg bg-[#355F82] text-white text-xs font-bold flex items-center justify-center shrink-0 tracking-tight">
-              CI
-            </span>
-            <div className="min-w-0">
-              <span className="sm:hidden block text-xs font-bold truncate">{t("Instructor","المحاضر")}</span>
-              <span className="hidden sm:block text-sm font-bold tracking-tight text-slate-900 dark:text-white truncate">
-                {t('CITS Instructor', 'بوابة المحاضر')}
-              </span>
-              {activeCamp && (
-                <span className="hidden sm:block text-[11px] font-mono tabular-nums text-slate-500 dark:text-[#A0A5AA] truncate">
-                  {activeCamp.code} ·{' '}
-                  {t(
-                    `Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,
-                    `اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`
-                  )}
-                </span>
-              )}
-            </div>
+      <header className="instructor-header instructor-topbar sticky z-30">
+        <div className="instructor-topbar-brand">
+          <button type="button" onClick={()=>setInstructorRoute('dashboard')} aria-label={t('Instructor home','الرئيسية للمحاضر')} className="flex items-center gap-2.5 text-start cursor-pointer min-w-0">
+            <span className="instructor-topbar-logo"><GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true"/></span>
+            <span className="min-w-0"><span className="block font-bold text-sm sm:text-base truncate">{t('Instructor Portal','بوابة المحاضر')}</span><span className="hidden sm:block text-[11px] text-blue-100/85 truncate">{activeCamp ? t(`Day ${activeCamp.currentCampDay}/${activeCamp.durationDays}`,`اليوم ${activeCamp.currentCampDay}/${activeCamp.durationDays}`) : t('Operation LMS','Operation LMS')}</span></span>
           </button>
         </div>
-
-        {/* Quiet Utility Controls + Instructor Account */}
-        <div className="instructor-header-actions flex items-center gap-1 sm:gap-2 shrink-0">
-          {isSupabaseMode && (
-            <button
-              type="button"
-              disabled={isLoadingData}
-              onClick={() => refreshOperationalData()}
-              aria-label={t('Refresh data', 'تحديث البيانات')}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1.5 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
-              <span className="hidden lg:inline">{t('Refresh', 'تحديث')}</span>
+        <div className="instructor-camp-bar instructor-topbar-camp">
+          <Layers className="w-4 h-4 shrink-0" aria-hidden="true"/>
+          <span className="sr-only">{t('My Camp','الكامب الخاص بي')}</span>
+          <CampSwitcher />
+        </div>
+        <div className="instructor-header-actions instructor-topbar-actions">
+          {isSupabaseMode&&<button type="button" disabled={isLoadingData} onClick={()=>refreshOperationalData()} aria-label={t('Refresh data','تحديث البيانات')} title={t('Refresh data','تحديث البيانات')} className="instructor-topbar-control">
+            <RefreshCw className={'w-4 h-4 '+(isLoadingData?'animate-spin':'')}/>
+          </button>}
+          <button type="button" onClick={()=>setShowNotifPanel(prev=>!prev)} aria-label={t('Notifications','الإشعارات')} aria-expanded={showNotifPanel} className="instructor-topbar-control instructor-topbar-notifications">
+            <Bell className="w-4 h-4"/>
+            {unreadCount>0&&<span className="instructor-topbar-count">{unreadCount>99?'99+':unreadCount}</span>}
+          </button>
+          <button type="button" onClick={()=>setLang(lang==='en'?'ar':'en')} aria-label={t('Switch Language','تغيير اللغة')} className="instructor-topbar-control instructor-topbar-language">
+            <Globe className="w-4 h-4"/><span>{lang==='en'?'AR':'EN'}</span>
+          </button>
+          <button type="button" onClick={toggleTheme} aria-label={t('Toggle theme','تبديل المظهر')} className="instructor-topbar-control">
+            {theme==='dark'?<Sun className="w-4 h-4"/>:<Moon className="w-4 h-4"/>}
+          </button>
+          <div className="instructor-topbar-account">
+            <button type="button" onClick={()=>setInstructorRoute('profile')} aria-label={t('Open my profile','فتح الملف الشخصي')} className="instructor-topbar-profile">
+              <span className="instructor-topbar-avatar" aria-hidden="true">{initials}</span>
+              <span className="instructor-topbar-name"><strong className="block truncate text-sm">{displayName}</strong><span className="block text-[11px] text-blue-100/80">{t('Instructor','محاضر')}</span></span>
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowNotifPanel((prev) => !prev)}
-            aria-label={t('Notifications', 'الإشعارات')}
-            aria-expanded={showNotifPanel}
-            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1 cursor-pointer"
-          >
-            <Bell className="w-3.5 h-3.5 text-slate-600 dark:text-[#C0C5C9]" />
-            {unreadCount > 0 && (
-              <span className="font-mono tabular-nums text-[11px] font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
-            aria-label={t('Switch Language', 'تغيير اللغة')}
-            className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-[#C0C5C9] flex items-center gap-1 cursor-pointer"
-          >
-            <Globe className="w-3.5 h-3.5 text-slate-500" />
-            <span>{lang === 'en' ? 'AR' : 'EN'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={t('Toggle theme', 'تبديل المظهر')}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-[#C0C5C9] cursor-pointer"
-          >
-            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-
-          <div className="h-4 w-px bg-slate-200 dark:bg-[#25292D] hidden xl:block shrink-0" />
-
-          <div className="hidden xl:flex items-center gap-1.5 ps-0.5 max-w-[160px]">
-            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="text-xs font-medium text-slate-700 dark:text-[#DEE1E4] truncate">
-              {currentInstructor
-                ? t(currentInstructor.fullNameEn, currentInstructor.fullNameAr)
-                : t(auth.currentProfile.fullNameEn, auth.currentProfile.fullNameAr)}
-            </span>
+            <button type="button" onClick={()=>signOut()} aria-label={t('Logout','تسجيل الخروج')} title={t('Logout','تسجيل الخروج')} className="instructor-topbar-control instructor-topbar-logout"><LogOut className="w-4 h-4"/></button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => signOut()}
-            aria-label={t('Logout', 'تسجيل الخروج')}
-            title={t('Logout', 'تسجيل الخروج')}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-600 dark:text-[#C0C5C9] hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
         </div>
 
         {/* Notifications Popover */}
@@ -221,15 +159,6 @@ export const InstructorLayout: React.FC<{ children: React.ReactNode }> = ({ chil
           </div>
         )}
       </header>
-
-      <div className="instructor-camp-bar flex items-center gap-2 px-3 sm:px-6 py-2 bg-slate-50/70 dark:bg-[#25292D]/70 border-b border-slate-200 dark:border-[#353A3F] text-xs">
-        <span className="font-semibold shrink-0">{t('My Camp:', 'الكامب الخاص بي:')}</span>
-        <CampSwitcher />
-        <span className="hidden xl:inline text-slate-500 dark:text-[#A0A5AA]">
-          {t('Switch to view your sessions and check-ins for each camp.',
-             'بدّل الكامب لعرض محاضراتك وتسجيل الوصول لكل كامب.')}
-        </span>
-      </div>
 
       {dataError && (
         <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4">
