@@ -646,3 +646,22 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .sched-workspace [data-state=ready] .sched-state i{background:#168b92}
 .sched-workspace [data-state=missed] .sched-state i,.sched-workspace [data-state=cancelled] .sched-state i{background:#ce5968}
 @media(min-width:1024px){.sched-workspace .sched-scroll{max-height:none}}
+
+/* Actionable schedule notice; does not affect the timetable layout. */
+.sched-unassigned-notice{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #ecd5a4;border-radius:14px;background:#fffbf0;color:#805513;min-width:0}
+.sched-unassigned-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#f9eccd;color:#a06b18;flex-shrink:0;align-self:flex-start}
+.sched-unassigned-content{flex:1;min-width:0;display:grid;gap:5px;text-align:start}
+.sched-unassigned-content h3{font-weight:650;font-size:14px;line-height:1.4;margin:0}
+.sched-unassigned-content p{font-size:12px;line-height:1.5;margin:0;color:#846b46}
+.sched-unassigned-names{display:flex;flex-wrap:wrap;gap:5px;list-style:none;margin:2px 0 0;padding:0}
+.sched-unassigned-names li{font-size:12px;line-height:1.4;padding:3px 8px;background:#fff;border:1px solid #eadab8;border-radius:6px;max-width:100%;overflow-wrap:anywhere}
+.sched-unassigned-action{flex-shrink:0;border:1px solid #d6b77a;background:#fff;color:#805513;font-size:12px;font-weight:650;border-radius:9px;padding:9px 14px;cursor:pointer}
+.sched-unassigned-action:hover{background:#f9eccd}
+.sched-unassigned-action:disabled{opacity:.5;cursor:not-allowed}
+.sched-unassigned-action:focus-visible{outline:2px solid #a06b18;outline-offset:2px}
+.dark .sched-unassigned-notice{background:#352b1d;border-color:#6b542d;color:#f3d49a}
+.dark .sched-unassigned-icon,.dark .sched-unassigned-names li,.dark .sched-unassigned-action{background:#483821;border-color:#765e34;color:#f3d49a}
+.dark .sched-unassigned-content p{color:#ddc8a4}
+.dark .sched-unassigned-action:hover{background:#5b482c}
+@media(max-width:639px){.sched-unassigned-notice{flex-wrap:wrap;align-items:flex-start;padding:12px;gap:10px}.sched-unassigned-content{flex-basis:calc(100% - 48px)}.sched-unassigned-action{margin-inline-start:auto}}
+@media print{.sched-workspace .sched-unassigned-notice{display:none!important}}
