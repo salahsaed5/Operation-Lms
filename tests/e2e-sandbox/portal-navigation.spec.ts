@@ -744,9 +744,9 @@ test('Schedule workspace switches views and opens tools without writing records'
  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Schedule',exact:true}).click();
  const root=page.locator('.sched-workspace');
  await expect(root.locator('.sched-grid')).toBeVisible();
- await expect(root.getByText('Fixed timetable · All teaching days',{exact:true})).toBeVisible();
+ await expect(root.getByText('Camp Schedule',{exact:true})).toBeVisible();
  await expect(root.locator('.sched-metrics > div')).toHaveCount(4);
- await expect(root.getByLabel('Assignment status')).toHaveValue('all');
+ await expect(root.getByLabel('Session status')).toHaveValue('all');
  await expect(root.locator('.sched-grid-head').first()).toHaveText('Period');
  await expect(root.getByLabel('Camp Day',{exact:true})).toHaveCount(0);
  await expect(root.getByRole('button',{name:'Previous day',exact:true})).toHaveCount(0);
@@ -760,9 +760,9 @@ test('Schedule workspace switches views and opens tools without writing records'
  await root.getByRole('button',{name:'Availability',exact:true}).click();
  await expect(root.getByRole('dialog',{name:'Availability'})).toBeVisible();
  await root.getByRole('button',{name:'Close',exact:true}).click();
- await root.getByRole('button',{name:'New exception session',exact:true}).click();
- await expect(root.getByRole('dialog',{name:'New session'})).toBeVisible();
- await expect(root.getByRole('button',{name:'Create session',exact:true})).toBeDisabled();
+ await root.getByRole('button',{name:'Assign Group',exact:true}).click();
+ await expect(root.getByRole('dialog',{name:'Assign Group to Instructor'})).toBeVisible();
+ await expect(root.getByRole('button',{name:'Confirm Assignment',exact:true})).toBeDisabled();
  await root.getByRole('button',{name:'Close',exact:true}).click();
  await page.setViewportSize({width:390,height:844});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
