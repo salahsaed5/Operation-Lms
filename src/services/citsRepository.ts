@@ -247,24 +247,7 @@ export async function loadAuthenticatedUserContext(
       );
     }
 
-    const [{ data: factorsData }, { data: aalData }] = await Promise.all([
-      client.auth.mfa.listFactors(),
-      client.auth.mfa.getAuthenticatorAssuranceLevel(),
-    ]);
-
-    const verifiedTotp = (factorsData?.totp || []).find(
-      (f) => f.status === 'verified'
-    );
-    const currentAal =
-      aalData?.currentLevel === 'aal2'
-        ? 'aal2'
-        : aalData?.currentLevel === 'aal1'
-        ? 'aal1'
-        : null;
-
-    const needsEnrollment = !verifiedTotp;
-    const needsChallenge = Boolean(verifiedTotp) && currentAal !== 'aal2';
-
+    // Password-authenticated admins are allowed; no enrollment or challenge is required.
     return {
       userId,
       profile,
@@ -277,10 +260,10 @@ export async function loadAuthenticatedUserContext(
       },
       instructor: null,
       mfa: {
-        aal: currentAal,
-        verifiedFactorId: verifiedTotp?.id || null,
-        needsChallenge,
-        needsEnrollment,
+        aal: null,
+        verifiedFactorId: null,
+        needsChallenge: false,
+        needsEnrollment: false,
       },
     };
   }
