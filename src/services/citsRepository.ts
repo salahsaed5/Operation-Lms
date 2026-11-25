@@ -635,7 +635,7 @@ export async function fetchOperationalSnapshot(
     nameAr: g.name_ar,
     track: g.track,
     defaultRoomId: g.default_room_id || '',
-    primaryInstructorId: primaryInstByGroup.get(g.id) || '',
+    primaryInstructorId: g.default_room_id ? primaryInstByGroup.get(g.id) || '' : '',
     fixedPeriodNumber: g.fixed_period_number ?? null,
     capacity: g.capacity,
   }));
