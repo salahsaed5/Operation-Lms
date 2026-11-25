@@ -235,3 +235,20 @@ test('production-shaped fixture contains exactly 30 unique students, 3 attended 
  assert.match(entries['xl/worksheets/sheet1.xml'],/<c r="D4" s="5"><v>3<\/v>/);
  assert.match(entries['xl/worksheets/sheet1.xml'],/<c r="H4" s="9"><v>27<\/v>/);
 });
+
+test('pending same-day session prevents premature absence in all workbook tabs',async()=>{
+ const blob=buildCampAttendanceWorkbook({camp,groups,students:[students[0]],studentTransfers:[],lectures:[lecture('final',1),{...lecture('pending',1),periodNumber:2}],attendanceSheets:[sheet('s','final',[record('early',AttendanceMark.ABSENT)])]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ assert.doesNotMatch(entries['xl/worksheets/sheet4.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet7.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet5.xml'],/>Pending</);
+});
+test('transferred student belongs to final group and retains earlier group marks',async()=>{
+ const st={...students[0],groupId:'A'};
+ const transfers=[{id:'tr',campId,studentId:st.id,fromGroupId:'A',toGroupId:'B',effectiveCampDay:4,createdAt:'2026-11-29T00:00:00Z'}] as Parameters<typeof buildCampAttendanceWorkbook>[0]['studentTransfers'];
+ const blob=buildCampAttendanceWorkbook({camp,groups,students:[st],studentTransfers:transfers,groupId:'B',lectures:[lecture('old',1),{...lecture('new',4),groupId:'B'}],attendanceSheets:[sheet('s-old','old',[record('early',AttendanceMark.PRESENT)])]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ assert.match(entries['xl/worksheets/sheet3.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet5.xml'],/>P<\/t>/);
+ assert.match(entries['xl/worksheets/sheet6.xml'],/External \/ selected students only/);
+});
