@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Plus,
   CheckCircle2,
@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Search,
   CalendarClock,
-  ClipboardCheck, ChevronLeft, ChevronRight, Users, UserRound, MoreHorizontal, Bell, Download, Printer,
+  ClipboardCheck, ChevronLeft, ChevronRight, Users, UserRound, MoreHorizontal, Bell, Download, Printer, X, RefreshCw, LayoutGrid, List, ChevronDown, UserCheck, UserX, ChartPie,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../../domain/campAttendanceExcelGrid';
@@ -91,7 +91,7 @@ export const AdminAttendanceView: React.FC = () => {
     instructors,
     groups,
     checkins,
-    checkinExceptions, students, studentTransfers, auditLogs, financeSnapshot, downloadTenDayAttendanceWorkbook, isSupabaseMode, refreshOperationalData,
+    checkinExceptions, isLoadingData, rooms, students, studentTransfers, auditLogs, financeSnapshot, downloadTenDayAttendanceWorkbook, isSupabaseMode, refreshOperationalData,
     submitAndSyncAttendanceSheet,
     adminCorrectAttendanceRecord,
     reviewCheckinException,
@@ -117,10 +117,19 @@ export const AdminAttendanceView: React.FC = () => {
   const [studentId,setStudentId]=useState('');
   const [rosterQuery,setRosterQuery]=useState('');
   const [absenceThreshold,setAbsenceThreshold]=useState(2);
+  const [display,setDisplay]=useState<'grid'|'list'>(()=>{try{return localStorage.getItem('cits.attendance.view')==='list'?'list':'grid'}catch{return 'grid'}});
+  const [lectureGroup,setLectureGroup]=useState('all'),[lectureInstructor,setLectureInstructor]=useState('all');
+  const [collapsed,setCollapsed]=useState<number[]>([]),[rosterMark,setRosterMark]=useState('all');
+  const [metric,setMetric]=useState<'all'|DayAttendanceCode|'rate'|'coverage'|null>(null),[metricQuery,setMetricQuery]=useState('');
+  const [lastRefresh,setLastRefresh]=useState<Date|null>(null),[refreshing,setRefreshing]=useState(false);
+  const modalRef=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{try{localStorage.setItem('cits.attendance.view',display)}catch{}},[display]);
+  useEffect(()=>{const el=modalRef.current;if((expandedSheetId||metric)&&el&&!el.open)el.showModal();else if(!expandedSheetId&&!metric&&el?.open)el.close()},[expandedSheetId,metric]);
+  useEffect(()=>{setLastRefresh(null);setLectureGroup('all');setLectureInstructor('all');setCollapsed([]);setMetric(null)},[activeCamp?.id]);
   const [now,setNow]=useState(()=>new Date());
   useEffect(()=>{const timer=window.setInterval(()=>setNow(new Date()),30000);return ()=>window.clearInterval(timer)},[]);
   useEffect(()=>{setDay(activeCamp?.currentCampDay||1);setTab('students');setPeriod('all');setStatusFilter('all');setSearchQuery('');setExpandedSheetId(null);setTool(null);setToolsOpen(false);setGroupFilter('all');setStudentId('');setStudentQuery('');setSelfiePreviews({});},[activeCamp?.id,activeCamp?.currentCampDay]);
-  useEffect(()=>{setExpandedSheetId(null);setRosterQuery('');},[day,tab]);
+  useEffect(()=>{setExpandedSheetId(null);setRosterQuery('');setRosterMark('all');setCollapsed([]);setMetric(null);},[day,tab]);
   const matrix=useMemo(()=>activeCamp?buildCampAttendanceExcelGrid({campId:activeCamp.id,durationDays:activeCamp.durationDays,students,studentTransfers,lectures,attendanceSheets}):null,[activeCamp,students,studentTransfers,lectures,attendanceSheets]);
   if (!activeCamp) {
     return (
@@ -135,8 +144,9 @@ export const AdminAttendanceView: React.FC = () => {
   const campAllowsFinalAttendance=activeCamp.status===CampStatus.ACTIVE;
   const selectedDay=Math.min(activeCamp.durationDays,Math.max(1,day));
   const selectedDate=calculateCampDayDate(activeCamp.startDate,selectedDay,activeCamp.operatingWeekdays);
-  const campLectures=lectures.filter(l=>l.campId===activeCamp.id&&l.status!==LectureStatus.CANCELLED);
-  const dayLectures=campLectures.filter(l=>l.campDay===selectedDay).sort((a,b)=>a.periodNumber-b.periodNumber||a.startTime.localeCompare(b.startTime)||a.groupId.localeCompare(b.groupId));
+  const allLectures=lectures.filter(l=>l.campId===activeCamp.id);
+  const campLectures=allLectures.filter(l=>l.status!==LectureStatus.CANCELLED);
+  const dayLectures=allLectures.filter(l=>l.campDay===selectedDay).sort((a,b)=>a.periodNumber-b.periodNumber||a.startTime.localeCompare(b.startTime)||a.groupId.localeCompare(b.groupId));
   const allCampSheets=attendanceSheets.filter(s=>s.campId===activeCamp.id&&campLectures.some(l=>l.id===s.lectureId));
   const campSheets=allCampSheets.filter(s=>dayLectures.some(l=>l.id===s.lectureId));
   const campExceptions=checkinExceptions.filter(ex=>ex.campId===activeCamp.id&&ex.campDay===selectedDay);
@@ -155,14 +165,24 @@ export const AdminAttendanceView: React.FC = () => {
   const sheetFor=(id:string)=>campSheets.find(s=>s.lectureId===id);
   const filteredLectures=dayLectures.filter(l=>{
     const sh=sheetFor(l.id),g=groups.find(g=>g.id===l.groupId),i=instructors.find(i=>i.id===(l.substituteInstructorId||l.instructorId));
+    if(lectureGroup!=='all'&&l.groupId!==lectureGroup)return false;
+    if(lectureInstructor!=='all'&&(l.substituteInstructorId||l.instructorId)!==lectureInstructor)return false;
+    if(l.status===LectureStatus.CANCELLED&&statusFilter!=='all')return false;
     if(period!=='all'&&l.periodNumber!==Number(period))return false;
     if(statusFilter==='synced'&&!isFinalAttendance(sh))return false;
     if(statusFilter==='draft'&&(!sh||isFinalAttendance(sh)))return false;
     if(statusFilter==='missing'&&!progress.overdueIds.has(l.id))return false;
     return !q||[l.topic,g?.code,g?.nameEn,g?.nameAr,i?.fullNameEn,i?.fullNameAr].some(v=>v?.toLowerCase().includes(q));
   });
+  const coverageDenominator=dailyRows.length-notScheduled;
+  const coverage=coverageDenominator?Math.round((p+late+a+excused)/coverageDenominator*100)+'%':'—';
+  const refresh=async()=>{if(refreshing||isBusy)return;setRefreshing(true);try{await refreshOperationalData();setLastRefresh(new Date());setNow(new Date())}catch(e){setSyncMessage({ok:false,text:String(e)})}finally{setRefreshing(false)}};
+  const closeDetails=()=>{if(isBusy)return;setExpandedSheetId(null);setMetric(null)};
+  const openDetails=(id:string)=>{setMetric(null);setExpandedSheetId(id);setRosterQuery('');setRosterMark('all')};
+  const visibleSheetIds=filteredLectures.map(l=>sheetFor(l.id)?.id).filter((id):id is string=>!!id);
+  const navigateRoster=(step:number)=>{const index=visibleSheetIds.indexOf(expandedSheetId||'');const id=visibleSheetIds[index+step];if(id)openDetails(id)};
   const pendingExceptions=campExceptions.filter(ex=>ex.status===RequestStatus.PENDING).length;
-  const expectedIds=new Set(dayLectures.map(l=>l.substituteInstructorId||l.instructorId));
+  const expectedIds=new Set(dayLectures.filter(l=>l.status!==LectureStatus.CANCELLED).map(l=>l.substituteInstructorId||l.instructorId));
   const backupIds=new Set(financeSnapshot.backups.filter(b=>b.status!=='excluded'&&dayLectures.some(l=>l.id===b.lectureId)).map(b=>b.instructorId));
   const checkinIds=[...new Set([...expectedIds,...backupIds,...campCheckins.map(c=>c.instructorId)])];
   const missingCheckin=(id:string)=>campAllowsFinalAttendance&&dayLectures.some(l=>(l.substituteInstructorId||l.instructorId)===id&&(l.lectureDate<clock.date||(l.lectureDate===clock.date&&timeSeconds(l.startTime)<=clock.seconds)))&&!campCheckins.some(c=>c.instructorId===id);
@@ -172,6 +192,7 @@ export const AdminAttendanceView: React.FC = () => {
   const exportRows=(name:string,rows:(string|number)[][])=>{const blob=createXlsxWorkbook([{name:'Attendance',rows:rows.map((r,i)=>r.map(v=>excelCell(v,i===0?3:4))),widths:[22,32,24,20,20,20,20,20],freeze:{columns:0,rows:1,topLeft:'A2'}}]);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=name+'.xlsx';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1200)};
   const studentGroupOnDay=(id:string)=>{const st=students.find(st=>st.id===id);return st?resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:selectedDay}):''};
   const exportDay=()=>exportRows('Attendance-Day-'+selectedDay+'-snapshot',[['Student code','Student','Date','Official daily status'],...dailyRows.filter(r=>groupFilter==='all'||studentGroupOnDay(r.studentId)===groupFilter).map(r=>[r.studentCode,r.fullName,selectedDate,markLabel(r.days[selectedDay-1])])]);
+  const exportFiltered=()=>exportRows('Attendance-filtered-Day-'+selectedDay,[['Group','Course','Instructor','Period','Status','Present saved','Absent saved','Late saved','Excused saved','Unmarked saved'],...filteredLectures.map(l=>{const sh=sheetFor(l.id);return [groupName(l.groupId),l.topic,instructorName(l.substituteInstructorId||l.instructorId),l.periodNumber,l.status===LectureStatus.CANCELLED?'Cancelled':isFinalAttendance(sh)?'Finalized':progress.overdueIds.has(l.id)?'Overdue':'Not finalized',...([AttendanceMark.PRESENT,AttendanceMark.ABSENT,AttendanceMark.LATE,AttendanceMark.EXCUSED,'unmarked'] as const).map(mark=>sh?.records.filter(r=>r.mark===mark).length??0)]})]);
   const exportCamp=async()=>{setIsBusy(true);try{const res=await downloadTenDayAttendanceWorkbook(groupFilter==='all'?undefined:groupFilter);setSyncMessage({ok:res.ok,text:res.ok?t('Workbook downloaded','تم تنزيل التقرير'):res.error||t('Export failed','فشل التصدير')})}finally{setIsBusy(false)}};
   const remind=async(l:Lecture)=>{if(isBusy||!isSupabaseMode||!progress.overdueIds.has(l.id))return;setIsBusy(true);try{await sendAttendanceReminderInDb(l.id);setSyncMessage({ok:true,text:t('Reminder sent to instructor','تم إرسال التذكير للمحاضر')});await refreshOperationalData()}catch(e){setSyncMessage({ok:false,text:e instanceof Error?e.message:String(e)})}finally{setIsBusy(false)}};
   const openTool=(v:typeof tool)=>{setTool(v);setToolsOpen(false);setStudentQuery('');setStudentId('');setGroupFilter('all')};
@@ -300,7 +321,7 @@ export const AdminAttendanceView: React.FC = () => {
       <PageHeader
         title={t('Attendance Management', 'إدارة الحضور')}
         subtitle={t(
-          'Inspect lecture rosters, log audited attendance corrections, and review instructor GPS/lateness exceptions.',
+          'Manage daily attendance and instructor check-ins.',
           'فحص كشوف المحاضرات وتعديل الحالات مع التوثيق ومراجعة استثناءات الوصول اليومي للمحاضرين.'
         )}
       />
@@ -313,17 +334,20 @@ export const AdminAttendanceView: React.FC = () => {
         />
       )}
 
+      <div className="attendance-refresh attendance-no-print"><small>{lastRefresh?t('Last refreshed: ','آخر تحديث: ')+lastRefresh.toLocaleTimeString('en-GB',{timeZone:'Africa/Cairo',hour:'numeric',minute:'2-digit',hour12:true}):t('Loaded server snapshot','البيانات المحملة من السيرفر')}</small><button className={BTN_SECONDARY} disabled={refreshing||isBusy||isLoadingData} onClick={refresh}><RefreshCw size={14}/>{refreshing?t('Refreshing…','جاري التحديث'):t('Refresh','تحديث')}</button></div>
       <section className="sched-day" aria-label={t('Attendance day navigation','أيام الحضور')}>
         <button type="button" aria-label={t('Previous day','اليوم السابق')} disabled={selectedDay<=1} onClick={()=>setDay(selectedDay-1)}><ChevronLeft size={20}/></button>
         <div><strong>{t('Day '+selectedDay+' of '+activeCamp.durationDays,'اليوم '+selectedDay+' من '+activeCamp.durationDays)}</strong><small>{selectedDate}</small></div>
+        <button type="button" disabled={selectedDay===activeCamp.currentCampDay} onClick={()=>setDay(activeCamp.currentCampDay)}>{t('Today','اليوم')}</button>
         <select aria-label={t('Attendance day','يوم الحضور')} value={selectedDay} onChange={e=>setDay(Number(e.target.value))}>{Array.from({length:activeCamp.durationDays},(_,i)=><option key={i+1} value={i+1}>{t('Day '+(i+1),'اليوم '+(i+1))}</option>)}</select>
         <button type="button" aria-label={t('Next day','اليوم التالي')} disabled={selectedDay>=activeCamp.durationDays} onClick={()=>setDay(selectedDay+1)}><ChevronRight size={20}/></button>
       </section>
-      <section className={SURFACE_CARD+' p-4 space-y-3'} aria-label={t('Attendance overview','ملخص الحضور')}>
-        <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">{t('Daily student attendance','حضور الطلاب اليومي')}</h2><StatusBadge tone="neutral">{t('Finalized records only','الكشوف المعتمدة فقط')}</StatusBadge></div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">{stat(t('Enrolled by this day','الطلاب المسجلون حتى اليوم'),dailyRows.length)}{stat(t('Present','حاضر'),p,'text-emerald-600')}{stat(t('Absent','غائب'),a,'text-rose-600')}{stat(t('Late','متأخر'),late,'text-amber-600')}{stat(t('Pending','غير معتمد'),pending)}{stat(t('Attendance rate','نسبة الحضور'),rate,'text-teal-600')}</div>
-        <p className="text-xs text-slate-500 dark:text-slate-400">{t('Unique students · Late counts as attended · Excused: '+excused+' · Not applicable: '+notScheduled+' · Rate = attended / (attended + absent).','طلاب فريدون · التأخير يحسب حضوراً · بعذر: '+excused+' · غير منطبق: '+notScheduled+' · النسبة من الحضور والغياب المعتمدين.')}</p>
-        <div className="border-t border-slate-200 dark:border-[#353A3F] pt-3 space-y-2"><div className="flex justify-between gap-2"><h3 className="font-semibold text-sm">{t('Attendance progress','تقدم اعتماد الحضور')}</h3><strong className="text-teal-600">{progress.finalized}/{progress.total} · {progress.percent}%</strong></div><div className="h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden flex"><span className="bg-emerald-600" style={{width:progress.percent+'%'}}/><span className="bg-amber-500" style={{width:(progress.total?progress.draft/progress.total*100:0)+'%'}}/><span className="bg-rose-500" style={{width:(progress.total?progress.missing/progress.total*100:0)+'%'}}/></div><div className="grid grid-cols-2 sm:grid-cols-5 gap-2">{stat(t('Total sessions','المحاضرات'),progress.total)}{stat(t('Finalized','معتمدة'),progress.finalized,'text-emerald-600')}{stat(t('Overdue draft','مسودة متأخرة'),progress.draft,'text-amber-600')}{stat(t('Missing marks','بلا تسجيل'),progress.missing,'text-rose-600')}{stat(t('Not due yet','لم يحن موعد الاعتماد'),progress.upcoming)}</div></div>
+      <section aria-label={t('Attendance overview','ملخص الحضور')} className="attendance-overview">
+        <div className="attendance-overview-heading"><h2>{t('Daily student attendance','حضور الطلاب اليومي')}</h2><small>{t('Finalized records only','الكشوف المعتمدة فقط')}</small></div>
+        <div className="attendance-metrics" aria-busy={isLoadingData||refreshing}>
+          {([{key:'all',label:t('Total Students','إجمالي الطلاب'),value:dailyRows.length,icon:Users,tone:'neutral'},{key:'P',label:t('Present','حاضر'),value:p,icon:UserCheck,tone:'present'},{key:'A',label:t('Absent','غائب'),value:a,icon:UserX,tone:'absent'},{key:'L',label:t('Late','متأخر'),value:late,icon:Clock,tone:'late'},{key:'Pending',label:t('Pending','غير معتمد'),value:pending,icon:ClipboardCheck,tone:'neutral'},{key:'rate',label:t('Attendance Rate','نسبة الحضور'),value:rate,icon:ChartPie,tone:'present'},{key:'coverage',label:t('Attendance Coverage','نسبة استكمال الحضور'),value:coverage,icon:CheckCircle2,tone:'info'}] as const).map(m=><button key={m.key} type="button" className="attendance-metric" data-tone={m.tone} disabled={isLoadingData||refreshing} onClick={()=>{setExpandedSheetId(null);setMetricQuery('');setMetric(m.key)}}><span><m.icon size={15}/>{m.label}</span><strong>{isLoadingData||refreshing?<i className="attendance-skeleton"/>:m.value}</strong>{m.key==='rate'&&<small>{p+late}/{p+late+a} {t('finalized attended','حضور معتمد')}</small>}{m.key==='coverage'&&<small>{p+late+a+excused}/{coverageDenominator} {t('eligible finalized','معتمد من المستحقين')}</small>}</button>)}
+        </div>
+        <div className={SURFACE_CARD+' attendance-progress'}><div className="flex justify-between gap-2"><h3 className="font-semibold text-sm">{t('Attendance progress','تقدم اعتماد الحضور')}</h3><strong className="text-teal-600">{isLoadingData||refreshing?'—':progress.finalized+'/'+progress.total+' · '+progress.percent+'%'}</strong></div><div className="attendance-progress-track">{!isLoadingData&&!refreshing&&<>{[['present',progress.finalized],['late',progress.draft],['absent',progress.missing]].map(([tone,n])=><span key={tone} data-tone={tone} style={{width:(progress.total?Number(n)/progress.total*100:0)+'%'}}/>)}</>}</div><div className="attendance-progress-legend"><span>{t('Total sessions','المحاضرات')}: {progress.total}</span>{[['present',progress.finalized,t('Finalized','معتمدة')],['late',progress.draft,t('Overdue draft','مسودة متأخرة')],['absent',progress.missing,t('Missing marks','بلا تسجيل')],['neutral',progress.upcoming,t('Not due yet','لم يحن موعدها')]].map(([tone,n,label])=><span key={tone}><i data-tone={tone}/>{isLoadingData||refreshing?'—':n} {label}</span>)}</div><small className="text-slate-500">{t('Unique students · Late counts as attended · Excused: '+excused+' · Not applicable: '+notScheduled,'طلاب فريدون · التأخير حضور · بعذر: '+excused+' · غير منطبق: '+notScheduled)}</small></div>
       </section>
       <section className={SURFACE_CARD+' p-2 flex flex-wrap gap-2 items-center'}>
         {([{id:'students',en:'Student Attendance',ar:'حضور الطلاب'},{id:'instructors',en:'Instructor Check-in',ar:'حضور المحاضرين'},{id:'exceptions',en:'Exceptions ('+pendingExceptions+')',ar:'الاستثناءات ('+pendingExceptions+')'}] as const).map(v=><button key={v.id} type="button" aria-pressed={tab===v.id} onClick={()=>{setTab(v.id);setTool(null)}} className={'flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold '+(tab===v.id?'bg-[#14677A] text-white':'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800')}>{t(v.en,v.ar)}</button>)}
@@ -447,7 +471,7 @@ export const AdminAttendanceView: React.FC = () => {
       {tab==='students'&&<>
       {/* Search and filter are visually separate from the lecture cards. */}
       <section aria-label={t('Find lecture attendance sheets', 'البحث في كشوف الحضور')}
-        className="rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-4 sm:p-5 shadow-sm space-y-3">
+        className="attendance-filters rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-3 space-y-2">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
           <div className="w-full lg:max-w-md space-y-2">
             <label htmlFor="admin-attendance-search" className="text-sm font-bold text-slate-900 dark:text-white">{t('Find a lecture', 'البحث عن محاضرة')}</label>
@@ -488,6 +512,7 @@ export const AdminAttendanceView: React.FC = () => {
             </div>
           </div>
         </div>
+        <div className="attendance-filter-extra"><label>{t('Group','المجموعة')}<select className={SELECT_CLASS} value={lectureGroup} onChange={e=>setLectureGroup(e.target.value)}><option value="all">{t('All groups','كل المجموعات')}</option>{campGroups.map(g=><option key={g.id} value={g.id}>{groupName(g.id)} · {g.code}</option>)}</select></label><label>{t('Instructor','المحاضر')}<select className={SELECT_CLASS} value={lectureInstructor} onChange={e=>setLectureInstructor(e.target.value)}><option value="all">{t('All instructors','كل المحاضرين')}</option>{[...new Set(dayLectures.map(l=>l.substituteInstructorId||l.instructorId))].map(id=><option key={id} value={id}>{instructorName(id)}</option>)}</select></label><div className="attendance-view-toggle"><button aria-label="Grid" aria-pressed={display==='grid'} onClick={()=>setDisplay('grid')}><LayoutGrid size={16}/>Grid</button><button aria-label="List" aria-pressed={display==='list'} onClick={()=>setDisplay('list')}><List size={16}/>List</button></div><button className={BTN_SECONDARY} onClick={exportFiltered}><Download size={14}/>{t('Export filtered','تصدير المفلتر')}</button></div>
         <p role="status" className="text-xs text-slate-500 dark:text-[#A0A5AA]">
           {t(`Showing ${filteredLectures.length} of ${dayLectures.length} sessions`,
             `عرض ${filteredLectures.length} من ${dayLectures.length} محاضرة`)}
@@ -501,7 +526,7 @@ export const AdminAttendanceView: React.FC = () => {
             <p className="text-sm font-medium text-slate-600 dark:text-[#C0C5C9]">
               {t('No lecture sheets match your search.', 'مفيش كشوف محاضرات مطابقة للبحث.')}
             </p>
-            <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setPeriod('all'); }}
+            <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setPeriod('all');setLectureGroup('all');setLectureInstructor('all'); }}
               className="text-sm font-semibold text-[#355F82] dark:text-[#88A9CC] underline underline-offset-2">
               {t('Clear filters', 'مسح الفلاتر')}
             </button>
