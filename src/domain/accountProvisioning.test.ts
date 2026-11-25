@@ -1101,7 +1101,7 @@ test('Migration 0008 SEC-005: Admin at AAL1 or AAL2 can complete password change
   assert.equal(allowedAal1.ok,true);
   assert.equal(allowedAal1.mustChangePassword,false);
   assert.equal(allowedAal1.auditAction,'PASSWORD_CHANGE_COMPLETED');
-  assert.equal(evaluateCompletePasswordChangeRpc({...adminAal1Rotated,currentAuthFingerprint:adminAal1Rotated.baselineAuthFingerprint}).ok,false);
+  assert.equal(evaluateCompletePasswordChangeRpc({...adminAal1Rotated,currentAuthFingerprint:adminAal1Rotated.baselineAuthFingerprint!}).ok,false);
 
   // Existing AAL2 sessions continue to work
   const allowedAal2 = evaluateCompletePasswordChangeRpc({
