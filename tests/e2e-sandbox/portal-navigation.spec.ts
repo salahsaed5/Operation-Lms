@@ -613,3 +613,33 @@ test('Daily operations dashboard has five focused sections and working filters',
   await root.getByRole('button',{name:'Manage sessions',exact:true}).click();
   await expect(page.getByRole('navigation',{name:'Mobile bottom navigation'}).getByRole('button',{name:'Schedule',exact:true})).toHaveAttribute('aria-current','page');
 });
+
+test('Camp management separates facilities and preserves validated draft wizard',async({page})=>{
+  await page.setViewportSize({width:1365,height:900});await page.goto('/');
+  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Camps',exact:true}).click();
+  const root=page.locator('.camp-workspace'),nav=root.getByRole('navigation',{name:'Camp management sections'});
+  await expect(root.getByRole('button',{name:'New Camp',exact:true})).toBeVisible();
+  await nav.getByRole('button',{name:/Venues/}).click();
+  await expect(root.getByRole('button',{name:'New Venue',exact:true})).toBeVisible();
+  await expect(root.getByRole('button',{name:'New Camp',exact:true})).toHaveCount(0);
+  await root.getByRole('button',{name:'Edit venue',exact:true}).first().click();
+  await expect(root.locator('#venue-lat')).toBeVisible();
+  await root.getByRole('button',{name:'Cancel',exact:true}).click();
+  await nav.getByRole('button',{name:/Rooms/}).click();
+  await expect(root.getByRole('combobox',{name:'Filter rooms by venue'})).toBeVisible();
+  await nav.getByRole('button',{name:/Camps/}).click();
+  await root.getByRole('button',{name:'New Camp',exact:true}).click();
+  await expect(root.locator('#camp-code')).not.toHaveValue('');
+  await expect(root.locator('#camp-start')).toHaveCount(0);
+  await root.locator('#camp-name-en').fill('Wizard test camp');
+  await root.getByRole('button',{name:'Continue',exact:true}).click();
+  await expect(root.locator('#camp-start')).toBeVisible();
+  await root.locator('#camp-start').fill('2027-01-04');
+  await root.getByRole('button',{name:'Continue',exact:true}).click();
+  await expect(root.locator('#camp-geofence')).toBeVisible();
+  await root.getByRole('button',{name:'Back',exact:true}).click();
+  await expect(root.locator('#camp-start')).toHaveValue('2027-01-04');
+  await root.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+});
