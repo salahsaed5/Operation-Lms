@@ -44,7 +44,9 @@ export function buildCampAttendanceWorkbook(input: {
   if (groupId && !groups.some(g => g.id === groupId && g.campId === camp.id)) {
     throw new Error('Requested export group does not belong to the selected Camp.');
   }
-  const reportStudents = groupId ? students.filter(st => st.groupId === groupId) : students;
+  // Group membership is evaluated at the report cutoff; preserve earlier attendance after transfers.
+  const reportStudents = students.filter(st=>st.campId===camp.id&&(!groupId||resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:camp.durationDays})===groupId));
+  const selectedIds=new Set(reportStudents.map(st=>st.id));
   if (!Number.isInteger(camp.durationDays) || camp.durationDays < 1 || camp.durationDays > 60) {
     throw new Error('Camp report duration must be between 1 and 60 teaching days.');
   }
@@ -63,18 +65,30 @@ export function buildCampAttendanceWorkbook(input: {
     campId: camp.id, durationDays: camp.durationDays,
     students: reportStudents, studentTransfers, lectures, attendanceSheets,
   });
+  const byLecture=new Map(attendanceSheets.filter(sh=>sh.campId===camp.id).map(sh=>[sh.lectureId,sh]));
+  const validLectures=lectures.filter(l=>l.campId===camp.id&&l.campDay>=1&&l.campDay<=dayCount&&l.status!=='cancelled');
+  const primaryLectures=validLectures.filter(l=>!groupId||l.groupId===groupId);
+  const isFinal=(sh?:AttendanceSheet)=>sh?.status===AttendanceSheetStatus.SUBMITTED||sh?.status===AttendanceSheetStatus.LOCKED;
+  // External sessions are included only when selected students have a saved mark;
+  // no unrelated student totals leak into a group workbook.
+  const relevantLectures=validLectures.filter(l=>!groupId||l.groupId===groupId||byLecture.get(l.id)?.records.some(r=>selectedIds.has(r.studentId)))
+    .sort((a,b)=>a.campDay-b.campDay||a.periodNumber-b.periodNumber||a.id.localeCompare(b.id));
+  const primaryFinalized=primaryLectures.filter(l=>isFinal(byLecture.get(l.id))).length;
+  const primaryPending=primaryLectures.length-primaryFinalized;
+  const externalCount=relevantLectures.length-primaryLectures.length;
+  const unresolved=grid.rows.some(r=>r.days.includes('Pending'));
   const codeOf = (groupId:string) =>
     groups.find(g => g.id === groupId && g.campId === camp.id)?.code || 'Unknown';
   const generated = new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'});
   const selectionLabel = groupId ? (' | Group ' + codeOf(groupId)) : ' | All groups';
   // A draft or active Camp is never represented as a signed final handover.
-  const provisional = camp.status !== 'archived' || grid.pendingLectures > 0;
+  const provisional = camp.status !== 'archived' || relevantLectures.some(l=>!isFinal(byLecture.get(l.id))) || unresolved;
   const reportState = provisional ? 'PROVISIONAL — NOT FINAL' : 'FINAL';
   const subtitle = camp.code + selectionLabel + ' | ' + camp.nameEn + ' | ' + camp.startDate +
     ' to ' + camp.endDate + ' | ' + reportState + ' | Cairo generated ' + generated;
 
   const summaryRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  تقرير الحضور والغياب  |  ' + reportState,8),
+    headingRow('CITS LMS  |  تقرير الحضور والغياب  |  ' + reportState,8),
     subheadingRow(subtitle,8),
     Array.from({length:8},blank),
     [c('إجمالي الطلاب',3),c(official.enrolled,10),c('الحاضرون',3),c(official.everAttended,5),c('لم يحضروا',3),c(official.neverAttended,7),c('غير محسوم',3),c(official.noFinalizedLectureYet,9)],
@@ -85,8 +99,8 @@ export function buildCampAttendanceWorkbook(input: {
     [c('Students attended at least once (finalized)',4),c(official.everAttended,10)],
     [c('Never attended any finalized eligible lecture',4),c(official.neverAttended,10)],
     [c('Awaiting an eligible finalized lecture',4),c(official.noFinalizedLectureYet,10)],
-    [c('Finalized lectures',4),c(grid.finalizedLectures,10)],
-    [c('Scheduled but not finalized',4),c(grid.pendingLectures,10)],
+    [c(groupId?'Finalized lectures in selected group':'Finalized lectures',4),c(primaryFinalized,10)],
+    [c('Scheduled but not finalized (selected scope)',4),c(primaryPending,10)],
     Array.from({length:8},blank),
     [c('DAILY STATUS LEGEND',3)],
     [c('P',5),c('Present',4)],
@@ -100,6 +114,7 @@ export function buildCampAttendanceWorkbook(input: {
     [c('Only finalized server records are official. Offline/Draft data are excluded.',4)],
     [c('Student appears once, even if visiting another group or attending multiple same-day lectures.',4)],
     [c('A student joining on Day 4 has Days 1–3 marked —, NOT absent.',4)],
+    [c(groupId?'Group roster at report cutoff; previous group / visitor records retained. External sessions: '+externalCount:'Lecture totals cover the full camp.',4)],
   ];
   summaryRows.push(Array.from({length:8},blank),[c('المجموعة',3),c('إجمالي الطلاب',3),c('الحاضرون',3),c('لم يحضروا',3),c('غير محسوم',3)]);
   for(const g of groups.filter(g=>g.campId===camp.id && (!groupId||g.id===groupId))){
@@ -110,13 +125,13 @@ export function buildCampAttendanceWorkbook(input: {
     name:'الملخص',
     rightToLeft:true,
     rows:summaryRows,
-    widths:[53,38,16,16,16,16,16,16],
-    merges:['A1:H1','A2:H2','A15:H15','A23:H23','A24:H24','A25:H25','A26:H26'],
+    widths:[48,28,22,18,22,18,22,18],
+    merges:['A1:H1','A2:H2','A15:H15','A23:H23','A24:H24','A25:H25','A26:H26','A27:H27'],
     freeze:{columns:0,rows:4,topLeft:'A5'},
   };
 
   const dailyRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  ' + reportState + ' ' + dayCount + '-DAY ATTENDANCE',dailyWidth),
+    headingRow('CITS LMS  |  ' + reportState + ' ' + dayCount + '-DAY ATTENDANCE',dailyWidth),
     subheadingRow(subtitle,dailyWidth),
     subheadingRow('P = Present | L = Late | A = Absent | E = Excused | Pending = Not Final | — = Not Applicable',dailyWidth),
     [
@@ -156,7 +171,7 @@ export function buildCampAttendanceWorkbook(input: {
   const daily:ExcelSheet={
     name:'Daily Attendance',
     rows:dailyRows,
-    widths:[19,31,17,13,...Array.from({length:dayCount},()=>13),18,15,17,17],
+    widths:[20,40,23,13,...Array.from({length:dayCount},()=>14),18,15,17,17],
     merges:['A1:'+lastCol+'1','A2:'+lastCol+'2','A3:'+lastCol+'3'],
     freeze:{columns:4,rows:4,topLeft:'E5'},
     autoFilter:'A4:'+lastCol+Math.max(5,lastDataRow),
@@ -167,7 +182,7 @@ export function buildCampAttendanceWorkbook(input: {
   // excused/pending and pre-enrollment lectures must never become false absences.
   type LectureCounts = { attended: number; absent: number; eligible: number };
   const lectureCounts = new Map<string,LectureCounts>();
-  const scopeLectureById = new Map(lectures.filter(l=>l.campId===camp.id && l.status!=='cancelled').map(l=>[l.id,l]));
+  const scopeLectureById = new Map(validLectures.map(l=>[l.id,l]));
   for (const student of reportStudents.filter(st=>st.campId===camp.id)) {
     const counts:LectureCounts={attended:0,absent:0,eligible:0};
     for (const sheet of attendanceSheets) {
@@ -185,10 +200,10 @@ export function buildCampAttendanceWorkbook(input: {
     lectureCounts.set(student.id,counts);
   }
 
-  const rosterSheet = (name:string, category?:'attended'|'never_attended'):ExcelSheet => {
+  const rosterSheet = (name:string, category?:'attended'|'never_attended'|'pending'):ExcelSheet => {
     const listed=official.students.filter(st=>category?st.category===category:true);
     const rows:ExcelCell[][]=[
-      headingRow('OPERATION LMS  |  تقرير الحضور والغياب  |  '+reportState,8),
+      headingRow('CITS LMS  |  تقرير الحضور والغياب  |  '+reportState,8),
       subheadingRow(subtitle,8),
       Array.from({length:8},blank),
       [
@@ -212,7 +227,7 @@ export function buildCampAttendanceWorkbook(input: {
     }
     if(!listed.length)rows.push([c('لا يوجد طلاب في هذه الفئة',4)]);
     return {
-      name,rows,rightToLeft:true,widths:[32,20,21,18,23,21,20,25],
+      name,rows,rightToLeft:true,widths:[40,22,23,18,23,21,20,25],
       merges:['A1:H1','A2:H2'],freeze:{columns:2,rows:4,topLeft:'C5'},
       autoFilter:'A4:H'+Math.max(5,rows.length),
     };
@@ -220,25 +235,22 @@ export function buildCampAttendanceWorkbook(input: {
   const allRoster=rosterSheet('إجمالي الطلاب');
   const attendedRoster=rosterSheet('الطلاب الحاضرون','attended');
   const absentRoster=rosterSheet('الطلاب الغائبون','never_attended');
+  const pendingRoster=rosterSheet('حضور غير محسوم','pending');
 
-  const sheets = attendanceSheets.filter(sh=>sh.campId===camp.id);
-  const byLecture=new Map(sheets.map(sh=>[sh.lectureId,sh]));
-  const relevantLectures=lectures.filter(l=>l.campId===camp.id && l.status!=='cancelled')
-    .sort((a,b)=>a.campDay-b.campDay || a.periodNumber-b.periodNumber);
   const detailRows:ExcelCell[][]=[
-    headingRow('OPERATION LMS  |  ' + reportState + ' LECTURE AUDIT',10),
-    subheadingRow(subtitle,10),
-    subheadingRow('Only Submitted/Locked attendance is counted in the daily attendance sheet',10),
+    headingRow('CITS LMS  |  ' + reportState + ' LECTURE AUDIT',12),
+    subheadingRow(subtitle,12),
+    subheadingRow('Only finalized records. Group export counts selected roster only; external sessions indicate visits / prior assignments.',12),
     [
       c('Day',3),c('Date',3),c('Period',3),c('Group',3),c('Topic',3),
-      c('Sheet Status',3),c('Present',3),c('Late',3),c('Absent',3),c('Visitors',3),
+      c('Sheet Status',3),c('Present',3),c('Late',3),c('Absent',3),c('Visitors',3),c('Excused',3),c('Scope',3),
     ],
   ];
   for(const l of relevantLectures){
     const sheet=byLecture.get(l.id);
     const finalized=sheet?.status===AttendanceSheetStatus.SUBMITTED ||
       sheet?.status===AttendanceSheetStatus.LOCKED;
-    const records=finalized ? sheet?.records||[] : [];
+    const records=finalized ? (sheet?.records||[]).filter(r=>selectedIds.has(r.studentId)) : [];
     const count=(mark:AttendanceMark)=>records.filter(r=>r.mark===mark).length;
     detailRows.push([
       c(l.campDay,10),c(l.lectureDate,4),c(l.periodNumber,10),
@@ -248,14 +260,16 @@ export function buildCampAttendanceWorkbook(input: {
       finalized?c(count(AttendanceMark.LATE),10):c('—',8),
       finalized?c(count(AttendanceMark.ABSENT),10):c('—',8),
       finalized?c(records.filter(r=>r.isCrossGroup && (r.mark===AttendanceMark.PRESENT || r.mark===AttendanceMark.LATE)).length,10):c('—',8),
+      finalized?c(count(AttendanceMark.EXCUSED),10):c('—',8),
+      c(groupId&&l.groupId!==groupId?'External / selected students only':'Scheduled group',4),
     ]);
   }
   const detail:ExcelSheet={
     name:'Lecture Details',rows:detailRows,
-    widths:[11,17,12,17,40,18,14,14,14,15],
-    merges:['A1:J1','A2:J2','A3:J3'],
+    widths:[11,17,12,22,30,18,14,14,14,15,14,32],
+    merges:['A1:L1','A2:L2','A3:L3'],
     freeze:{columns:0,rows:4,topLeft:'A5'},
-    autoFilter:'A4:J'+Math.max(5,detailRows.length),
+    autoFilter:'A4:L'+Math.max(5,detailRows.length),
   };
-  return createXlsxWorkbook([summary,allRoster,attendedRoster,absentRoster,daily,detail]);
+  return createXlsxWorkbook([summary,allRoster,attendedRoster,absentRoster,daily,detail,pendingRoster]);
 }
