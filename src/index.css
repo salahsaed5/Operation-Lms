@@ -683,3 +683,6 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
  .attendance-workspace table{font-size:8pt;table-layout:auto}
  .attendance-workspace .sched-day{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
+
+.attendance-workspace .attendance-print-only{display:none}
+@media print{.attendance-workspace .attendance-print-only{display:inline!important}}
