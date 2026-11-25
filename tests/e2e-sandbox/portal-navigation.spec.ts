@@ -714,3 +714,27 @@ test('Instructor bulk roster rejects duplicate accounts before provisioning',asy
   await expect(root.getByText('Duplicate email in file.',{exact:true}).first()).toBeVisible();
   await expect(root.getByRole('button',{name:'Create 2 accounts'})).toBeDisabled();
 });
+
+test('Shared temporary instructor password requires strength and confirmation before bulk creation',async({page})=>{
+  await page.setViewportSize({width:1365,height:900});await page.goto('/');
+  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Instructors',exact:true}).click();
+  await page.getByRole('button',{name:'Import Excel',exact:true}).click();
+  const root=page.getByRole('region',{name:'Import instructors'});
+  await root.locator('input[type=file]').setInputFiles({name:'shared-mode.csv',mimeType:'text/csv',buffer:Buffer.from('Full Name (English),Full Name (Arabic),Email,Username,Instructor Code,Specialization,Phone,Default Lecture Rate (EGP),Bio\nExample Instructor,,shared-test@example.com,shared.test,INST-SHAREDTEST,Programming,,300,')});
+  const create=root.getByRole('button',{name:'Create 1 accounts'});
+  await expect(create).toBeEnabled();
+  await root.getByLabel('Login delivery').selectOption('shared_temporary_password');
+  await expect(create).toBeDisabled();
+  await root.getByLabel('Shared temporary password',{exact:true}).fill('weak');
+  await root.getByLabel('Confirm shared password',{exact:true}).fill('weak');
+  await expect(create).toBeDisabled();
+  await root.getByLabel('Shared temporary password',{exact:true}).fill('ExampleOnly987!');
+  await expect(create).toBeDisabled();
+  await root.getByLabel('Confirm shared password',{exact:true}).fill('ExampleOnly987!');
+  await expect(create).toBeEnabled();
+  await root.getByLabel('Login delivery').selectOption('temporary_password');
+  await expect(root.getByLabel('Shared temporary password',{exact:true})).toHaveCount(0);
+  await root.getByLabel('Login delivery').selectOption('shared_temporary_password');
+  await expect(root.getByLabel('Shared temporary password',{exact:true})).toHaveValue('');
+  await expect(create).toBeDisabled();
+});
