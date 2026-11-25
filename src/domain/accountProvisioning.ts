@@ -330,11 +330,11 @@ export function evaluateCallerAuthorizationForProvisioning(caller: CallerAuthCon
     };
   }
 
-  if (caller.aal !== 'aal2') {
+  if (caller.aal !== 'aal1' && caller.aal !== 'aal2') {
     return {
       authorized: false,
       statusCode: 403,
-      error: 'Admin MFA (AAL2) verification is required before provisioning accounts.',
+      error: 'An authenticated admin session is required.',
     };
   }
 
@@ -681,11 +681,8 @@ export function evaluateAuthenticatedSessionGate(params: {
       };
     }
 
-    if (!params.hasVerifiedTotpFactor) {
-      return { allowed: false, nextStep: 'totp_enroll' };
-    }
-    if (params.aal !== 'aal2') {
-      return { allowed: false, nextStep: 'totp_challenge' };
+    if (params.aal !== 'aal1' && params.aal !== 'aal2') {
+      return { allowed: false, nextStep: 'sign_out_denied', error: 'Authenticated admin session required.' };
     }
     if (params.profile.mustChangePassword || params.recoveryFlow) {
       return { allowed: false, nextStep: 'password_change' };
@@ -866,13 +863,13 @@ export function evaluateCompletePasswordChangeRpc(
     };
   }
 
-  // SEC-005 (Migration 0008): Admins must complete TOTP MFA (AAL2) before clearing must_change_password
-  if (state.profile.role === 'admin' && state.aal !== 'aal2') {
+  // Admin credential rotation still requires an authenticated, provisioned admin.
+  if (state.profile.role === 'admin' && ((!state.hasAdminAccountSlot) || (state.aal !== 'aal1' && state.aal !== 'aal2'))) {
     return {
       ok: false,
       mustChangePassword: state.profile.mustChangePassword,
       error:
-        'CITS Security Violation: Admin MFA (AAL2) verification is required before completing credential rotation.',
+        'Active authenticated admin account required.',
     };
   }
 
@@ -938,7 +935,7 @@ export function evaluateCompletePasswordChangeRpc(
  * - is_active_cits_user(): onboarding bootstrap identity only
  * - is_cits_operational_user(): active AND must_change_password = FALSE
  * - current_instructor_id(): active instructor AND must_change_password = FALSE
- * - is_cits_admin(): active admin + slot + AAL2 AND must_change_password = FALSE
+ * - is_cits_admin(): active admin + slot + authenticated session AND must_change_password = FALSE
  * - record_admin_totp_verified_tx(): active admin + slot + AAL2 + verified TOTP (no onboarding deadlock)
  */
 export function evaluateServerAuthorizationHelpers(state: ForcedPasswordChangeServerState): {
@@ -968,7 +965,7 @@ export function evaluateServerAuthorizationHelpers(state: ForcedPasswordChangeSe
     isCitsOperationalUser &&
     state.profile!.role === 'admin' &&
     state.hasAdminAccountSlot &&
-    state.aal === 'aal2';
+    (state.aal === 'aal1' || state.aal === 'aal2');
 
   const canRecordAdminTotpVerified =
     isActiveCitsUser &&
@@ -1294,7 +1291,7 @@ export function evaluateStorageSelfieAccess(params: {
 
   const authz = evaluateServerAuthorizationHelpers(params.state);
 
-  // Operational AAL2 Admins have full access to checkin-selfies
+  // Operational Admins have full access to checkin-selfies
   if (authz.isCitsAdmin) {
     return { allowed: true, reason: 'Operational AAL2 Admin access permitted.' };
   }
@@ -1304,7 +1301,7 @@ export function evaluateStorageSelfieAccess(params: {
     return {
       allowed: false,
       reason:
-        'Denied: Caller must be an operational active user with completed credential rotation (or AAL2 Admin).',
+        'Denied: Caller must be an operational active user with completed credential rotation (or Admin).',
     };
   }
 
