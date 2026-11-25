@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { buildAttendanceTableWorkbook } from './attendanceTableExport';
 import { buildCampAttendanceWorkbook } from './campAttendanceWorkbookExport';
 import {
   AttendanceMark, AttendanceSheetStatus, CampStatus,
@@ -189,4 +190,65 @@ test('group-scoped export retains visiting attendance and excludes other roster 
   assert.doesNotMatch(all,/QA-001|QA-002/);
   assert.match(entries['xl/worksheets/sheet1.xml'],/Group GR-B/);
   assert.match(entries['xl/worksheets/sheet3.xml'],/QA-003/);
+});
+
+test('group workbook excludes unrelated lecture totals but retains selected student visits',async()=>{
+ const other={...lecture('unrelated',2),groupId:'A',topic:'UNRELATED_OTHER_GROUP'};
+ const own={...lecture('own',1),groupId:'B',topic:'SELECTED_GROUP'};
+ const visit={...lecture('visit',4),topic:'VISITED_OTHER_GROUP'};
+ const blob=buildCampAttendanceWorkbook({camp,groups,students,studentTransfers:[],groupId:'B',lectures:[other,own,visit],attendanceSheets:[sheet('s-other','unrelated',[record('early',AttendanceMark.PRESENT)]),sheet('s-visit','visit',[record('visitor',AttendanceMark.LATE,true),record('early',AttendanceMark.ABSENT)])]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ const details=entries['xl/worksheets/sheet6.xml'],summary=entries['xl/worksheets/sheet1.xml'];
+ assert.doesNotMatch(details,/UNRELATED_OTHER_GROUP/);
+ assert.match(details,/SELECTED_GROUP/);
+ assert.match(details,/VISITED_OTHER_GROUP/);
+ assert.match(details,/External \/ selected students only/);
+ assert.match(details,/<c r="I6" s="10"><v>0<\/v><\/c>/); // other student's absence not counted
+ assert.match(summary,/<c r="B12" s="10"><v>0<\/v><\/c>/);
+ assert.match(summary,/<c r="B13" s="10"><v>1<\/v><\/c>/);
+ assert.match(entries['xl/workbook.xml'],/حضور غير محسوم/);
+});
+test('snapshot preserves leading zeros, escapes text, uses status styles and filters',async()=>{
+ const blob=buildAttendanceTableWorkbook({title:'QA roster',subtitle:'Group A',rows:[['Student code','Student','Mark','Sheet status'],['000123','طالب اختبار باسم طويل للغاية لضمان ظهور الاسم بالكامل دون قص الاسم أو البيانات','present','Finalized'],['=1+1','<test>','Not recorded','Draft']]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer())),xml=entries['xl/worksheets/sheet1.xml'];
+ assert.match(xml,/CITS LMS/);
+ assert.match(xml,/<c r="A5" s="4" t="inlineStr"><is><t xml:space="preserve">000123/);
+ assert.match(xml,/<c r="C5" s="5"/);
+ assert.match(xml,/<c r="C6" s="9"/);
+ assert.match(xml,/&lt;test&gt;/);
+ assert.match(xml,/=1\+1/);
+ assert.doesNotMatch(xml,/<f>/);
+ assert.match(xml,/autoFilter ref="A4:D6"/);
+ assert.match(xml,/fitToPage="1"/);
+ assert.match(xml,/activePane="bottomLeft"/);
+ assert.ok(Number(xml.match(/<row r="5" ht="([^"]+)"/)?.[1])>23);
+});
+test('production-shaped fixture contains exactly 30 unique students, 3 attended and 27 unresolved',async()=>{
+ const roster:Student[]=Array.from({length:30},(_,i)=>({id:'qa'+i,campId,groupId:i<3?'A':'B',studentCode:String(i+1).padStart(5,'0'),fullName:'QA student '+(i+1),university:'',isActive:true,joinedCampDay:1}));
+ const marks=roster.slice(0,3).map((st,i)=>({studentId:st.id,studentCode:st.studentCode,studentName:st.fullName,originGroupId:'A',attendedGroupId:'A',isCrossGroup:false,mark:i===2?AttendanceMark.LATE:AttendanceMark.PRESENT}));
+ const blob=buildCampAttendanceWorkbook({camp,groups,students:roster,studentTransfers:[],lectures:[...Array.from({length:10},(_,i)=>lecture('a'+i,i+1)),{...lecture('b',1),groupId:'B'}],attendanceSheets:[sheet('final','a0',marks)]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ const daily=entries['xl/worksheets/sheet5.xml'],attended=entries['xl/worksheets/sheet3.xml'],pending=entries['xl/worksheets/sheet7.xml'],absent=entries['xl/worksheets/sheet4.xml'];
+ assert.equal((daily.match(/<row r="/g)||[]).length,35);
+ for(const st of roster){assert.equal((daily.match(new RegExp('>'+st.studentCode+'</t>','g'))||[]).length,1);assert.equal(attended.includes('>'+st.studentCode+'</t>'),st.groupId==='A');assert.equal(pending.includes('>'+st.studentCode+'</t>'),st.groupId==='B');assert.ok(!absent.includes('>'+st.studentCode+'</t>'))}
+ assert.match(entries['xl/worksheets/sheet1.xml'],/<c r="B4" s="10"><v>30<\/v>/);
+ assert.match(entries['xl/worksheets/sheet1.xml'],/<c r="D4" s="5"><v>3<\/v>/);
+ assert.match(entries['xl/worksheets/sheet1.xml'],/<c r="H4" s="9"><v>27<\/v>/);
+});
+
+test('pending same-day session prevents premature absence in all workbook tabs',async()=>{
+ const blob=buildCampAttendanceWorkbook({camp,groups,students:[students[0]],studentTransfers:[],lectures:[lecture('final',1),{...lecture('pending',1),periodNumber:2}],attendanceSheets:[sheet('s','final',[record('early',AttendanceMark.ABSENT)])]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ assert.doesNotMatch(entries['xl/worksheets/sheet4.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet7.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet5.xml'],/>Pending</);
+});
+test('transferred student belongs to final group and retains earlier group marks',async()=>{
+ const st={...students[0],groupId:'A'};
+ const transfers=[{id:'tr',campId,studentId:st.id,fromGroupId:'A',toGroupId:'B',effectiveCampDay:4,createdAt:'2026-11-29T00:00:00Z'}] as Parameters<typeof buildCampAttendanceWorkbook>[0]['studentTransfers'];
+ const blob=buildCampAttendanceWorkbook({camp,groups,students:[st],studentTransfers:transfers,groupId:'B',lectures:[lecture('old',1),{...lecture('new',4),groupId:'B'}],attendanceSheets:[sheet('s-old','old',[record('early',AttendanceMark.PRESENT)])]});
+ const entries=unzipStoredXml(new Uint8Array(await blob.arrayBuffer()));
+ assert.match(entries['xl/worksheets/sheet3.xml'],/QA-001/);
+ assert.match(entries['xl/worksheets/sheet5.xml'],/>P<\/t>/);
+ assert.match(entries['xl/worksheets/sheet6.xml'],/External \/ selected students only/);
 });

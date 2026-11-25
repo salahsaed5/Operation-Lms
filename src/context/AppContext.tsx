@@ -2978,7 +2978,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const groupSuffix = groupId
         ? '-' + (latest.groups.find(g=>g.id===groupId)?.code||'group').replace(/[^A-Za-z0-9_-]/g,'_')
         : '-all-groups';
-      const fileName = 'Operation-LMS-' +
+      const fileName = 'CITS-LMS-' +
         camp.code.replace(/[^A-Za-z0-9_-]/g,'_') + groupSuffix + '-' + camp.durationDays + 'day-attendance.xlsx';
       const url = URL.createObjectURL(workbook);
       const link = document.createElement('a');
