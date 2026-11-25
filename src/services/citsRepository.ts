@@ -622,7 +622,7 @@ export async function fetchOperationalSnapshot(
   for (const gi of groupInstructorsRes.data || []) {
     if (gi.effective_to_day === null) {
       primaryInstByGroup.set(gi.group_id, gi.instructor_id);
-    } else if (!primaryInstByGroup.has(gi.group_id)) {
+    } else if (!isAdmin && !primaryInstByGroup.has(gi.group_id)) {
       primaryInstByGroup.set(gi.group_id, gi.instructor_id);
     }
   }
@@ -635,7 +635,7 @@ export async function fetchOperationalSnapshot(
     nameAr: g.name_ar,
     track: g.track,
     defaultRoomId: g.default_room_id || '',
-    primaryInstructorId: g.default_room_id ? primaryInstByGroup.get(g.id) || '' : '',
+    primaryInstructorId: primaryInstByGroup.get(g.id) || '',
     fixedPeriodNumber: g.fixed_period_number ?? null,
     capacity: g.capacity,
   }));
