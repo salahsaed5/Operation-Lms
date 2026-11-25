@@ -1971,6 +1971,11 @@ export async function toggleChecklistInDb(input: {
   if (error) throw new Error(error.message);
 }
 
+export async function sendAttendanceReminderInDb(lectureId:string):Promise<void>{
+ const {error}=await getClient().rpc('send_attendance_reminder_tx',{p_lecture_id:lectureId});
+ if(error)throw new Error(error.message);
+}
+
 export async function markNotificationReadInDb(notificationId: string): Promise<void> {
   const client = getClient();
   const { error } = await client
