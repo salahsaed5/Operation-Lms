@@ -762,6 +762,9 @@ test('Schedule workspace switches views and opens tools without writing records'
  await root.getByRole('button',{name:'Close',exact:true}).click();
  await root.getByRole('button',{name:'Assign Group',exact:true}).click();
  await expect(root.getByRole('dialog',{name:'Assign Group to Instructor'})).toBeVisible();
+ await expect(root.getByLabel('Revision reason')).toHaveCount(0);
+ await expect(root.getByLabel('Instructor',{exact:true}).locator('option').filter({hasText:/BUSY|AVAILABLE/}).first()).toBeAttached();
+ await expect(root.getByLabel('Room',{exact:true}).locator('option').filter({hasText:/BUSY|AVAILABLE/}).first()).toBeAttached();
  await expect(root.getByRole('button',{name:'Confirm Assignment',exact:true})).toBeDisabled();
  await root.getByRole('button',{name:'Close',exact:true}).click();
  await page.setViewportSize({width:390,height:844});
