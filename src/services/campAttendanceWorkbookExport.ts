@@ -2,7 +2,7 @@ import type {
   Camp, Group, Lecture, Student, StudentTransfer, AttendanceSheet,
 } from '../types/database';
 import { AttendanceMark, AttendanceSheetStatus } from '../types/database';
-import { buildCampToDateReport } from '../domain/campCumulativeAttendance';
+
 import { calculateCampDayDate, resolveStudentOriginGroupForDay } from '../domain/businessRules';
 import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../domain/campAttendanceExcelGrid';
 import { createXlsxWorkbook, excelCell as c, excelFormula as f, type ExcelCell, type ExcelSheet } from './tinyXlsxWorkbook';
@@ -57,14 +57,14 @@ export function buildCampAttendanceWorkbook(input: {
   const absentCol = excelColumn(7+dayCount);
   const lastCol = excelColumn(8+dayCount);
   const dailyWidth = 8+dayCount;
-  const official = buildCampToDateReport({
-    campId: camp.id, asOfDay: dayCount, students: reportStudents, lectures,
-    attendanceSheets, studentTransfers,
-  });
   const grid = buildCampAttendanceExcelGrid({
     campId: camp.id, durationDays: camp.durationDays,
     students: reportStudents, studentTransfers, lectures, attendanceSheets,
   });
+  // All workbook tabs use the same daily result: a pending home session
+  // must not turn an otherwise unresolved day into an absence.
+  const classified=grid.rows.map(r=>({...r,category:r.presentDays>0?'attended' as const:r.absentDays>0?'never_attended' as const:'pending' as const}));
+  const official={students:classified,enrolled:classified.length,everAttended:classified.filter(r=>r.category==='attended').length,neverAttended:classified.filter(r=>r.category==='never_attended').length,noFinalizedLectureYet:classified.filter(r=>r.category==='pending').length};
   const byLecture=new Map(attendanceSheets.filter(sh=>sh.campId===camp.id).map(sh=>[sh.lectureId,sh]));
   const validLectures=lectures.filter(l=>l.campId===camp.id&&l.campDay>=1&&l.campDay<=dayCount&&l.status!=='cancelled');
   const primaryLectures=validLectures.filter(l=>!groupId||l.groupId===groupId);
@@ -97,8 +97,8 @@ export function buildCampAttendanceWorkbook(input: {
     [c('Period',4),c(camp.startDate + ' to ' + camp.endDate,4)],
     [c('Students registered',4),c(official.enrolled,10)],
     [c('Students attended at least once (finalized)',4),c(official.everAttended,10)],
-    [c('Never attended any finalized eligible lecture',4),c(official.neverAttended,10)],
-    [c('Awaiting an eligible finalized lecture',4),c(official.noFinalizedLectureYet,10)],
+    [c('No attended days; at least one confirmed absent day',4),c(official.neverAttended,10)],
+    [c('No confirmed attended or absent day',4),c(official.noFinalizedLectureYet,10)],
     [c(groupId?'Finalized lectures in selected group':'Finalized lectures',4),c(primaryFinalized,10)],
     [c('Scheduled but not finalized (selected scope)',4),c(primaryPending,10)],
     Array.from({length:8},blank),
