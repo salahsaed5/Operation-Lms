@@ -738,3 +738,22 @@ test('Shared temporary instructor password requires strength and confirmation be
   await expect(root.getByLabel('Shared temporary password',{exact:true})).toHaveValue('');
   await expect(create).toBeDisabled();
 });
+
+test('Schedule workspace switches views and opens tools without writing records',async({page})=>{
+ await page.setViewportSize({width:1365,height:900});await page.goto('/');
+ await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Schedule',exact:true}).click();
+ const root=page.locator('.sched-workspace');
+ await expect(root.locator('.sched-grid')).toBeVisible();
+ await root.getByLabel('Schedule view').selectOption('list');
+ await expect(root.locator('.sched-list')).toBeVisible();
+ await root.getByRole('button',{name:'Tools',exact:true}).click();
+ await root.getByRole('button',{name:'Availability',exact:true}).click();
+ await expect(root.getByRole('dialog',{name:'Availability'})).toBeVisible();
+ await root.getByRole('button',{name:'Close',exact:true}).click();
+ await root.getByRole('button',{name:'New Session',exact:true}).click();
+ await expect(root.getByRole('dialog',{name:'New session'})).toBeVisible();
+ await expect(root.getByRole('button',{name:'Create session',exact:true})).toBeDisabled();
+ await root.getByRole('button',{name:'Close',exact:true}).click();
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+});
