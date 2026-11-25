@@ -19,7 +19,7 @@ import { timeSeconds } from '../../domain/fixedAssignmentAvailability';
 import { formatScheduleTime } from '../../domain/scheduleTime';
 import { createXlsxWorkbook, excelCell } from '../../services/tinyXlsxWorkbook';
 import { getSignedSelfieUrl, sendAttendanceReminderInDb } from '../../services/citsRepository';
-import { calculateCampDayDate } from '../../domain/businessRules';
+import { calculateCampDayDate, resolveStudentOriginGroupForDay } from '../../domain/businessRules';
 import {
   AttendanceMark,
   AttendanceSheetStatus,
@@ -69,7 +69,7 @@ function checkinStatusDisplay(
     case CheckinStatus.EXCEPTION_APPROVED:
       return { label: t('Exception Approved', 'استثناء معتمد'), tone: 'success' };
     case CheckinStatus.LATE_FIRST_LECTURE:
-      return { label: t('Late (>=60m)', 'تأخير (+60د)'), tone: 'warning' };
+      return { label: t('Late', 'متأخر'), tone: 'warning' };
     case CheckinStatus.EXCEPTION_PENDING:
       return { label: t('Exception Pending', 'بانتظار المراجعة'), tone: 'warning' };
     case CheckinStatus.OUTSIDE_GEOFENCE:
@@ -170,7 +170,8 @@ export const AdminAttendanceView: React.FC = () => {
   const markLabel=(code:DayAttendanceCode)=>code==='P'?t('Present','حاضر'):code==='L'?t('Late','متأخر'):code==='A'?t('Absent','غائب'):code==='E'?t('Excused','بعذر'):code==='Pending'?t('Pending','غير معتمد'):t('Not applicable','غير منطبق');
   const markTone=(code:DayAttendanceCode)=>code==='P'?'success':code==='L'||code==='Pending'?'warning':code==='A'?'danger':'neutral';
   const exportRows=(name:string,rows:(string|number)[][])=>{const blob=createXlsxWorkbook([{name:'Attendance',rows:rows.map((r,i)=>r.map(v=>excelCell(v,i===0?3:4))),widths:[22,32,24,20,20,20,20,20],freeze:{columns:0,rows:1,topLeft:'A2'}}]);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=name+'.xlsx';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1200)};
-  const exportDay=()=>exportRows('Attendance-Day-'+selectedDay+'-snapshot',[['Student code','Student','Date','Official daily status'],...dailyRows.filter(r=>groupFilter==='all'||r.homeGroupId===groupFilter).map(r=>[r.studentCode,r.fullName,selectedDate,markLabel(r.days[selectedDay-1])])]);
+  const studentGroupOnDay=(id:string)=>{const st=students.find(st=>st.id===id);return st?resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:selectedDay}):''};
+  const exportDay=()=>exportRows('Attendance-Day-'+selectedDay+'-snapshot',[['Student code','Student','Date','Official daily status'],...dailyRows.filter(r=>groupFilter==='all'||studentGroupOnDay(r.studentId)===groupFilter).map(r=>[r.studentCode,r.fullName,selectedDate,markLabel(r.days[selectedDay-1])])]);
   const exportCamp=async()=>{setIsBusy(true);try{const res=await downloadTenDayAttendanceWorkbook(groupFilter==='all'?undefined:groupFilter);setSyncMessage({ok:res.ok,text:res.ok?t('Workbook downloaded','تم تنزيل التقرير'):res.error||t('Export failed','فشل التصدير')})}finally{setIsBusy(false)}};
   const remind=async(l:Lecture)=>{if(isBusy||!isSupabaseMode||!progress.overdueIds.has(l.id))return;setIsBusy(true);try{await sendAttendanceReminderInDb(l.id);setSyncMessage({ok:true,text:t('Reminder sent to instructor','تم إرسال التذكير للمحاضر')});await refreshOperationalData()}catch(e){setSyncMessage({ok:false,text:e instanceof Error?e.message:String(e)})}finally{setIsBusy(false)}};
   const openTool=(v:typeof tool)=>{setTool(v);setToolsOpen(false);setStudentQuery('');setStudentId('');setGroupFilter('all')};
@@ -333,7 +334,7 @@ export const AdminAttendanceView: React.FC = () => {
         {tool==='reports'&&<div className="space-y-2"><p className="text-sm text-slate-500">{t('Day export uses the loaded finalized daily snapshot. Camp export fetches a fresh server report.','تصدير اليوم من البيانات المعتمدة المحملة. تقرير الكامب يجلب أحدث بيانات السيرفر.')}</p><div className="flex flex-wrap gap-2"><button className={BTN_SECONDARY} onClick={exportDay}><Download size={15}/>{t('Export selected day','تصدير اليوم')}</button><button className={BTN_PRIMARY} disabled={isBusy||!isSupabaseMode} onClick={exportCamp}><Download size={15}/>{t('Export camp / group','تصدير الكامب أو المجموعة')}</button></div></div>}
         {(tool==='matrix'||tool==='absences'||tool==='history')&&<><p className="text-xs text-slate-500">{t('Finalized daily records · P present · L late · A absent · E excused · Pending unfinalized · — not applicable','الحضور اليومي المعتمد · P حاضر · L متأخر · A غائب · E بعذر · Pending غير معتمد · — غير منطبق')}</p>{tool==='history'&&<select className={SELECT_CLASS} aria-label={t('Select student','اختر الطالب')} value={studentId} onChange={e=>setStudentId(e.target.value)}><option value="">{t('Select a student','اختر طالباً')}</option>{toolRows.map(r=><option key={r.studentId} value={r.studentId}>{r.fullName} · {r.studentCode}</option>)}</select>}
         <div className="overflow-x-auto"><table className="w-full text-xs border-collapse"><thead><tr className="bg-slate-50 dark:bg-slate-800"><th className="p-2 text-start">{t('Student','الطالب')}</th>{Array.from({length:activeCamp.durationDays},(_,i)=><th key={i} className="p-2">D{i+1}</th>)}<th className="p-2">{t('Rate','النسبة')}</th></tr></thead><tbody>{toolRows.filter(r=>tool!=='history'||r.studentId===studentId).map(r=><tr key={r.studentId} className="border-t border-slate-200 dark:border-slate-700"><td className="p-2 min-w-[160px]"><button className="text-start font-semibold" onClick={()=>{setStudentId(r.studentId);setTool('history')}}>{r.fullName}</button><div className="text-slate-500">{r.studentCode} · {groupName(r.homeGroupId)}</div></td>{r.days.map((d,i)=><td key={i} className="p-1 text-center"><StatusBadge tone={markTone(d)}>{d}</StatusBadge></td>)}<td className="p-2 text-center font-semibold">{r.eligibleFinalDays?Math.round(r.presentDays/r.eligibleFinalDays*100)+'%':'—'}</td></tr>)}</tbody></table></div>{tool==='history'&&studentId&&<div className="space-y-2"><h3 className="font-semibold">{t('Recorded lecture history','سجل المحاضرات الفعلي')}</h3>{allCampSheets.filter(sh=>sh.records.some(r=>r.studentId===studentId)).sort((a,b)=>a.campDay-b.campDay||a.periodNumber-b.periodNumber).map(sh=>{const l=campLectures.find(l=>l.id===sh.lectureId),r=sh.records.find(r=>r.studentId===studentId)!;return <div key={sh.id} className={SURFACE_SUBTLE+' p-2 flex flex-wrap gap-2 justify-between text-xs'}><span>Day {sh.campDay} · P{sh.periodNumber} · {l?.topic} · {groupName(r.attendedGroupId)}</span><span>{r.isCrossGroup?t('Visitor','زائر'):''} · {r.mark} · {isFinalAttendance(sh)?t('Finalized','معتمد'):t('Draft','مسودة')}</span></div>})}</div>}<button className={BTN_SECONDARY} disabled={isBusy||!isSupabaseMode} onClick={exportCamp}><Download size={15}/>{t('Export full camp / group workbook','تصدير كشف الكامب أو المجموعة')}</button></>}
-        {tool==='revisions'&&<div className="space-y-2">{auditLogs.filter(log=>log.campId===activeCamp.id&&/attendance|checkin/i.test(log.entityType+' '+log.action)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(log=><div key={log.id} className={SURFACE_SUBTLE+' p-3 text-xs space-y-1'}><strong>{log.action} · {log.actorName}</strong><p>{log.createdAt}</p><p>{log.reason}</p><details><summary>{t('Before / after','قبل / بعد')}</summary><p className="break-all">{log.previousValue}</p><p className="break-all">{log.newValue}</p></details></div>)}</div>}
+        {tool==='revisions'&&<div className="space-y-2"><p className="text-xs text-slate-500">{t('Recent attendance and check-in audit entries (loaded snapshot).','أحدث سجلات تدقيق الحضور والوصول من البيانات المحملة.')}</p>{auditLogs.filter(log=>log.campId===activeCamp.id&&/attendance|checkin/i.test(log.entityType+' '+log.action)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(log=><div key={log.id} className={SURFACE_SUBTLE+' p-3 text-xs space-y-1'}><strong>{log.action} · {log.actorName}</strong><p>{log.createdAt}</p><p>{log.reason}</p><details><summary>{t('Before / after','قبل / بعد')}</summary><p className="break-all">{log.previousValue}</p><p className="break-all">{log.newValue}</p></details></div>)}</div>}
       </section>}
       {!campAllowsFinalAttendance && (
         <div role="status" className="flex items-start gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 p-3.5 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
@@ -441,7 +442,7 @@ export const AdminAttendanceView: React.FC = () => {
         </section>
       )}
 
-      {tab==='instructors'&&<section className={SURFACE_CARD+' p-4 space-y-3'}><h2 className="font-bold">{t('Instructor Check-in','حضور المحاضرين')}</h2><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{stat(t('Expected instructors','المحاضرون المتوقعون'),expectedIds.size)}{stat(t('Check-ins recorded','تم تسجيل الوصول'),campCheckins.length)}{stat(t('Missing check-ins','وصول غير مسجل بعد الموعد'),[...expectedIds].filter(missingCheckin).length,'text-rose-600')}{stat(t('Backup instructors','محاضرون مساعدون'),backupIds.size)}</div>{checkinIds.length===0&&<EmptyState icon={Users} title={t('No instructor assignments for this day','لا يوجد محاضرون في هذا اليوم')}/>}
+      {tab==='instructors'&&<section className={SURFACE_CARD+' p-4 space-y-3'}><h2 className="font-bold">{t('Instructor Check-in','حضور المحاضرين')}</h2><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{stat(t('Expected instructors','المحاضرون المتوقعون'),expectedIds.size)}{stat(t('Check-ins recorded','تم تسجيل الوصول'),new Set(campCheckins.map(c=>c.instructorId)).size)}{stat(t('Missing check-ins','وصول غير مسجل بعد الموعد'),[...expectedIds].filter(missingCheckin).length,'text-rose-600')}{stat(t('Backup instructors','محاضرون مساعدون'),backupIds.size)}</div>{checkinIds.length===0&&<EmptyState icon={Users} title={t('No instructor assignments for this day','لا يوجد محاضرون في هذا اليوم')}/>}
       {checkinIds.map(id=>{const c=campCheckins.find(c=>c.instructorId===id),status=c?checkinStatusDisplay(c.status,t):null;return <article key={id} className={SURFACE_SUBTLE+' p-3 space-y-2'}><div className="flex flex-wrap justify-between gap-2 items-center"><div className="flex items-center gap-2"><UserRound size={20}/><div><strong>{instructorName(id)}</strong><p className="text-xs text-slate-500">{backupIds.has(id)?t('Backup assignment','تكليف مساعد'):t('Instructor','محاضر')}</p></div></div><StatusBadge tone={status?.tone||(missingCheckin(id)?'danger':'neutral')}>{status?.label||(missingCheckin(id)?t('Missing check-in','وصول غير مسجل'):t('Not recorded yet','لم يسجل بعد'))}</StatusBadge></div>{c&&<><p className="text-xs"><span dir="ltr">{new Date(c.serverTimestamp).toLocaleString('en-GB',{timeZone:'Africa/Cairo',hour:'numeric',minute:'2-digit',hour12:true})}</span> · {t('Late minutes','دقائق التأخير')}: {c.minutesAfterFirstLecture} · {t('Distance','المسافة')}: {c.distanceFromVenueMeters} m · {t('GPS accuracy','دقة الموقع')}: {c.gpsAccuracyMeters} m · {c.withinGeofence?t('Within geofence','داخل النطاق'):t('Outside geofence','خارج النطاق')}</p>{c.selfieStoragePath&&!c.selfieDeletedAfterArchive&&<button className={BTN_SECONDARY} onClick={()=>handleLoadSelfie(c.id,c.selfieStoragePath!)}>{t('View Selfie','عرض الصورة')}</button>}{selfiePreviews[c.id]&&<img src={selfiePreviews[c.id]} alt={t('Check-in selfie preview','صورة التحقق')} className="w-36 h-36 object-cover rounded-lg"/>}</>}</article>})}</section>}
       {tab==='students'&&<>
       {/* Search and filter are visually separate from the lecture cards. */}
@@ -509,10 +510,10 @@ export const AdminAttendanceView: React.FC = () => {
           const lec=lecture, sheet=sheetFor(lec.id);
           const periodHeader=index===0||filteredLectures[index-1].periodNumber!==lec.periodNumber?<div className="flex flex-wrap items-center gap-3 pt-2"><h3 className="font-bold text-teal-700 dark:text-teal-300">{t('Period '+lec.periodNumber,'الفترة '+lec.periodNumber)}</h3><span dir="ltr" className="text-xs text-slate-500">{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</span></div>:null;
           if(!sheet)return <React.Fragment key={lec.id}>{periodHeader}<article className={SURFACE_CARD+' p-4 flex flex-wrap justify-between gap-3'}><div><strong>{groupName(lec.groupId)} · {lec.topic}</strong><p className="text-xs text-slate-500">{instructorName(lec.substituteInstructorId||lec.instructorId)} · {t('No attendance sheet saved','لا يوجد كشف محفوظ')}</p></div><div className="flex items-center gap-2"><StatusBadge tone={progress.overdueIds.has(lec.id)?'warning':'neutral'}>{progress.overdueIds.has(lec.id)?t('Overdue','متأخر'):t('Pending','غير معتمد')}</StatusBadge>{isSupabaseMode&&progress.overdueIds.has(lec.id)&&<button className={BTN_SECONDARY} disabled={isBusy} onClick={()=>remind(lec)}><Bell size={15}/>{t('Send Reminder','إرسال تذكير')}</button>}</div></article></React.Fragment>;
-          const inst = instructors.find(i => i.id === sheet.instructorId);
+          const inst = instructors.find(i => i.id === (lec.substituteInstructorId||lec.instructorId));
           const grp = groups.find(g => g.id === lec?.groupId);
           const chk = campCheckins.find(c =>
-            c.instructorId === sheet.instructorId && c.campDay === sheet.campDay
+            c.instructorId === (lec.substituteInstructorId||lec.instructorId) && c.campDay === sheet.campDay
           );
           const chkDisplay = chk ? checkinStatusDisplay(chk.status, t) : null;
           const isExpanded = expandedSheetId === sheet.id;
@@ -525,6 +526,12 @@ export const AdminAttendanceView: React.FC = () => {
           const unmarkedCount = sheet.records.filter(r => r.mark === 'unmarked').length;
           const excusedCount = sheet.records.filter(r => r.mark === AttendanceMark.EXCUSED).length;
           const hasSavedRows = sheet.records.length > 0;
+          const savedIds=new Set(sheet.records.map(r=>r.studentId));
+          const expectedRoster=students.filter(st=>st.campId===activeCamp.id&&studentEligibleForCampDay(st,selectedDay)&&resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:selectedDay})===lec.groupId);
+          const missingRoster=expectedRoster.filter(st=>!savedIds.has(st.id));
+          const matchingMissing=missingRoster.filter(st=>!rosterQuery.trim()||(st.fullName+' '+st.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase()));
+          const rosterCount=new Set([...expectedRoster.map(st=>st.id),...savedIds]).size;
+          const officialLabel=isFinalized?t('Finalized','معتمد'):progress.overdueIds.has(lec.id)?t('Overdue draft','مسودة متأخرة'):t('Server draft','مسودة السيرفر');
           return (
             <React.Fragment key={sheet.id}>{periodHeader}<article
               aria-label={t(`Attendance sheet: ${lec?.topic || sheet.lectureId}`,
@@ -548,12 +555,13 @@ export const AdminAttendanceView: React.FC = () => {
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
                       {inst ? t(inst.fullNameEn, inst.fullNameAr) : sheet.instructorId}
-                      {lec && <span className="ms-3">{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</span>}
+                      {lec && <span className="ms-3" dir="ltr">{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</span>}
+                      <span className="ms-3">{rosterCount} {t('students in roster','طالب في الكشف')}</span>
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <StatusBadge tone={isFinalized ? 'success' : 'warning'}>
-                      {isFinalized ? t('Finalized', 'معتمد') : t('Server draft', 'مسودة السيرفر')}
+                      {officialLabel}
                     </StatusBadge>
                     {isSupabaseMode&&progress.overdueIds.has(lec.id)&&<button className={BTN_SECONDARY} disabled={isBusy} onClick={()=>remind(lec)}><Bell size={15}/>{t('Send Reminder','إرسال تذكير')}</button>}
                     <button type="button"
@@ -569,15 +577,15 @@ export const AdminAttendanceView: React.FC = () => {
                 </div>
 
                 {hasSavedRows ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
                     {[
                       { label: t('Present', 'حاضر'), count: presentCount, color: 'text-emerald-700 dark:text-emerald-300' },
                       { label: t('Late', 'متأخر'), count: lateCount, color: 'text-amber-700 dark:text-amber-300' },
                       { label: t('Absent', 'غائب'), count: absentCount, color: 'text-rose-700 dark:text-rose-300' },
-                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount, color: 'text-slate-700 dark:text-[#C0C5C9]' },
+                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount+missingRoster.length, color: 'text-slate-700 dark:text-[#C0C5C9]' },
                       { label: t('Excused', 'بعذر'), count: excusedCount, color: 'text-violet-700 dark:text-violet-300' },
                     ].map(stat => (
-                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-3 py-2.5">
+                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-3 py-1.5">
                         <p className="text-[11px] font-medium text-slate-500 dark:text-[#A0A5AA]">{stat.label}</p>
                         <p className={`text-xl font-bold tabular-nums mt-0.5 ${stat.color}`}>{stat.count}</p>
                       </div>
@@ -629,6 +637,7 @@ export const AdminAttendanceView: React.FC = () => {
                       </button>
                     )}
                   </div>
+                  <div className="flex flex-wrap gap-2 attendance-no-print"><input className={INPUT_CLASS} aria-label={t('Search roster','بحث الكشف')} placeholder={t('Student name or code','اسم الطالب أو الكود')} value={rosterQuery} onChange={e=>setRosterQuery(e.target.value)}/><button className={BTN_SECONDARY} onClick={()=>exportRows('Attendance-Day-'+selectedDay+'-P'+sheet.periodNumber+'-'+(isFinalized?'finalized':'draft'),[['Student code','Student','Mark','Sheet status','Attended group','Visitor'],...sheet.records.map(r=>[r.studentCode,r.studentName,r.mark,isFinalized?'Finalized':'Draft',groupName(r.attendedGroupId),r.isCrossGroup?'Yes':'No']),...missingRoster.map(st=>[st.studentCode,st.fullName,'Not recorded',isFinalized?'Finalized':'Draft',groupName(lec.groupId),'No'])])}><Download size={15}/>{t('Export roster','تصدير الكشف')}</button></div>
                   {hasSavedRows ? (
                     <>
                       <div className="rounded-xl border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] p-3.5 space-y-2">
@@ -647,7 +656,6 @@ export const AdminAttendanceView: React.FC = () => {
                             'السبب ده بيتسجل مع أي تعديل لحضور طالب.')}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2"><input className={INPUT_CLASS} aria-label={t('Search roster','بحث الكشف')} placeholder={t('Student name or code','اسم الطالب أو الكود')} value={rosterQuery} onChange={e=>setRosterQuery(e.target.value)}/><button className={BTN_SECONDARY} onClick={()=>exportRows('Attendance-Day-'+selectedDay+'-P'+sheet.periodNumber+'-'+(isFinalized?'finalized':'draft'),[['Student code','Student','Mark','Sheet status','Attended group','Visitor'],...sheet.records.map(r=>[r.studentCode,r.studentName,r.mark,isFinalized?'Finalized':'Draft',groupName(r.attendedGroupId),r.isCrossGroup?'Yes':'No'])])}><Download size={15}/>{t('Export roster','تصدير الكشف')}</button></div>
                       <div className="space-y-2">
                         {sheet.records.filter(rec=>!rosterQuery.trim()||(rec.studentName+' '+rec.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase())).map(rec => (
                           <div key={rec.studentId}
@@ -688,6 +696,7 @@ export const AdminAttendanceView: React.FC = () => {
                         'المسودة مفيهاش سجلات طلاب محفوظة على السيرفر. تعديلات المحاضر المحلية مش بتظهر قبل المزامنة. متعتبرش النتيجة دي غياب.')}
                     </p>
                   )}
+                  {matchingMissing.length>0&&<div className="space-y-2"><h4 className="text-sm font-semibold">{t('Roster students without a server-saved row','طلاب الكشف دون سجل محفوظ')}</h4>{matchingMissing.map(st=><div key={st.id} className={SURFACE_SUBTLE+' p-3 flex justify-between gap-2 text-sm'}><div><strong>{st.fullName}</strong><p className="text-xs text-slate-500">{st.studentCode}</p></div><StatusBadge tone="neutral">{t('Not recorded','لم يسجل')}</StatusBadge></div>)}</div>}
                   {!isFinalized && canSubmitSheet && (
                     <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                       {t('Review any Instructor offline drafts before final submission. Unmarked students become absent only after finalization.',
