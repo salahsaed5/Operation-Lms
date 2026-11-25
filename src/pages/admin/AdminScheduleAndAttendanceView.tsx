@@ -185,7 +185,7 @@ export const AdminAttendanceView: React.FC = () => {
   const expectedIds=new Set(dayLectures.filter(l=>l.status!==LectureStatus.CANCELLED).map(l=>l.substituteInstructorId||l.instructorId));
   const backupIds=new Set(financeSnapshot.backups.filter(b=>b.status!=='excluded'&&dayLectures.some(l=>l.id===b.lectureId)).map(b=>b.instructorId));
   const checkinIds=[...new Set([...expectedIds,...backupIds,...campCheckins.map(c=>c.instructorId)])];
-  const missingCheckin=(id:string)=>campAllowsFinalAttendance&&dayLectures.some(l=>(l.substituteInstructorId||l.instructorId)===id&&(l.lectureDate<clock.date||(l.lectureDate===clock.date&&timeSeconds(l.startTime)<=clock.seconds)))&&!campCheckins.some(c=>c.instructorId===id);
+  const missingCheckin=(id:string)=>campAllowsFinalAttendance&&dayLectures.some(l=>l.status!==LectureStatus.CANCELLED&&(l.substituteInstructorId||l.instructorId)===id&&(l.lectureDate<clock.date||(l.lectureDate===clock.date&&timeSeconds(l.startTime)<=clock.seconds)))&&!campCheckins.some(c=>c.instructorId===id);
   const toolRows=(matrix?.rows||[]).filter(r=>(groupFilter==='all'||r.homeGroupId===groupFilter)&&(!studentQuery.trim()||(r.fullName+' '+r.studentCode).toLowerCase().includes(studentQuery.trim().toLowerCase()))&&(tool!=='absences'||r.days.slice(0,selectedDay).filter(d=>d==='A').length>=absenceThreshold));
   const markLabel=(code:DayAttendanceCode)=>code==='P'?t('Present','حاضر'):code==='L'?t('Late','متأخر'):code==='A'?t('Absent','غائب'):code==='E'?t('Excused','بعذر'):code==='Pending'?t('Pending','غير معتمد'):t('Not applicable','غير منطبق');
   const markTone=(code:DayAttendanceCode)=>code==='P'?'success':code==='L'||code==='Pending'?'warning':code==='A'?'danger':'neutral';
@@ -315,6 +315,108 @@ export const AdminAttendanceView: React.FC = () => {
       });
     }
   };
+
+  const rosterFor=(lec:Lecture)=>students.filter(st=>st.campId===activeCamp.id&&studentEligibleForCampDay(st,selectedDay)&&resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:selectedDay})===lec.groupId);
+  const statsFor=(lec:Lecture)=>{const sh=sheetFor(lec.id),records=sh?.records||[],savedIds=new Set(records.map(r=>r.studentId)),missing=rosterFor(lec).filter(st=>!savedIds.has(st.id)),n=(mark:string)=>records.filter(r=>r.mark===mark).length;return {p:n(AttendanceMark.PRESENT),a:n(AttendanceMark.ABSENT),l:n(AttendanceMark.LATE),e:n(AttendanceMark.EXCUSED),u:n('unmarked')+missing.length,total:savedIds.size+missing.length,missing}};
+  const lectureDisplay=(lec:Lecture)=>lec.status===LectureStatus.CANCELLED?{label:t('Cancelled','ملغاة'),tone:'neutral'}:isFinalAttendance(sheetFor(lec.id))?{label:t('Finalized','معتمد'),tone:'success'}:progress.overdueIds.has(lec.id)?{label:t('Overdue','متأخر'),tone:'danger'}:lec.sessionStartedAt||lec.status===LectureStatus.IN_PROGRESS?{label:t('In Progress','جارية'),tone:'warning'}:lec.lectureDate>clock.date||(lec.lectureDate===clock.date&&clock.seconds<timeSeconds(lec.startTime))?{label:t('Upcoming','قادمة'),tone:'info'}:{label:t('Draft','مسودة'),tone:'neutral'};
+  const groupTitle=(lec:Lecture)=>{const name=groupName(lec.groupId),code=groups.find(g=>g.id===lec.groupId)?.code;return name.toLowerCase()===lec.topic.toLowerCase()?name+(code?' · '+code:''):name+' · '+lec.topic};
+  const actionsFor=(lec:Lecture)=>{const sh=sheetFor(lec.id);return <div className="attendance-card-actions">{isSupabaseMode&&progress.overdueIds.has(lec.id)&&<button className="attendance-icon-button" disabled={isBusy} title={t('Send Reminder','إرسال تذكير')} aria-label={t('Send Reminder','إرسال تذكير')} onClick={()=>remind(lec)}><Bell size={16}/></button>}{sh&&lec.status!==LectureStatus.CANCELLED&&<button className="attendance-view-button" onClick={()=>openDetails(sh.id)}><Eye size={15}/>{t('View Attendance','عرض الحضور')}</button>}</div>};
+  const renderRoster=()=>{const sheet=campSheets.find(sh=>sh.id===expandedSheetId),lec=dayLectures.find(l=>l.id===sheet?.lectureId);if(!sheet||!lec)return null;
+    const isFinalized=isFinalAttendance(sheet),canSubmitSheet=campAllowsFinalAttendance&&lec.lectureDate<=cairoToday&&lec.status!==LectureStatus.CANCELLED;
+    const counts=statsFor(lec),{p:presentCount,a:absentCount,l:lateCount,e:excusedCount,missing:missingRoster,total:rosterCount}=counts;
+    const unmarkedCount=sheet.records.filter(r=>r.mark==='unmarked').length,hasSavedRows=sheet.records.length>0;
+    const matchingMissing=missingRoster.filter(st=>(rosterMark==='all'||rosterMark==='unmarked')&&(!rosterQuery.trim()||(st.fullName+' '+st.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase())));
+    const index=visibleSheetIds.indexOf(sheet.id);
+    return <><header className="attendance-drawer-header"><div><h2>{groupTitle(lec)}</h2><p>Day {selectedDay} · P{lec.periodNumber} · {rooms.find(r=>r.id===lec.roomId)?.name||'—'}</p><p>{instructorName(lec.substituteInstructorId||lec.instructorId)} · <bdi>{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</bdi></p></div><button className="attendance-icon-button" aria-label={t('Close details','إغلاق التفاصيل')} disabled={isBusy} onClick={closeDetails}><X size={20}/></button></header><div className="attendance-drawer-nav attendance-no-print"><button className={BTN_SECONDARY} disabled={isBusy||index<=0} onClick={()=>navigateRoster(-1)}><ChevronLeft size={15}/>{t('Previous group','المجموعة السابقة')}</button><button className={BTN_SECONDARY} disabled={isBusy||index<0||index>=visibleSheetIds.length-1} onClick={()=>navigateRoster(1)}>{t('Next group','المجموعة التالية')}<ChevronRight size={15}/></button></div>{syncMessage&&<InlineBanner type={syncMessage.ok?'success':'error'} message={syncMessage.text}/>}                 <div id={`admin-roster-${sheet.id}`}
+                  className="attendance-roster-body space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        {t('Student attendance records', 'سجلات حضور الطلاب')}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
+                        {t(`${sheet.records.length} rows saved on server`,
+                          `${sheet.records.length} سجل محفوظ على السيرفر`)}
+                      </p>
+                    </div>
+                    {!isFinalized && canSubmitSheet && (
+                      <button type="button" disabled={isBusy}
+                        onClick={() => handleForceSync(sheet.lectureId)}
+                        className={`${BTN_PRIMARY} min-h-[42px]`}>
+                        {t('Finalize Attendance', 'اعتماد الحضور')}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 attendance-no-print"><input className={INPUT_CLASS} aria-label={t('Search roster','بحث الكشف')} placeholder={t('Student name or code','اسم الطالب أو الكود')} value={rosterQuery} onChange={e=>setRosterQuery(e.target.value)}/><button className={BTN_SECONDARY} onClick={()=>exportRows('Attendance-Day-'+selectedDay+'-P'+sheet.periodNumber+'-'+(isFinalized?'finalized':'draft'),[['Student code','Student','Mark','Sheet status','Attended group','Visitor'],...sheet.records.filter(r=>(rosterMark==='all'||r.mark===rosterMark)&&(!rosterQuery.trim()||(r.studentName+' '+r.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase()))).map(r=>[r.studentCode,r.studentName,r.mark,isFinalized?'Finalized':'Draft',groupName(r.attendedGroupId),r.isCrossGroup?'Yes':'No']),...matchingMissing.map(st=>[st.studentCode,st.fullName,'Not recorded',isFinalized?'Finalized':'Draft',groupName(lec.groupId),'No'])])}><Download size={15}/>{t('Export roster','تصدير الكشف')}</button><button className={BTN_SECONDARY} onClick={()=>window.print()}><Printer size={15}/>{t('Print','طباعة')}</button></div><div className="attendance-roster-filters">{([['all',t('All','الكل'),rosterCount],['present',t('Present','حاضر'),presentCount],['absent',t('Absent','غائب'),absentCount],['late',t('Late','متأخر'),lateCount],['excused',t('Excused','بعذر'),excusedCount],['unmarked',t('Pending','غير محدد'),unmarkedCount+missingRoster.length]] as const).map(([key,label,n])=><button key={key} aria-pressed={rosterMark===key} onClick={()=>setRosterMark(key)}>{label} ({n})</button>)}</div>
+                  {hasSavedRows ? (
+                    <>
+                      <div className="rounded-xl border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] p-3.5 space-y-2">
+                        <label htmlFor={`corr-note-${sheet.id}`}
+                          className="block text-xs font-semibold text-slate-700 dark:text-[#DEE1E4]">
+                          {t('Reason for audited corrections', 'سبب التعديل المسجل في التدقيق')}
+                        </label>
+                        <input id={`corr-note-${sheet.id}`} type="text"
+                          value={correctionNotes[sheet.id] ?? 'Verified by Admin during roster review'}
+                          onChange={e => setCorrectionNotes(prev => ({ ...prev, [sheet.id]: e.target.value }))}
+                          placeholder={t('Reason for correcting attendance', 'سبب تعديل حضور الطالب')}
+                          className={`${INPUT_CLASS} min-h-[42px]`}
+                        />
+                        <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">
+                          {t('This reason is logged whenever a student mark is changed.',
+                            'السبب ده بيتسجل مع أي تعديل لحضور طالب.')}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {sheet.records.filter(rec=>(rosterMark==='all'||rec.mark===rosterMark)&&(!rosterQuery.trim()||(rec.studentName+' '+rec.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase()))).map(rec => (
+                          <div key={rec.studentId}
+                            className="attendance-roster-row"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">{rec.studentName}</p>
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-[#A0A5AA]">
+                                <span className="font-mono">{rec.studentCode}</span>
+                                {rec.isCrossGroup && <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>}
+                              </div>
+                            </div>
+                            <span className="attendance-print-only font-semibold">{rec.mark}</span><span className="attendance-current-mark">{rec.mark}</span><div className="attendance-mark-actions">
+                              {([
+                                { mk: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', active: 'bg-emerald-600 text-white border-emerald-600' },
+                                { mk: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', active: 'bg-amber-600 text-white border-amber-600' },
+                                { mk: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', active: 'bg-rose-600 text-white border-rose-600' },
+                                { mk: AttendanceMark.EXCUSED, en: 'Excused', ar: 'بعذر', active: 'bg-violet-600 text-white border-violet-600' },
+                              ] as const).map(opt => (
+                                <button key={opt.mk} type="button"
+                                  aria-pressed={rec.mark === opt.mk}
+                                  disabled={isBusy}
+                                  onClick={() => handleCorrectMark(sheet.id, sheet.lectureId, rec.studentId, opt.mk)}
+                                  className={`min-h-[40px] rounded-lg border px-2 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${rec.mark === opt.mk
+                                    ? opt.active
+                                    : 'border-slate-200 dark:border-[#42474D] text-slate-700 dark:text-[#DEE1E4] bg-white dark:bg-[#25292D] hover:bg-slate-50'}`}>
+                                  {t(opt.en, opt.ar)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="rounded-xl bg-white dark:bg-[#1D2023] border border-slate-200 dark:border-[#353A3F] p-4 text-xs leading-relaxed text-slate-600 dark:text-[#C0C5C9]">
+                      {t('This draft has no student rows saved on the server. Instructor offline edits are not visible until synchronized. Do not interpret empty records as absences.',
+                        'المسودة مفيهاش سجلات طلاب محفوظة على السيرفر. تعديلات المحاضر المحلية مش بتظهر قبل المزامنة. متعتبرش النتيجة دي غياب.')}
+                    </p>
+                  )}
+                  {matchingMissing.length>0&&<div className="space-y-2"><h4 className="text-sm font-semibold">{t('Roster students without a server-saved row','طلاب الكشف دون سجل محفوظ')}</h4>{matchingMissing.map(st=><div key={st.id} className={SURFACE_SUBTLE+' p-3 flex justify-between gap-2 text-sm'}><div><strong>{st.fullName}</strong><p className="text-xs text-slate-500">{st.studentCode}</p></div><StatusBadge tone="neutral">{t('Not recorded','لم يسجل')}</StatusBadge></div>)}</div>}
+                  {!isFinalized && canSubmitSheet && (
+                    <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                      {t('Review any Instructor offline drafts before final submission. Unmarked students become absent only after finalization.',
+                        'راجع مسودات المحاضر المحلية قبل الاعتماد. الطلاب غير المحددين بيتحسبوا غياب بعد الاعتماد النهائي فقط.')}
+                    </p>
+                  )}
+                </div></>;
+  };
+  const metricRows=metric?dailyRows.filter(r=>{const code=r.days[selectedDay-1];return (metric==='all'||metric==='rate'&&['P','L','A'].includes(code)||metric==='coverage'&&['P','L','A','E'].includes(code)||metric===code)&&(!metricQuery.trim()||(r.fullName+' '+r.studentCode).toLowerCase().includes(metricQuery.trim().toLowerCase()))}):[];
 
   return (
     <div className="attendance-workspace space-y-4">
@@ -531,209 +633,12 @@ export const AdminAttendanceView: React.FC = () => {
               {t('Clear filters', 'مسح الفلاتر')}
             </button>
           </div>
-        ) : filteredLectures.map((lecture,index) => {
-          const lec=lecture, sheet=sheetFor(lec.id);
-          const periodHeader=index===0||filteredLectures[index-1].periodNumber!==lec.periodNumber?<div className="flex flex-wrap items-center gap-3 pt-2"><h3 className="font-bold text-teal-700 dark:text-teal-300">{t('Period '+lec.periodNumber,'الفترة '+lec.periodNumber)}</h3><span dir="ltr" className="text-xs text-slate-500">{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</span></div>:null;
-          if(!sheet)return <React.Fragment key={lec.id}>{periodHeader}<article className={SURFACE_CARD+' p-4 flex flex-wrap justify-between gap-3'}><div><strong>{groupName(lec.groupId)} · {lec.topic}</strong><p className="text-xs text-slate-500">{instructorName(lec.substituteInstructorId||lec.instructorId)} · {t('No attendance sheet saved','لا يوجد كشف محفوظ')}</p></div><div className="flex items-center gap-2"><StatusBadge tone={progress.overdueIds.has(lec.id)?'warning':'neutral'}>{progress.overdueIds.has(lec.id)?t('Overdue','متأخر'):t('Pending','غير معتمد')}</StatusBadge>{isSupabaseMode&&progress.overdueIds.has(lec.id)&&<button className={BTN_SECONDARY} disabled={isBusy} onClick={()=>remind(lec)}><Bell size={15}/>{t('Send Reminder','إرسال تذكير')}</button>}</div></article></React.Fragment>;
-          const inst = instructors.find(i => i.id === (lec.substituteInstructorId||lec.instructorId));
-          const grp = groups.find(g => g.id === lec?.groupId);
-          const chk = campCheckins.find(c =>
-            c.instructorId === (lec.substituteInstructorId||lec.instructorId) && c.campDay === sheet.campDay
-          );
-          const chkDisplay = chk ? checkinStatusDisplay(chk.status, t) : null;
-          const isExpanded = expandedSheetId === sheet.id;
-          const isFinalized = sheet.status === AttendanceSheetStatus.SUBMITTED ||
-            sheet.status === AttendanceSheetStatus.LOCKED;
-          const canSubmitSheet = campAllowsFinalAttendance && Boolean(lec && lec.lectureDate <= cairoToday);
-          const presentCount = sheet.records.filter(r => r.mark === AttendanceMark.PRESENT).length;
-          const lateCount = sheet.records.filter(r => r.mark === AttendanceMark.LATE).length;
-          const absentCount = sheet.records.filter(r => r.mark === AttendanceMark.ABSENT).length;
-          const unmarkedCount = sheet.records.filter(r => r.mark === 'unmarked').length;
-          const excusedCount = sheet.records.filter(r => r.mark === AttendanceMark.EXCUSED).length;
-          const hasSavedRows = sheet.records.length > 0;
-          const savedIds=new Set(sheet.records.map(r=>r.studentId));
-          const expectedRoster=students.filter(st=>st.campId===activeCamp.id&&studentEligibleForCampDay(st,selectedDay)&&resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:selectedDay})===lec.groupId);
-          const missingRoster=expectedRoster.filter(st=>!savedIds.has(st.id));
-          const matchingMissing=missingRoster.filter(st=>!rosterQuery.trim()||(st.fullName+' '+st.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase()));
-          const rosterCount=new Set([...expectedRoster.map(st=>st.id),...savedIds]).size;
-          const officialLabel=isFinalized?t('Finalized','معتمد'):progress.overdueIds.has(lec.id)?t('Overdue draft','مسودة متأخرة'):t('Server draft','مسودة السيرفر');
-          return (
-            <React.Fragment key={sheet.id}>{periodHeader}<article
-              aria-label={t(`Attendance sheet: ${lec?.topic || sheet.lectureId}`,
-                `كشف حضور: ${lec?.topic || sheet.lectureId}`)}
-              className="overflow-hidden rounded-2xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] shadow-sm"
-            >
-              <div className="p-3 sm:p-4 space-y-3">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-                      <span className="rounded-md bg-blue-50 dark:bg-[#293747]/40 px-2.5 py-1 text-blue-700 dark:text-blue-300">
-                        {t(`Day ${sheet.campDay} · Period ${sheet.periodNumber}`,
-                           `اليوم ${sheet.campDay} · الفترة ${sheet.periodNumber}`)}
-                      </span>
-                      <span className="rounded-md bg-slate-100 dark:bg-[#25292D] px-2.5 py-1 text-slate-600 dark:text-[#C0C5C9]">
-                        {grp ? t(grp.nameEn,grp.nameAr) : t('Unknown group', 'جروب غير معروف')}
-                      </span>
-                    </div>
-                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words">
-                      {lec?.topic || sheet.lectureId}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-[#A0A5AA]">
-                      {inst ? t(inst.fullNameEn, inst.fullNameAr) : sheet.instructorId}
-                      {lec && <span className="ms-3" dir="ltr">{formatScheduleTime(lec.startTime)} – {formatScheduleTime(lec.endTime)}</span>}
-                      <span className="ms-3">{rosterCount} {t('students in roster','طالب في الكشف')}</span>
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <StatusBadge tone={isFinalized ? 'success' : 'warning'}>
-                      {officialLabel}
-                    </StatusBadge>
-                    {isSupabaseMode&&progress.overdueIds.has(lec.id)&&<button className={BTN_SECONDARY} disabled={isBusy} onClick={()=>remind(lec)}><Bell size={15}/>{t('Send Reminder','إرسال تذكير')}</button>}
-                    <button type="button"
-                      aria-expanded={isExpanded}
-                      aria-controls={`admin-roster-${sheet.id}`}
-                      onClick={() => {setExpandedSheetId(isExpanded ? null : sheet.id);setRosterQuery('')}}
-                      className="inline-flex items-center gap-2 min-h-[40px] rounded-xl border border-slate-200 dark:border-[#42474D] px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-[#DEE1E4] bg-white dark:bg-[#25292D] hover:bg-slate-50 dark:hover:bg-slate-700"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>{isExpanded ? t('Close details', 'إغلاق التفاصيل') : t('View Attendance', 'عرض الحضور')}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {hasSavedRows ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
-                    {[
-                      { label: t('Present', 'حاضر'), count: presentCount, color: 'text-emerald-700 dark:text-emerald-300' },
-                      { label: t('Late', 'متأخر'), count: lateCount, color: 'text-amber-700 dark:text-amber-300' },
-                      { label: t('Absent', 'غائب'), count: absentCount, color: 'text-rose-700 dark:text-rose-300' },
-                      { label: t('Unmarked', 'غير محدد'), count: unmarkedCount+missingRoster.length, color: 'text-slate-700 dark:text-[#C0C5C9]' },
-                      { label: t('Excused', 'بعذر'), count: excusedCount, color: 'text-violet-700 dark:text-violet-300' },
-                    ].map(stat => (
-                      <div key={stat.label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] px-3 py-1.5">
-                        <p className="text-[11px] font-medium text-slate-500 dark:text-[#A0A5AA]">{stat.label}</p>
-                        <p className={`text-xl font-bold tabular-nums mt-0.5 ${stat.color}`}>{stat.count}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-[#42474D] bg-slate-50/70 dark:bg-[#121416]/30 px-3.5 py-3 flex flex-wrap items-center gap-2">
-                    <ClipboardCheck className="w-4 h-4 shrink-0 text-slate-400" />
-                    <span className="text-xs font-medium text-slate-600 dark:text-[#C0C5C9]">
-                      {t('No server-saved marks yet — this does not mean all students are absent.',
-                        'مفيش حضور محفوظ للطلاب على السيرفر لسه — ده مش معناه إنهم غايبين.')}
-                    </span>
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-[#353A3F] pt-3 text-xs">
-                  <span className="text-slate-500 dark:text-[#A0A5AA]">
-                    {t('Instructor check-in', 'وصول المحاضر')}:
-                  </span>
-                  {chk && chkDisplay
-                    ? <StatusBadge tone={chkDisplay.tone}>{chkDisplay.label}</StatusBadge>
-                    : <span className="font-semibold text-slate-500 dark:text-[#A0A5AA]">{t('Not recorded', 'لم يُسجل')}</span>}
-                  {!isFinalized && (
-                    <span className="ms-auto text-[11px] text-slate-500 dark:text-[#A0A5AA]">
-                      {t('Draft · Not final', 'مسودة · ليست نهائية')}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {isExpanded && (
-                <div id={`admin-roster-${sheet.id}`}
-                  className="border-t border-slate-200 dark:border-[#353A3F] bg-slate-50/50 dark:bg-[#121416]/20 p-4 sm:p-5 space-y-4"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        {t('Student attendance records', 'سجلات حضور الطلاب')}
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-1">
-                        {t(`${sheet.records.length} rows saved on server`,
-                          `${sheet.records.length} سجل محفوظ على السيرفر`)}
-                      </p>
-                    </div>
-                    {!isFinalized && canSubmitSheet && (
-                      <button type="button" disabled={isBusy}
-                        onClick={() => handleForceSync(sheet.lectureId)}
-                        className={`${BTN_PRIMARY} min-h-[42px]`}>
-                        {t('Submit & Sync Now', 'اعتماد ومزامنة الآن')}
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 attendance-no-print"><input className={INPUT_CLASS} aria-label={t('Search roster','بحث الكشف')} placeholder={t('Student name or code','اسم الطالب أو الكود')} value={rosterQuery} onChange={e=>setRosterQuery(e.target.value)}/><button className={BTN_SECONDARY} onClick={()=>exportRows('Attendance-Day-'+selectedDay+'-P'+sheet.periodNumber+'-'+(isFinalized?'finalized':'draft'),[['Student code','Student','Mark','Sheet status','Attended group','Visitor'],...sheet.records.map(r=>[r.studentCode,r.studentName,r.mark,isFinalized?'Finalized':'Draft',groupName(r.attendedGroupId),r.isCrossGroup?'Yes':'No']),...missingRoster.map(st=>[st.studentCode,st.fullName,'Not recorded',isFinalized?'Finalized':'Draft',groupName(lec.groupId),'No'])])}><Download size={15}/>{t('Export roster','تصدير الكشف')}</button></div>
-                  {hasSavedRows ? (
-                    <>
-                      <div className="rounded-xl border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] p-3.5 space-y-2">
-                        <label htmlFor={`corr-note-${sheet.id}`}
-                          className="block text-xs font-semibold text-slate-700 dark:text-[#DEE1E4]">
-                          {t('Reason for audited corrections', 'سبب التعديل المسجل في التدقيق')}
-                        </label>
-                        <input id={`corr-note-${sheet.id}`} type="text"
-                          value={correctionNotes[sheet.id] ?? 'Verified by Admin during roster review'}
-                          onChange={e => setCorrectionNotes(prev => ({ ...prev, [sheet.id]: e.target.value }))}
-                          placeholder={t('Reason for correcting attendance', 'سبب تعديل حضور الطالب')}
-                          className={`${INPUT_CLASS} min-h-[42px]`}
-                        />
-                        <p className="text-[11px] text-slate-500 dark:text-[#A0A5AA]">
-                          {t('This reason is logged whenever a student mark is changed.',
-                            'السبب ده بيتسجل مع أي تعديل لحضور طالب.')}
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        {sheet.records.filter(rec=>!rosterQuery.trim()||(rec.studentName+' '+rec.studentCode).toLowerCase().includes(rosterQuery.trim().toLowerCase())).map(rec => (
-                          <div key={rec.studentId}
-                            className="rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">{rec.studentName}</p>
-                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-[#A0A5AA]">
-                                <span className="font-mono">{rec.studentCode}</span>
-                                {rec.isCrossGroup && <StatusBadge tone="info">{t('Visitor', 'زائر')}</StatusBadge>}
-                              </div>
-                            </div>
-                            <span className="attendance-print-only font-semibold">{rec.mark}</span><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full md:w-[340px] shrink-0">
-                              {([
-                                { mk: AttendanceMark.PRESENT, en: 'Present', ar: 'حاضر', active: 'bg-emerald-600 text-white border-emerald-600' },
-                                { mk: AttendanceMark.LATE, en: 'Late', ar: 'متأخر', active: 'bg-amber-600 text-white border-amber-600' },
-                                { mk: AttendanceMark.ABSENT, en: 'Absent', ar: 'غائب', active: 'bg-rose-600 text-white border-rose-600' },
-                                { mk: AttendanceMark.EXCUSED, en: 'Excused', ar: 'بعذر', active: 'bg-violet-600 text-white border-violet-600' },
-                              ] as const).map(opt => (
-                                <button key={opt.mk} type="button"
-                                  aria-pressed={rec.mark === opt.mk}
-                                  disabled={isBusy}
-                                  onClick={() => handleCorrectMark(sheet.id, sheet.lectureId, rec.studentId, opt.mk)}
-                                  className={`min-h-[40px] rounded-lg border px-2 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${rec.mark === opt.mk
-                                    ? opt.active
-                                    : 'border-slate-200 dark:border-[#42474D] text-slate-700 dark:text-[#DEE1E4] bg-white dark:bg-[#25292D] hover:bg-slate-50'}`}>
-                                  {t(opt.en, opt.ar)}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="rounded-xl bg-white dark:bg-[#1D2023] border border-slate-200 dark:border-[#353A3F] p-4 text-xs leading-relaxed text-slate-600 dark:text-[#C0C5C9]">
-                      {t('This draft has no student rows saved on the server. Instructor offline edits are not visible until synchronized. Do not interpret empty records as absences.',
-                        'المسودة مفيهاش سجلات طلاب محفوظة على السيرفر. تعديلات المحاضر المحلية مش بتظهر قبل المزامنة. متعتبرش النتيجة دي غياب.')}
-                    </p>
-                  )}
-                  {matchingMissing.length>0&&<div className="space-y-2"><h4 className="text-sm font-semibold">{t('Roster students without a server-saved row','طلاب الكشف دون سجل محفوظ')}</h4>{matchingMissing.map(st=><div key={st.id} className={SURFACE_SUBTLE+' p-3 flex justify-between gap-2 text-sm'}><div><strong>{st.fullName}</strong><p className="text-xs text-slate-500">{st.studentCode}</p></div><StatusBadge tone="neutral">{t('Not recorded','لم يسجل')}</StatusBadge></div>)}</div>}
-                  {!isFinalized && canSubmitSheet && (
-                    <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
-                      {t('Review any Instructor offline drafts before final submission. Unmarked students become absent only after finalization.',
-                        'راجع مسودات المحاضر المحلية قبل الاعتماد. الطلاب غير المحددين بيتحسبوا غياب بعد الاعتماد النهائي فقط.')}
-                    </p>
-                  )}
-                </div>
-              )}
-            </article></React.Fragment>
-          );
-        })}
+        ) : [...new Set(filteredLectures.map(l=>l.periodNumber))].map(pn=>{const items=filteredLectures.filter(l=>l.periodNumber===pn),first=items[0],folded=collapsed.includes(pn);return <section key={pn} className="attendance-period"><button className="attendance-period-header" aria-expanded={!folded} onClick={()=>setCollapsed(v=>v.includes(pn)?v.filter(x=>x!==pn):[...v,pn])}><strong>{t('Period '+pn,'الفترة '+pn)}</strong><small dir="ltr">{formatScheduleTime(first.startTime)} – {formatScheduleTime(first.endTime)}</small><span>{items.length} {t('sessions','محاضرات')}</span><ChevronDown size={16} className={folded?'attendance-folded':''}/></button>{!folded&&(display==='grid'?<div className="attendance-card-grid">{items.map(lec=>{const n=statsFor(lec),state=lectureDisplay(lec),sh=sheetFor(lec.id),chk=campCheckins.find(c=>c.instructorId===(lec.substituteInstructorId||lec.instructorId)),status=chk?checkinStatusDisplay(chk.status,t):null;return <article key={lec.id} aria-label={t('Attendance sheet: ','كشف حضور: ')+lec.topic} className="attendance-lecture-card"><div className="attendance-card-title"><h3>{groupTitle(lec)}</h3><StatusBadge tone={state.tone as 'success'|'danger'|'warning'|'neutral'|'info'}>{state.label}</StatusBadge></div><div className="attendance-card-meta"><UserRound size={14}/>{instructorName(lec.substituteInstructorId||lec.instructorId)}<span>· {n.total} {t('Students','طلاب')}</span></div>{lec.status!==LectureStatus.CANCELLED&&<><div className="attendance-card-counts">{([['present',n.p,t('Present','حاضر')],['absent',n.a,t('Absent','غائب')],['late',n.l,t('Late','متأخر')],['neutral',n.u,t('Pending','غير محدد')],...(n.e?[['excused',n.e,t('Excused','بعذر')]]:[])]).map(([tone,value,label])=><div key={tone} data-tone={tone}><strong>{value}</strong><small>{label}</small></div>)}</div><div className="attendance-progress-track">{[['present',n.p],['late',n.l],['absent',n.a],['excused',n.e]].map(([tone,value])=><span key={tone} data-tone={tone} style={{width:(n.total?Number(value)/n.total*100:0)+'%'}}/>)}</div><small className="attendance-card-note">{isFinalAttendance(sh)?t('Finalized records','سجلات معتمدة'):sh?.records.some(r=>r.mark!=='unmarked')?t('Draft marks · not final','مسودة غير معتمدة'):t('No saved marks · not absent','لم يسجل الحضور · ليس غياباً')}</small></>}<footer className="attendance-card-footer"><small>{t('Check-in','الوصول')}: {status?.label||t('Not recorded','لم يسجل')}</small>{actionsFor(lec)}</footer></article>})}</div>:<div className="attendance-list-wrap"><table className="attendance-list"><thead><tr>{[t('Group / Course','المجموعة / الكورس'),t('Instructor','المحاضر'),t('Students','الطلاب'),t('Present','حاضر'),t('Absent','غائب'),t('Late','متأخر'),t('Pending','غير محدد'),t('Excused','بعذر'),t('Status','الحالة'),t('Actions','إجراءات')].map(v=><th key={v}>{v}</th>)}</tr></thead><tbody>{items.map(lec=>{const n=statsFor(lec),state=lectureDisplay(lec);return <tr key={lec.id}><td><strong>{groupTitle(lec)}</strong></td><td>{instructorName(lec.substituteInstructorId||lec.instructorId)}</td>{[n.total,n.p,n.a,n.l,n.u,n.e].map((v,i)=><td key={i}>{lec.status===LectureStatus.CANCELLED?'—':v}</td>)}<td><StatusBadge tone={state.tone as 'success'|'danger'|'warning'|'neutral'|'info'}>{state.label}</StatusBadge></td><td>{actionsFor(lec)}</td></tr>})}</tbody></table><small className="attendance-card-note">{t('Unfinalized rows show draft marks only.','السجلات غير المعتمدة تعرض المسودات فقط.')}</small></div>)}</section>})}
       </section></>}
+      <dialog ref={modalRef} className="attendance-drawer" aria-label={metric?t('Student statistics details','تفاصيل إحصائيات الطلاب'):t('Attendance roster','كشف الحضور')} onCancel={e=>{e.preventDefault();closeDetails()}} onClick={e=>{if(e.target===e.currentTarget)closeDetails()}}>
+        {expandedSheetId&&renderRoster()}
+        {metric&&<><header className="attendance-drawer-header"><div><h2>{metric==='all'?t('Total Students','إجمالي الطلاب'):metric==='rate'?t('Attendance Rate','نسبة الحضور'):metric==='coverage'?t('Attendance Coverage','نسبة استكمال الحضور'):markLabel(metric)}</h2><p>Day {selectedDay} · {metricRows.length} {t('students','طلاب')}</p></div><button className="attendance-icon-button" onClick={closeDetails} aria-label={t('Close details','إغلاق التفاصيل')}><X size={20}/></button></header><div className="attendance-roster-body space-y-3"><input className={INPUT_CLASS} aria-label={t('Search students','بحث الطلاب')} placeholder={t('Student name or code','اسم الطالب أو الكود')} value={metricQuery} onChange={e=>setMetricQuery(e.target.value)}/><div className="overflow-x-auto"><table className="attendance-list"><thead><tr>{[t('Student','الطالب'),t('Code','الكود'),t('Group','المجموعة'),t('Status','الحالة')].map(v=><th key={v}>{v}</th>)}</tr></thead><tbody>{metricRows.map(r=><tr key={r.studentId}><td>{r.fullName}</td><td>{r.studentCode}</td><td>{groupName(studentGroupOnDay(r.studentId))}</td><td><StatusBadge tone={markTone(r.days[selectedDay-1])}>{markLabel(r.days[selectedDay-1])}</StatusBadge></td></tr>)}</tbody></table></div>{!metricRows.length&&<p>{t('No matching students','لا يوجد طلاب مطابقون')}</p>}<button className={BTN_SECONDARY} onClick={()=>exportRows('Attendance-students-Day-'+selectedDay,[['Student','Code','Group','Status'],...metricRows.map(r=>[r.fullName,r.studentCode,groupName(studentGroupOnDay(r.studentId)),markLabel(r.days[selectedDay-1])])])}><Download size={15}/>{t('Export filtered','تصدير المفلتر')}</button></div></>}
+      </dialog>
 
     </div>
   );
