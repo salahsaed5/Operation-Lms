@@ -747,6 +747,25 @@ test('Schedule workspace switches views and opens tools without writing records'
  await expect(root.getByText('Camp Schedule',{exact:true})).toBeVisible();
  await expect(root.locator('.sched-metrics > div')).toHaveCount(4);
  await expect(root.getByLabel('Session status')).toHaveValue('all');
+ const notice=root.getByRole('region',{name:'Unassigned groups'});
+ await expect(root.getByText('Groups without fixed assignments:',{exact:false})).toHaveCount(0);
+ if(await notice.count()){
+  await expect(notice.getByRole('heading')).toContainText('fixed assignment');
+  await expect(notice.locator('.sched-unassigned-names li').first()).toBeVisible();
+  const action=notice.getByRole('button',{name:'Assign Now',exact:true});
+  if(await action.count()){
+   const single=(await notice.getByRole('heading').textContent())?.startsWith('1 group needs');
+   await action.click();
+   if(single){
+    const drawer=root.getByRole('dialog',{name:'Assign Group to Instructor'});
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByLabel('Group',{exact:true})).not.toHaveValue('');
+   }else{
+    await expect(root.getByRole('dialog')).toBeVisible();
+   }
+   await root.getByRole('button',{name:'Close',exact:true}).click();
+  }
+ }
  await expect(root.locator('.sched-grid-head').first()).toHaveText('Period');
  await expect(root.locator('.sched-period-head')).toHaveCSS('text-align','center');
  await expect(root.locator('.sched-time').first()).toHaveCSS('text-align','center');
