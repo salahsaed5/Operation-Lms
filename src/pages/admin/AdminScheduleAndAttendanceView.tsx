@@ -8,10 +8,17 @@ import {
   ShieldCheck,
   Search,
   CalendarClock,
-  ClipboardCheck,
+  ClipboardCheck, ChevronLeft, ChevronRight, Users, UserRound, MoreHorizontal, Bell, Download, Printer,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getSignedSelfieUrl } from '../../services/citsRepository';
+import { buildCampAttendanceExcelGrid, type DayAttendanceCode } from '../../domain/campAttendanceExcelGrid';
+import { studentEligibleForCampDay } from '../../domain/studentJoinDay';
+import { dailyAttendanceProgress, isFinalAttendance } from '../../domain/dailyAttendanceWorkspace';
+import { cairoClock } from '../../domain/sessionLifecycle';
+import { timeSeconds } from '../../domain/fixedAssignmentAvailability';
+import { formatScheduleTime } from '../../domain/scheduleTime';
+import { createXlsxWorkbook, excelCell } from '../../services/tinyXlsxWorkbook';
+import { getSignedSelfieUrl, sendAttendanceReminderInDb } from '../../services/citsRepository';
 import { calculateCampDayDate } from '../../domain/businessRules';
 import {
   AttendanceMark,
@@ -84,7 +91,7 @@ export const AdminAttendanceView: React.FC = () => {
     instructors,
     groups,
     checkins,
-    checkinExceptions,
+    checkinExceptions, students, studentTransfers, auditLogs, financeSnapshot, downloadTenDayAttendanceWorkbook, isSupabaseMode, refreshOperationalData,
     submitAndSyncAttendanceSheet,
     adminCorrectAttendanceRecord,
     reviewCheckinException,
@@ -93,13 +100,28 @@ export const AdminAttendanceView: React.FC = () => {
 
   const [expandedSheetId, setExpandedSheetId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'synced' | 'draft'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'synced' | 'draft' | 'missing'>('all');
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [correctionNotes, setCorrectionNotes] = useState<Record<string, string>>({});
   const [selfiePreviews, setSelfiePreviews] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [day,setDay]=useState(activeCamp?.currentCampDay||1);
+  const [tab,setTab]=useState<'students'|'instructors'|'exceptions'>('students');
+  const [period,setPeriod]=useState('all');
+  const [tool,setTool]=useState<'matrix'|'history'|'absences'|'reports'|'revisions'|null>(null);
+  const [toolsOpen,setToolsOpen]=useState(false);
+  const [groupFilter,setGroupFilter]=useState('all');
+  const [studentQuery,setStudentQuery]=useState('');
+  const [studentId,setStudentId]=useState('');
+  const [rosterQuery,setRosterQuery]=useState('');
+  const [absenceThreshold,setAbsenceThreshold]=useState(2);
+  const [now,setNow]=useState(()=>new Date());
+  useEffect(()=>{const timer=window.setInterval(()=>setNow(new Date()),30000);return ()=>window.clearInterval(timer)},[]);
+  useEffect(()=>{setDay(activeCamp?.currentCampDay||1);setTab('students');setPeriod('all');setStatusFilter('all');setSearchQuery('');setExpandedSheetId(null);setTool(null);setToolsOpen(false);setGroupFilter('all');setStudentId('');setStudentQuery('');setSelfiePreviews({});},[activeCamp?.id,activeCamp?.currentCampDay]);
+  useEffect(()=>{setExpandedSheetId(null);setRosterQuery('');},[day,tab]);
+  const matrix=useMemo(()=>activeCamp?buildCampAttendanceExcelGrid({campId:activeCamp.id,durationDays:activeCamp.durationDays,students,studentTransfers,lectures,attendanceSheets}):null,[activeCamp,students,studentTransfers,lectures,attendanceSheets]);
   if (!activeCamp) {
     return (
       <EmptyState
@@ -109,44 +131,53 @@ export const AdminAttendanceView: React.FC = () => {
     );
   }
 
-  const campSheets = attendanceSheets.filter((s) => s.campId === activeCamp.id);
-  const campExceptions = checkinExceptions.filter((ex) => ex.campId === activeCamp.id);
-  const campCheckins = checkins.filter((c) => c.campId === activeCamp.id);
-
-  const cairoParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const cairoPart = (name: string) => cairoParts.find(x => x.type === name)?.value || '';
-  const cairoToday = `${cairoPart('year')}-${cairoPart('month')}-${cairoPart('day')}`;
-  const campAllowsFinalAttendance = activeCamp.status === CampStatus.ACTIVE;
-  const finalizedSheetCount = campSheets.filter(s => s.status === AttendanceSheetStatus.SUBMITTED || s.status === AttendanceSheetStatus.LOCKED).length;
-  const draftSheetCount = campSheets.length - finalizedSheetCount;
-  const savedRecordCount = campSheets.reduce((n, sheet) => n + sheet.records.length, 0);
-
-  const filteredSheets = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return campSheets.filter((sheet) => {
-      const isSynced =
-        sheet.status === AttendanceSheetStatus.SUBMITTED ||
-        sheet.status === AttendanceSheetStatus.LOCKED;
-      if (statusFilter === 'synced' && !isSynced) return false;
-      if (statusFilter === 'draft' && isSynced) return false;
-      if (!q) return true;
-      const lec = lectures.find((l) => l.id === sheet.lectureId);
-      const inst = instructors.find((i) => i.id === sheet.instructorId);
-      const grp = groups.find((g) => g.id === lec?.groupId);
-      return (
-        (lec?.topic.toLowerCase().includes(q) ?? false) ||
-        (inst?.fullNameEn.toLowerCase().includes(q) ?? false) ||
-        (inst?.fullNameAr.toLowerCase().includes(q) ?? false) ||
-        (grp?.code.toLowerCase().includes(q) ?? false)
-      );
-    });
-  }, [campSheets, lectures, instructors, groups, searchQuery, statusFilter]);
-
+  const clock=cairoClock(now),cairoToday=clock.date;
+  const campAllowsFinalAttendance=activeCamp.status===CampStatus.ACTIVE;
+  const selectedDay=Math.min(activeCamp.durationDays,Math.max(1,day));
+  const selectedDate=calculateCampDayDate(activeCamp.startDate,selectedDay,activeCamp.operatingWeekdays);
+  const campLectures=lectures.filter(l=>l.campId===activeCamp.id&&l.status!==LectureStatus.CANCELLED);
+  const dayLectures=campLectures.filter(l=>l.campDay===selectedDay).sort((a,b)=>a.periodNumber-b.periodNumber||a.startTime.localeCompare(b.startTime)||a.groupId.localeCompare(b.groupId));
+  const allCampSheets=attendanceSheets.filter(s=>s.campId===activeCamp.id&&campLectures.some(l=>l.id===s.lectureId));
+  const campSheets=allCampSheets.filter(s=>dayLectures.some(l=>l.id===s.lectureId));
+  const campExceptions=checkinExceptions.filter(ex=>ex.campId===activeCamp.id&&ex.campDay===selectedDay);
+  const campCheckins=checkins.filter(c=>c.campId===activeCamp.id&&c.campDay===selectedDay);
+  const campGroups=groups.filter(g=>g.campId===activeCamp.id);
+  const groupName=(id:string)=>{const g=groups.find(g=>g.id===id);return g?t(g.nameEn,g.nameAr):id};
+  const instructorName=(id:string)=>{const i=instructors.find(i=>i.id===id);return i?t(i.fullNameEn,i.fullNameAr):id};
+  const progress=dailyAttendanceProgress(dayLectures,campSheets,clock,campAllowsFinalAttendance);
+  const finalizedSheetCount=campSheets.filter(isFinalAttendance).length;
+  const draftSheetCount=campSheets.length-finalizedSheetCount;
+  const dailyRows=(matrix?.rows||[]).filter(r=>r.joinedCampDay<=selectedDay);
+  const countDay=(code:DayAttendanceCode)=>dailyRows.filter(r=>r.days[selectedDay-1]===code).length;
+  const p=countDay('P'),a=countDay('A'),late=countDay('L'),excused=countDay('E'),pending=countDay('Pending'),notScheduled=countDay('—');
+  const rate=p+late+a?Math.round((p+late)/(p+late+a)*100)+'%':'—';
+  const q=searchQuery.trim().toLowerCase();
+  const sheetFor=(id:string)=>campSheets.find(s=>s.lectureId===id);
+  const filteredLectures=dayLectures.filter(l=>{
+    const sh=sheetFor(l.id),g=groups.find(g=>g.id===l.groupId),i=instructors.find(i=>i.id===(l.substituteInstructorId||l.instructorId));
+    if(period!=='all'&&l.periodNumber!==Number(period))return false;
+    if(statusFilter==='synced'&&!isFinalAttendance(sh))return false;
+    if(statusFilter==='draft'&&(!sh||isFinalAttendance(sh)))return false;
+    if(statusFilter==='missing'&&!progress.overdueIds.has(l.id))return false;
+    return !q||[l.topic,g?.code,g?.nameEn,g?.nameAr,i?.fullNameEn,i?.fullNameAr].some(v=>v?.toLowerCase().includes(q));
+  });
+  const pendingExceptions=campExceptions.filter(ex=>ex.status===RequestStatus.PENDING).length;
+  const expectedIds=new Set(dayLectures.map(l=>l.substituteInstructorId||l.instructorId));
+  const backupIds=new Set(financeSnapshot.backups.filter(b=>b.status!=='excluded'&&dayLectures.some(l=>l.id===b.lectureId)).map(b=>b.instructorId));
+  const checkinIds=[...new Set([...expectedIds,...backupIds,...campCheckins.map(c=>c.instructorId)])];
+  const missingCheckin=(id:string)=>campAllowsFinalAttendance&&dayLectures.some(l=>(l.substituteInstructorId||l.instructorId)===id&&(l.lectureDate<clock.date||(l.lectureDate===clock.date&&timeSeconds(l.startTime)<=clock.seconds)))&&!campCheckins.some(c=>c.instructorId===id);
+  const toolRows=(matrix?.rows||[]).filter(r=>(groupFilter==='all'||r.homeGroupId===groupFilter)&&(!studentQuery.trim()||(r.fullName+' '+r.studentCode).toLowerCase().includes(studentQuery.trim().toLowerCase()))&&(tool!=='absences'||r.days.slice(0,selectedDay).filter(d=>d==='A').length>=absenceThreshold));
+  const markLabel=(code:DayAttendanceCode)=>code==='P'?t('Present','حاضر'):code==='L'?t('Late','متأخر'):code==='A'?t('Absent','غائب'):code==='E'?t('Excused','بعذر'):code==='Pending'?t('Pending','غير معتمد'):t('Not applicable','غير منطبق');
+  const markTone=(code:DayAttendanceCode)=>code==='P'?'success':code==='L'||code==='Pending'?'warning':code==='A'?'danger':'neutral';
+  const exportRows=(name:string,rows:(string|number)[][])=>{const blob=createXlsxWorkbook([{name:'Attendance',rows:rows.map((r,i)=>r.map(v=>excelCell(v,i===0?3:4))),widths:[22,32,24,20,20,20,20,20],freeze:{columns:0,rows:1,topLeft:'A2'}}]);const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=name+'.xlsx';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1200)};
+  const exportDay=()=>exportRows('Attendance-Day-'+selectedDay+'-snapshot',[['Student code','Student','Date','Official daily status'],...dailyRows.filter(r=>groupFilter==='all'||r.homeGroupId===groupFilter).map(r=>[r.studentCode,r.fullName,selectedDate,markLabel(r.days[selectedDay-1])])]);
+  const exportCamp=async()=>{setIsBusy(true);try{const res=await downloadTenDayAttendanceWorkbook(groupFilter==='all'?undefined:groupFilter);setSyncMessage({ok:res.ok,text:res.ok?t('Workbook downloaded','تم تنزيل التقرير'):res.error||t('Export failed','فشل التصدير')})}finally{setIsBusy(false)}};
+  const remind=async(l:Lecture)=>{if(isBusy||!isSupabaseMode||!progress.overdueIds.has(l.id))return;setIsBusy(true);try{await sendAttendanceReminderInDb(l.id);setSyncMessage({ok:true,text:t('Reminder sent to instructor','تم إرسال التذكير للمحاضر')});await refreshOperationalData()}catch(e){setSyncMessage({ok:false,text:e instanceof Error?e.message:String(e)})}finally{setIsBusy(false)}};
+  const openTool=(v:typeof tool)=>{setTool(v);setToolsOpen(false);setStudentQuery('');setStudentId('');setGroupFilter('all')};
+  const stat=(label:string,value:string|number,color='')=><div key={label} className="rounded-xl bg-slate-50 dark:bg-[#121416]/40 border border-slate-100 dark:border-[#353A3F] p-3"><p className="text-xs text-slate-500 dark:text-[#A0A5AA]">{label}</p><p className={'text-xl font-bold tabular-nums mt-1 '+color}>{value}</p></div>;
   const handleForceSync = async (lectureId: string) => {
     const lecture = lectures.find(l => l.id === lectureId);
-    if (!campAllowsFinalAttendance || !lecture || lecture.lectureDate > cairoToday) {
+    if (!campAllowsFinalAttendance || !lecture || lecture.status===LectureStatus.CANCELLED || lecture.lectureDate > cairoToday) {
       setSyncMessage({
         ok: false,
         text: t(
@@ -156,6 +187,7 @@ export const AdminAttendanceView: React.FC = () => {
       });
       return;
     }
+    if(!window.confirm(t('Finalize this sheet? Unmarked students will become absent. Confirm offline drafts are synchronized.','اعتماد الكشف؟ سيتحول غير المحدد إلى غائب. تأكد من مزامنة المسودات المحلية.')))return;
     setIsBusy(true);
     setSyncMessage(null);
     try {
