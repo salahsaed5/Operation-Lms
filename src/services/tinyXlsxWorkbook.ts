@@ -17,6 +17,8 @@ export interface ExcelSheet {
   freeze?: { columns: number; rows: number; topLeft: string };
   autoFilter?: string;
   rightToLeft?: boolean;
+  headerRow?: number;
+  rowHeights?: Record<number,number>;
 }
 
 export const excelCell = (value: string | number, style = 0): ExcelCell => ({ value, style });
@@ -59,20 +61,32 @@ function sheetXml(sh: ExcelSheet): string {
   const pane = frozen
     ? '<sheetView' + viewAttrs + '><pane xSplit="' + frozen.columns +
       '" ySplit="' + frozen.rows + '" topLeftCell="' + x(frozen.topLeft) +
-      '" activePane="bottomRight" state="frozen"/></sheetView>'
+      '" activePane="'+(frozen.columns&&frozen.rows?'bottomRight':frozen.rows?'bottomLeft':'topRight')+'" state="frozen"/></sheetView>'
     : '<sheetView' + viewAttrs + '/>';
   const widths = (sh.widths || []).map((w,i) => '<col min="' + (i+1) +
     '" max="' + (i+1) + '" width="' + Math.min(50,Math.max(8,w)) +
     '" customWidth="1"/>').join('');
-  const data = sh.rows.map((cells,i) => '<row r="' + (i+1) +
-    '" ht="' + (i===0 ? '30' : (i===3 ? '30' : '20')) +
-    '" customHeight="1">' + cells.map((cell,c)=>cellXml(cell,c+1,i+1)).join('') +
-    '</row>').join('');
+  const columnIndex=(label:string)=>[...label].reduce((n,v)=>n*26+v.charCodeAt(0)-64,0);
+  const rowHeight=(cells:ExcelCell[],row:number)=>{
+    if(sh.rowHeights?.[row])return sh.rowHeights[row];
+    const base=row===1?34:row===(sh.headerRow??4)?34:23;
+    let lines=1;
+    cells.forEach((cell,i)=>{
+      if(typeof cell.value!=='string')return;
+      const merge=sh.merges?.find(m=>m.startsWith(letter(i+1)+row+':'));
+      const end=merge?.split(':')[1].match(/^([A-Z]+)/)?.[1];
+      const effectiveWidth=end?Array.from({length:columnIndex(end)-i},(_,j)=>Math.min(50,Math.max(8,sh.widths?.[i+j]??13))).reduce((n,w)=>n+w,0):Math.min(50,Math.max(8,sh.widths?.[i]??13));
+      const chars=Math.max(5,Math.floor(effectiveWidth*.83));
+      lines=Math.max(lines,cell.value.split('\n').reduce((n,t)=>n+Math.max(1,Math.ceil([...t].length/chars)),0));
+    });
+    return Math.min(180,Math.max(base,lines*16+9));
+  };
+  const data=sh.rows.map((cells,i)=>'<row r="'+(i+1)+'" ht="'+rowHeight(cells,i+1)+'" customHeight="1">'+cells.map((cell,c)=>cellXml(cell,c+1,i+1)).join('')+'</row>').join('');
   const merges = sh.merges?.length
     ? '<mergeCells count="' + sh.merges.length + '">' +
       sh.merges.map(m=>'<mergeCell ref="' + x(m) + '"/>').join('') + '</mergeCells>'
     : '';
-  return xmlPrefix + '<worksheet xmlns="' + main + '"><sheetViews>' +
+  return xmlPrefix + '<worksheet xmlns="' + main + '"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>' +
     pane + '</sheetViews><sheetFormatPr defaultRowHeight="18"/>' +
     (widths ? '<cols>' + widths + '</cols>' : '') +
     '<sheetData>' + data + '</sheetData>' +
@@ -88,9 +102,9 @@ function styleXml(): string {
     '<font><b/><sz val="14"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
     '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>';
   const fills = '<fills count="9"><fill><patternFill patternType="none"/></fill>' +
-    '<fill><patternFill patternType="gray125"/></fill>' + solid('FF1F2A44') +
-    solid('FFE8F0F8') + solid('FF163A5F') + solid('FFE7F4EC') +
-    solid('FFFFF0C8') + solid('FFFBEAEA') + solid('FFF6F7FA') + '</fills>';
+    '<fill><patternFill patternType="gray125"/></fill>' + solid('FF103B4C') +
+    solid('FFE5EFF6') + solid('FF14677A') + solid('FFDCEFE5') +
+    solid('FFFFF0D8') + solid('FFFBE7EB') + solid('FFF6F7FA') + '</fills>';
   const align = '<alignment horizontal="left" vertical="center" wrapText="1"/>';
   const center = '<alignment horizontal="center" vertical="center" wrapText="1"/>';
   const xf = (font:number,fill:number,fmt=0,alignment=align) =>
