@@ -745,6 +745,9 @@ test('Schedule workspace switches views and opens tools without writing records'
  const root=page.locator('.sched-workspace');
  await expect(root.locator('.sched-grid')).toBeVisible();
  await expect(root.getByText('Fixed timetable · All teaching days',{exact:true})).toBeVisible();
+ await expect(root.locator('.sched-metrics > div')).toHaveCount(4);
+ await expect(root.getByLabel('Assignment status')).toHaveValue('all');
+ await expect(root.locator('.sched-grid-head').first()).toHaveText('Period');
  await expect(root.getByLabel('Camp Day',{exact:true})).toHaveCount(0);
  await expect(root.getByRole('button',{name:'Previous day',exact:true})).toHaveCount(0);
  await expect(root.getByRole('button',{name:'Next day',exact:true})).toHaveCount(0);
