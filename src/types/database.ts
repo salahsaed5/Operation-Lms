@@ -1088,6 +1088,7 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      revise_fixed_group_schedule_tx: { Args: {p_camp_id:string; p_group_id:string; p_instructor_id:string|null; p_room_id:string|null; p_period:number|null; p_remove:boolean; p_reason:string; p_expected_period:number|null; p_expected_room:string|null; p_expected_instructor:string|null}; Returns: Json };
       save_fixed_group_schedule_tx: { Args: { p_camp_id:string; p_group_id:string|null; p_code:string; p_name_en:string; p_name_ar:string; p_track:string; p_room_id:string; p_instructor_id:string; p_capacity:number; p_period:number }; Returns: Json };
 
       search_visiting_students_for_lecture: {
