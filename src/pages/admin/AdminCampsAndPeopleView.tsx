@@ -27,11 +27,14 @@ import {
   CalendarDays,
   Layers,
   ChevronRight,
+  Download,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { Camp, CampStatus, Instructor } from '../../types/database';
-import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, validateCampWeekdays, RawStudentImportRow } from '../../domain/businessRules';
+import { Camp, CampStatus, Instructor, LectureStatus, AttendanceMark, AttendanceSheetStatus, OfflineSyncState } from '../../types/database';
+import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, validateCampWeekdays, validateStudentBatchImport, RawStudentImportRow } from '../../domain/businessRules';
 import { generateEntityCode } from '../../domain/generateEntityCode';
+import { createXlsxWorkbook } from '../../services/tinyXlsxWorkbook';
 import { parseStudentRosterFile } from '../../domain/studentRosterFile';
 import {
   CredentialDeliveryMode,
@@ -2029,6 +2032,9 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
     students,
     profiles,
     studentTransfers,
+    lectures,
+    attendanceSheets,
+    campInstructorIds,
     upsertGroup,
     createSingleStudent,
     transferStudent,
@@ -2038,12 +2044,22 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
 
   const campGroups = activeCamp ? groups.filter((g) => g.campId === activeCamp.id) : [];
 
+  const [section,setSection]=useState<'groups'|'students'|'import'|'transfers'>('groups');
+  const [detailGroupId,setDetailGroupId]=useState<string|null>(null);
+  const [groupTab,setGroupTab]=useState<'students'|'schedule'|'attendance'>('students');
+  const [studentId,setStudentId]=useState<string|null>(null);
+  const [fullProfile,setFullProfile]=useState(false);
+  const [lateOnly,setLateOnly]=useState(false);
+  const [attendanceFilter,setAttendanceFilter]=useState('all');
+  const [selectedIds,setSelectedIds]=useState<string[]>([]);
+  const [importStep,setImportStep]=useState(0);
+  const [showExport,setShowExport]=useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
   const [importGroupId, setImportGroupId] = useState<string>(campGroups[0]?.id || '');
-  const [importMode, setImportMode] = useState<'smart_update' | 'strict_insert'>('smart_update');
+  const [importMode, setImportMode] = useState<'smart_update' | 'strict_insert'>('strict_insert');
   const [rawBatchText, setRawBatchText] = useState<string>('');
   const [rosterFileName, setRosterFileName] = useState('');
   const [rosterRows, setRosterRows] = useState<RawStudentImportRow[] | null>(null);
@@ -2062,8 +2078,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
   const [grpNameEn, setGrpNameEn] = useState('');
   const [grpNameAr, setGrpNameAr] = useState('');
   const [grpTrack, setGrpTrack] = useState('');
-  const [grpRoomId, setGrpRoomId] = useState(rooms[0]?.id || '');
-  const [grpInstId, setGrpInstId] = useState(instructors[0]?.id || '');
+  const campRooms=rooms.filter(r=>r.venueId===activeCamp?.venueId);
+  const campInstructors=instructors.filter(i=>i.isActive&&!i.archivedAt&&(activeCamp?campInstructorIds[activeCamp.id]||[]:[]).includes(i.id));
+  const [grpRoomId, setGrpRoomId] = useState(campRooms[0]?.id || '');
+  const [grpInstId, setGrpInstId] = useState(campInstructors[0]?.id || '');
   const [grpCap, setGrpCap] = useState(30);
 
   // Single Student Form
@@ -2083,16 +2101,67 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
-    if (!importGroupId && campGroups[0]?.id) setImportGroupId(campGroups[0].id);
-    if (!stuGroupId && campGroups[0]?.id) setStuGroupId(campGroups[0].id);
-    if (!grpRoomId && rooms[0]?.id) setGrpRoomId(rooms[0].id);
-    if (!grpInstId && instructors[0]?.id) setGrpInstId(instructors[0].id);
-  }, [campGroups, rooms, instructors, importGroupId, stuGroupId, grpRoomId, grpInstId]);
+    if (!campGroups.some(g=>g.id===importGroupId)) setImportGroupId(campGroups[0]?.id||'');
+    if (!campGroups.some(g=>g.id===stuGroupId)) setStuGroupId(campGroups[0]?.id||'');
+    if (!campRooms.some(r=>r.id===grpRoomId)) setGrpRoomId(campRooms[0]?.id||'');
+    if (!campInstructors.some(i=>i.id===grpInstId)) setGrpInstId(campInstructors[0]?.id||'');
+  }, [campGroups, campRooms, campInstructors, importGroupId, stuGroupId, grpRoomId, grpInstId]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedGroupId, searchQuery]);
+  }, [selectedGroupId, searchQuery,lateOnly,attendanceFilter]);
+  useEffect(()=>{setSection('groups');setDetailGroupId(null);setStudentId(null);setSelectedIds([]);setSelectedGroupId('all');setSearchQuery('');setLateOnly(false);setAttendanceFilter('all');setImportStep(0);setRosterRows(null);setRawBatchText('');setRosterFileName('');setRosterFileError('');setImportResult(null);setShowGroupForm(false);setShowStudentForm(false);setTransferTargetStuId(null);setActionNotice(null);},[activeCamp?.id]);
 
+  const allCampStudents=students.filter(s=>s.campId===activeCamp?.id);
+  const campLectures=lectures.filter(l=>l.campId===activeCamp?.id&&l.status!==LectureStatus.CANCELLED);
+  const lectureById=new Map(campLectures.map(l=>[l.id,l]));
+  const finalized=attendanceSheets.filter(sh=>sh.campId===activeCamp?.id&&lectureById.has(sh.lectureId)&&sh.syncState===OfflineSyncState.SYNCED&&(sh.status===AttendanceSheetStatus.SUBMITTED||sh.status===AttendanceSheetStatus.LOCKED));
+  const historyByStudent=new Map<string,{lecture:typeof campLectures[number];record:typeof finalized[number]['records'][number]}[]>();
+  const seen=new Set<string>();
+  for(const sheet of finalized){
+    const lecture=lectureById.get(sheet.lectureId)!;
+    for(const record of sheet.records){
+      if(record.mark==='unmarked')continue;
+      const key=sheet.lectureId+':'+record.studentId;
+      if(seen.has(key))continue;seen.add(key);
+      const student=allCampStudents.find(s=>s.id===record.studentId);
+      if(!student||lecture.campDay<(student.joinedCampDay??1))continue;
+      const list=historyByStudent.get(record.studentId)||[];list.push({lecture,record});historyByStudent.set(record.studentId,list);
+    }
+  }
+  const summarize=(history:NonNullable<ReturnType<typeof historyByStudent.get>>)=>{
+    const present=history.filter(h=>h.record.mark===AttendanceMark.PRESENT).length;
+    const late=history.filter(h=>h.record.mark===AttendanceMark.LATE).length;
+    const absent=history.filter(h=>h.record.mark===AttendanceMark.ABSENT).length;
+    const excused=history.filter(h=>h.record.mark===AttendanceMark.EXCUSED).length;
+    const recorded=present+late+absent+excused;
+    return {present,late,absent,excused,recorded,rate:recorded?Math.round((present+late)/recorded*100):null};
+  };
+  const statsByStudent=new Map(allCampStudents.map(st=>[st.id,summarize(historyByStudent.get(st.id)||[])]));
+  const isLate=(st:typeof allCampStudents[number])=>(st.joinedCampDay??1)>1||st.enrollmentOrigin==='instructor_late_join';
+  const filteredStudents=allCampStudents.filter(st=>{
+    const rate=statsByStudent.get(st.id)?.rate;
+    return (selectedGroupId==='all'||st.groupId===selectedGroupId)&&(!lateOnly||isLate(st))&&(attendanceFilter==='all'||(attendanceFilter==='pending'?rate==null:rate!=null&&rate<Number(attendanceFilter)))&&[st.studentCode,st.fullName,st.university].join(' ').toLowerCase().includes(searchQuery.trim().toLowerCase());
+  });
+  const totalPages=Math.max(1,Math.ceil(filteredStudents.length/STUDENTS_PAGE_SIZE));
+  useEffect(()=>{if(currentPage>totalPages)setCurrentPage(totalPages);},[currentPage,totalPages]);
+  const pagedStudents=filteredStudents.slice((currentPage-1)*STUDENTS_PAGE_SIZE,currentPage*STUDENTS_PAGE_SIZE);
+  const campTransfers=studentTransfers.filter(tr=>tr.campId===activeCamp?.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  const parsedRows=rosterRows||rawBatchText.split('\n').map(l=>l.trim()).filter(Boolean).map((line,index)=>{const p=line.split(',').map(v=>v.trim());return {rowNumber:index+1,studentName:p[0]||'',studentCode:p[1]||'',university:p[2]||'Cairo University'};});
+  const targetGroup=campGroups.find(g=>g.id===importGroupId);
+  const validation=validateStudentBatchImport({rows:parsedRows,existingStudents:allCampStudents,targetCampId:activeCamp?.id,targetGroupId:importGroupId,mode:importMode});
+  const previewErrors=[...validation.errors];
+  if(!targetGroup)previewErrors.push({rowNumber:0,message:t('Select a target group.','اختر المجموعة المستهدفة.')});
+  if(targetGroup&&validation.valid&&allCampStudents.filter(st=>st.groupId===targetGroup.id).length+validation.toInsert.length>targetGroup.capacity)previewErrors.push({rowNumber:0,message:t('Target group capacity would be exceeded.','سيتم تجاوز سعة المجموعة.')});
+  const readOnly=!activeCamp||activeCamp.status===CampStatus.ARCHIVED||activeCamp.status===CampStatus.PENDING_ARCHIVE;
+  const groupName=(id:string)=>{const g=campGroups.find(g=>g.id===id);return g?t(g.nameEn,g.nameAr):id;};
+  const downloadWorkbook=(name:string,rows:(string|number)[][])=>{const blob=createXlsxWorkbook([{name:'Students',rows:rows.map(row=>row.map(value=>({value}))),widths:[24,32,26,26,14,14,14,14,14,18]}]);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name+'.xlsx';a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  const exportRoster=(mode:'all'|'group'|'selected'|'attendance'|'late')=>{
+    const scope=mode==='all'||mode==='attendance'?allCampStudents:mode==='group'?allCampStudents.filter(st=>st.groupId===selectedGroupId):mode==='selected'?allCampStudents.filter(st=>selectedIds.includes(st.id)):allCampStudents.filter(isLate);
+    const base=['Full Name','Student Code','University','Group','Joined Day'];
+    const extra=mode==='attendance'?['Present','Late','Absent','Excused','Recorded rate (%)']:[];
+    downloadWorkbook((activeCamp?.code||'camp')+'-'+mode,[base.concat(extra),...scope.map(st=>{const v=statsByStudent.get(st.id)!;return [st.fullName,st.studentCode,st.university,groupName(st.groupId),st.joinedCampDay??1,...(mode==='attendance'?[v.present,v.late,v.absent,v.excused,v.rate??'']:[])];})]);setShowExport(false);
+  };
   if (!activeCamp) {
     return (
       <EmptyState
@@ -2105,27 +2174,6 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
       />
     );
   }
-
-  const allCampStudents = students.filter((s) => s.campId === activeCamp.id);
-  const filteredStudents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return allCampStudents.filter((s) => {
-      if (selectedGroupId !== 'all' && s.groupId !== selectedGroupId) return false;
-      if (!q) return true;
-      return (
-        s.studentCode.toLowerCase().includes(q) ||
-        s.fullName.toLowerCase().includes(q) ||
-        s.university.toLowerCase().includes(q)
-      );
-    });
-  }, [allCampStudents, selectedGroupId, searchQuery]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / STUDENTS_PAGE_SIZE));
-  const pagedStudents = filteredStudents.slice(
-    (currentPage - 1) * STUDENTS_PAGE_SIZE,
-    currentPage * STUDENTS_PAGE_SIZE
-  );
-  const campTransfers = studentTransfers.filter((tr) => tr.campId === activeCamp.id);
 
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2183,7 +2231,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
 
   const handleSubmitTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferTargetStuId) return;
+    if (!transferTargetStuId||readOnly) return;
+    const moving=allCampStudents.find(st=>st.id===transferTargetStuId);
+    const target=campGroups.find(g=>g.id===transferToGroupId);
+    if(!moving||!target||moving.groupId===target.id||allCampStudents.filter(st=>st.groupId===target.id).length>=target.capacity){setActionNotice({ok:false,text:t('Select a different group with available capacity.','اختر مجموعة مختلفة بها أماكن متاحة.')});return;}
     setIsBusy(true);
     setActionNotice(null);
     try {
@@ -2233,7 +2284,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
 
   const handleRunImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rosterRows && !rawBatchText.trim()) return;
+    if (readOnly||importStep!==2||previewErrors.length||rosterParsing||rosterFileError||(!rosterRows && !rawBatchText.trim())) return;
     setImportResult(null);
     setIsBusy(true);
     try {
@@ -2283,48 +2334,33 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         setRawBatchText('');
         setRosterRows(null);
         setRosterFileName('');
+        setImportStep(0);
       }
     } finally {
       setIsBusy(false);
     }
   };
 
+  const formOpen=showGroupForm||showStudentForm||Boolean(transferTargetStuId);
+  const detailGroup=campGroups.find(g=>g.id===detailGroupId);
+  const detailStudent=allCampStudents.find(st=>st.id===studentId);
+  const changeSection=(next:typeof section)=>{if(isBusy||rosterParsing)return;setSection(next);setShowGroupForm(false);setShowStudentForm(false);setTransferTargetStuId(null);setDetailGroupId(null);setStudentId(null);setSelectedIds([]);setSelectedGroupId('all');setSearchQuery('');setLateOnly(false);setAttendanceFilter('all');setShowExport(false);setActionNotice(null);};
+  const openGroup=(id:string)=>{setDetailGroupId(id);setSelectedGroupId(id);setGroupTab('students');setSearchQuery('');setLateOnly(false);setAttendanceFilter('all');setSelectedIds([]);};
+  const openTransfer=(st:typeof allCampStudents[number])=>{setStudentId(null);setShowStudentForm(false);setShowGroupForm(false);setTransferTargetStuId(st.id);setTransferToGroupId(campGroups.find(g=>g.id!==st.groupId&&allCampStudents.filter(s=>s.groupId===g.id).length<g.capacity)?.id||'');setTransferDay(activeCamp.currentCampDay);setTransferReason('');};
+  const openStudent=(id:string)=>{setStudentId(id);setFullProfile(false);};
+  const markLabel=(mark:string)=>mark===AttendanceMark.PRESENT?t('Present','حاضر'):mark===AttendanceMark.LATE?t('Late','متأخر'):mark===AttendanceMark.ABSENT?t('Absent','غائب'):t('Excused','بعذر');
+  const roster= <section className="people-list" aria-label={t('Student directory','دليل الطلاب')}>
+    <div className="people-list-heading"><h2>{t('Student directory','دليل الطلاب')}</h2><span>{filteredStudents.length} {t('students','طالب')}</span></div>
+    <div className="camp-toolbar student-toolbar"><label className="camp-search"><Search size={17}/><input type="search" aria-label={t('Search students','بحث الطلاب')} placeholder={t('Search name, code or university...','ابحث بالاسم أو الكود أو الجامعة...')} value={searchQuery} onChange={e=>{setSearchQuery(e.target.value);setSelectedIds([]);}}/></label><div className="people-filters">{!detailGroup&&<select aria-label={t('Filter student group','تصفية المجموعة')} value={selectedGroupId} onChange={e=>{setSelectedGroupId(e.target.value);setSelectedIds([]);}}><option value="all">{t('All groups','كل المجموعات')}</option>{campGroups.map(g=><option key={g.id} value={g.id}>{groupName(g.id)}</option>)}</select>}<select aria-label={t('Filter attendance rate','تصفية نسبة الحضور')} value={attendanceFilter} onChange={e=>{setAttendanceFilter(e.target.value);setSelectedIds([]);}}><option value="all">{t('All attendance','كل الحضور')}</option>{[90,75,60].map(v=><option key={v} value={v}>{t('Below ','أقل من ')}{v}%</option>)}<option value="pending">{t('No finalized marks','لا تسجيل معتمد')}</option></select><label className="student-late-filter"><input type="checkbox" checked={lateOnly} onChange={e=>{setLateOnly(e.target.checked);setSelectedIds([]);}}/>{t('Late enrollment','انضمام متأخر')}</label></div></div>
+    <div className="student-selectbar"><label><input type="checkbox" checked={pagedStudents.length>0&&pagedStudents.every(st=>selectedIds.includes(st.id))} onChange={e=>setSelectedIds(ids=>e.target.checked?[...new Set([...ids,...pagedStudents.map(st=>st.id)])]:ids.filter(id=>!pagedStudents.some(st=>st.id===id)))}/>{t('Select page','تحديد الصفحة')}</label><span>{selectedIds.length} {t('selected','محدد')}</span>{selectedIds.length>0&&<button type="button" className="camp-link" onClick={()=>exportRoster('selected')}><Download size={15}/>{t('Export selected','تصدير المحدد')}</button>}<button type="button" className="camp-link" onClick={()=>setShowExport(v=>!v)}><Download size={15}/>{t('Export','تصدير')}</button></div>
+    {showExport&&<div className="student-export-options">{([{id:'all',label:t('All camp students','كل طلاب الكامب')},{id:'group',label:t('Selected group','المجموعة المختارة')},{id:'selected',label:t('Selected students','الطلاب المحددون')},{id:'attendance',label:t('Attendance summary','ملخص الحضور')},{id:'late',label:t('Late enrollments','المنضمون متأخراً')}] as const).map(o=><button type="button" key={o.id} disabled={o.id==='group'&&selectedGroupId==='all'||o.id==='selected'&&!selectedIds.length} className={BTN_SECONDARY} onClick={()=>exportRoster(o.id)}><Download size={14}/>{o.label}</button>)}</div>}
+    {!pagedStudents.length?<EmptyState icon={GraduationCap} title={t('No students found','لا يوجد طلاب مطابقون للبحث')}/>:<><div className="student-table-heading"><span/><span>{t('Student','الطالب')}</span><span>{t('Group','المجموعة')}</span><span>{t('Attendance','الحضور')}</span><span/></div>{pagedStudents.map(st=>{const rate=statsByStudent.get(st.id)?.rate;return <div className="student-row" key={st.id}><input aria-label={t('Select student','تحديد الطالب')+' '+st.fullName} type="checkbox" checked={selectedIds.includes(st.id)} onChange={e=>setSelectedIds(ids=>e.target.checked?[...ids,st.id]:ids.filter(id=>id!==st.id))}/><button type="button" className="student-row-name" onClick={()=>openStudent(st.id)}><span className="people-avatar"><GraduationCap size={17}/></span><span><strong>{st.fullName}</strong><small>{st.studentCode} · {st.university}</small>{isLate(st)&&<small className="student-late">{t('Joined Day','انضم يوم')} {st.joinedCampDay??1}</small>}</span></button><span className="student-group-name">{groupName(st.groupId)}</span><span className="student-rate" data-low={rate!=null&&rate<75}>{rate==null?'—':rate+'%'}</span><button type="button" className="camp-icon-button" aria-label={t('View student','عرض الطالب')+' '+st.fullName} onClick={()=>openStudent(st.id)}><ChevronRight size={16}/></button></div>;})}<PaginationBar page={currentPage} totalPages={totalPages} totalItems={filteredStudents.length} pageSize={STUDENTS_PAGE_SIZE} onPageChange={setCurrentPage} labelShowing={t('Showing','عرض')}/></>}
+  </section>;
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t('Students & Groups', 'الطلاب والمجموعات')}
-        subtitle={t(
-          'Students belong to one camp group without login accounts. Batch import validates every row atomically.',
-          'الطلاب مسجلون في معسكر محدد دون حسابات دخول، ويتم التحقق من كل سجل قبل استيراد الدفعة.'
-        )}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setShowGroupForm((p) => !p);
-                setShowStudentForm(false);
-              }}
-              className={BTN_SECONDARY}
-            >
-              <Plus className="w-3.5 h-3.5 text-[#355F82]" />
-              <span>{t('New Group', 'مجموعة جديدة')}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowStudentForm((p) => !p);
-                setShowGroupForm(false);
-              }}
-              className={BTN_PRIMARY}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>{t('Add Student', 'إضافة طالب')}</span>
-            </button>
-          </>
-        }
-      />
-
+    <div className="camp-workspace student-workspace">
+      <div className="camp-page-heading"><div><p className="camp-eyebrow">{t('OPERATIONS WORKSPACE','مساحة إدارة العمليات')}</p><h1>{t('Students & Groups','الطلاب والمجموعات')}</h1><p>{t(activeCamp.nameEn,activeCamp.nameAr)} · {activeCamp.code}</p></div>{!formOpen&&!readOnly&&section==='groups'&&!detailGroup&&<button type="button" className="camp-primary" disabled={!campRooms.length||!campInstructors.length} onClick={()=>setShowGroupForm(true)}><Plus size={17}/>{t('New Group','مجموعة جديدة')}</button>}{!formOpen&&!readOnly&&(section==='students'||detailGroup)&&<button type="button" className="camp-primary" disabled={!campGroups.length} onClick={()=>{if(selectedGroupId!=='all')setStuGroupId(selectedGroupId);setShowStudentForm(true);}}><UserPlus size={17}/>{t('Add Student','إضافة طالب')}</button>}{formOpen&&<button type="button" disabled={isBusy} className={BTN_SECONDARY} onClick={()=>{setShowGroupForm(false);setShowStudentForm(false);setTransferTargetStuId(null);}}>{t('Close form','إغلاق النموذج')}</button>}</div>
+      <nav className="camp-section-tabs student-tabs" aria-label={t('Student management sections','أقسام إدارة الطلاب')}>{([{id:'groups',label:t('Groups','المجموعات'),icon:Layers},{id:'students',label:t('Students','الطلاب'),icon:GraduationCap},{id:'import',label:t('Import','استيراد'),icon:Upload},{id:'transfers',label:t('Transfers','النقل'),icon:ArrowRightLeft}] as const).map(tab=><button type="button" key={tab.id} disabled={isBusy||rosterParsing} aria-current={section===tab.id?'page':undefined} onClick={()=>changeSection(tab.id)}><tab.icon size={17}/><span>{tab.label}</span></button>)}</nav>
+      {readOnly&&<InlineBanner type="error" message={t('Archived camp: read-only.','الكامب مؤرشف: للقراءة فقط.')}/>}
       {actionNotice && (
         <InlineBanner
           type={actionNotice.ok ? 'success' : 'error'}
@@ -2333,8 +2369,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         />
       )}
 
-      {showGroupForm && (
-        <form onSubmit={handleSaveGroup} className={`${SURFACE_CARD} p-5 space-y-4`}>
+      {showGroupForm && !readOnly && (
+        <form onSubmit={handleSaveGroup} className={`${SURFACE_CARD} camp-form p-5 space-y-4`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Create Training Group', 'إنشاء مجموعة تدريبية جديدة')}
           </h2>
@@ -2401,11 +2437,11 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               </label>
               <select
                 id="grp-room"
-                value={grpRoomId}
+                required value={grpRoomId}
                 onChange={(e) => setGrpRoomId(e.target.value)}
                 className={SELECT_CLASS}
               >
-                {rooms.map((r) => (
+                {campRooms.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.code} ({r.name})
                   </option>
@@ -2418,11 +2454,11 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               </label>
               <select
                 id="grp-inst"
-                value={grpInstId}
+                required value={grpInstId}
                 onChange={(e) => setGrpInstId(e.target.value)}
                 className={SELECT_CLASS}
               >
-                {instructors.map((i) => (
+                {campInstructors.map((i) => (
                   <option key={i.id} value={i.id}>
                     {t(i.fullNameEn, i.fullNameAr)}
                   </option>
@@ -2460,8 +2496,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         </form>
       )}
 
-      {showStudentForm && (
-        <form onSubmit={handleCreateSingleStudent} className={`${SURFACE_CARD} p-5 space-y-4`}>
+      {showStudentForm && !readOnly && (
+        <form onSubmit={handleCreateSingleStudent} className={`${SURFACE_CARD} camp-form p-5 space-y-4`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Enroll Individual Student', 'تسجيل طالب جديد')}
           </h2>
@@ -2542,10 +2578,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         </form>
       )}
 
-      {transferTargetStuId && (
+      {transferTargetStuId && !readOnly && (
         <form
           onSubmit={handleSubmitTransfer}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} camp-form p-5 space-y-4`}
         >
           <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ArrowRightLeft className="w-4 h-4 text-[#355F82]" />
@@ -2563,12 +2599,13 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
               </label>
               <select
                 id="tr-group"
-                value={transferToGroupId}
+                required value={transferToGroupId}
                 onChange={(e) => setTransferToGroupId(e.target.value)}
                 className={SELECT_CLASS}
               >
-                {campGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
+                <option value="">{t('Select destination','اختر المجموعة الجديدة')}</option>
+                {campGroups.filter(g=>g.id!==allCampStudents.find(st=>st.id===transferTargetStuId)?.groupId).map((g) => (
+                  <option key={g.id} value={g.id} disabled={allCampStudents.filter(st=>st.groupId===g.id).length>=g.capacity}>
                     {g.code} · {t(g.nameEn, g.nameAr)}
                   </option>
                 ))}
@@ -2619,9 +2656,10 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
         </form>
       )}
 
-      {/* Batch Import Form */}
-      <form onSubmit={handleRunImport} className={`${SURFACE_CARD} p-5 space-y-4`}>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      {section==='import'&&!formOpen&&<form onSubmit={handleRunImport} className={SURFACE_CARD+' camp-form camp-wizard p-5 space-y-4'}>
+        <div className="people-list-heading"><h2>{t('Import Student Roster','استيراد كشف الطلاب')}</h2><button type="button" className={BTN_SECONDARY} onClick={()=>downloadWorkbook('Student-Roster-Template',[['Full Name','Student Code','University']])}><Download size={15}/>{t('Download Excel template','تحميل نموذج Excel')}</button></div>
+        <div className="camp-stepper">{[t('Select Group','اختيار المجموعة'),t('Upload File','رفع الملف'),t('Review & Import','مراجعة واستيراد')].map((label,i)=><div key={i} data-current={importStep===i} data-complete={importStep>i} aria-current={importStep===i?'step':undefined}><span>{importStep>i?<Check size={15}/>:i+1}</span><strong>{label}</strong></div>)}</div>
+        {importStep===0&&<>        <div className="space-y-4">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Upload className="w-4 h-4 text-[#355F82]" />
@@ -2637,7 +2675,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <select
               aria-label={t('Target Group for Import', 'المجموعة المستهدفة للاستيراد')}
               value={importGroupId}
@@ -2663,7 +2701,8 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="space-y-2">
+<button type="button" className="camp-primary" disabled={!targetGroup||readOnly} onClick={()=>{setImportResult(null);setImportStep(1);}}>{t('Continue','التالي')}<ChevronRight size={15}/></button></>}
+        {importStep===1&&<>        <div className="student-upload space-y-2">
           <label htmlFor="roster-excel-upload" className={LABEL_CLASS}>
             {t('Upload Excel / CSV group roster', 'رفع كشف المجموعة Excel أو CSV')}
           </label>
@@ -2728,6 +2767,7 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
           )}
         </div>
 
+        <label className={LABEL_CLASS}>{t('Or paste comma-separated rows','أو الصق الصفوف مفصولة بفواصل')}</label>
         <textarea
           rows={3}
           aria-label={t('Student batch rows', 'بيانات دفعة الطلاب')}
@@ -2741,17 +2781,12 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
           className={`${INPUT_CLASS} font-mono`}
         />
 
-        <div className="flex items-center justify-end">
-          <button
-            type="submit"
-            disabled={isBusy || rosterParsing || Boolean(rosterFileError) || campGroups.length === 0 || (!rosterRows && !rawBatchText.trim())}
-            className={BTN_PRIMARY}
-          >
-            {t('Confirm & Import Group Roster', 'تأكيد واستيراد كشف المجموعة')}
-          </button>
-        </div>
-
-        {importResult && (
+<div className="flex justify-end gap-2"><button type="button" className={BTN_SECONDARY} disabled={rosterParsing} onClick={()=>setImportStep(0)}>{t('Back','السابق')}</button><button type="button" className="camp-primary" disabled={rosterParsing||!!rosterFileError||!parsedRows.length} onClick={()=>setImportStep(2)}>{t('Review roster','مراجعة الكشف')}</button></div></>}
+        {importStep===2&&<><div className="student-review-summary"><div><small>{t('Total rows','عدد الصفوف')}</small><strong>{parsedRows.length}</strong></div><div><small>{t('Rows without errors','صفوف بلا أخطاء')}</small><strong>{parsedRows.filter(r=>!previewErrors.some(e=>e.rowNumber===r.rowNumber)).length}</strong></div><div><small>{t('Errors','الأخطاء')}</small><strong>{previewErrors.length}</strong></div></div><p className="people-note">{t('Target group','المجموعة المستهدفة')}: {targetGroup?groupName(targetGroup.id):'—'} · {importMode==='strict_insert'?t('New only','إضافة فقط'):t('Smart update','تحديث ذكي')}</p>
+          {previewErrors.filter(e=>e.rowNumber===0).map((err,i)=><InlineBanner key={i} type="error" message={err.message}/>)}
+          <div className="student-review-table"><table><thead><tr><th>{t('Row','الصف')}</th><th>{t('Student','الطالب')}</th><th>{t('Code','الكود')}</th><th>{t('Status','الحالة')}</th></tr></thead><tbody>{parsedRows.map((row,i)=>{const errors=previewErrors.filter(e=>e.rowNumber===row.rowNumber);return <tr key={i}><td>{row.rowNumber}</td><td>{row.studentName||'—'}</td><td>{row.studentCode||'—'}</td><td>{errors.length?<span className="student-error">{errors.map(e=>e.message).join(' · ')}</span>:<span className="student-valid">{t('Ready','جاهز')}</span>}</td></tr>;})}</tbody></table></div>
+          <p className="people-note">{previewErrors.length?t('Resolve errors before importing. No rows have been saved.','صحح الأخطاء قبل الاستيراد. لم يتم حفظ أي صف.'):t('Server revalidates the complete batch on confirmation.','يعيد الخادم التحقق من الدفعة بالكامل عند التأكيد.')}</p><div className="flex justify-end gap-2"><button type="button" className={BTN_SECONDARY} disabled={isBusy} onClick={()=>setImportStep(1)}>{t('Back','السابق')}</button><button type="submit" className="camp-primary" disabled={isBusy||readOnly||previewErrors.length>0||!parsedRows.length}>{t('Confirm & Import Group Roster','تأكيد واستيراد كشف المجموعة')}</button></div></>}
+                {importResult && (
           <div
             role="status"
             className={`p-3.5 rounded-lg border text-xs ${
@@ -2787,186 +2822,22 @@ export const AdminStudentsAndGroupsView: React.FC = () => {
             )}
           </div>
         )}
-      </form>
 
-      {/* Students Filter + Search */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setSelectedGroupId('all')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-              selectedGroupId === 'all'
-                ? 'bg-[#355F82] text-white'
-                : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
-            }`}
-          >
-            {t('All Groups', 'كل المجموعات')} ({allCampStudents.length})
-          </button>
-          {campGroups.map((grp) => (
-            <button
-              key={grp.id}
-              type="button"
-              onClick={() => setSelectedGroupId(grp.id)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                selectedGroupId === grp.id
-                  ? 'bg-[#355F82] text-white'
-                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
-              }`}
-            >
-              {grp.code}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative md:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('Search student code, name, university...', 'ابحث بالكود أو الاسم أو الجامعة...')}
-            aria-label={t('Search students', 'بحث الطلاب')}
-            className={`${INPUT_CLASS} ps-9`}
-          />
-        </div>
-      </div>
-
-      {/* Students Table + Mobile Cards + Pagination */}
-      {pagedStudents.length === 0 ? (
-        <EmptyState
-          icon={GraduationCap}
-          title={t('No students found', 'لا يوجد طلاب مطابقون للبحث')}
-        />
-      ) : (
-        <div className={`${SURFACE_CARD} overflow-hidden`}>
-          {/* Mobile Student Cards */}
-          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-            {pagedStudents.map((stu) => {
-              const grp = groups.find((g) => g.id === stu.groupId);
-              return (
-                <div key={stu.id} className="p-4 flex items-center justify-between gap-3 text-xs">
-                  <div className="min-w-0">
-                    <p className="font-mono font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                      {stu.studentCode}
-                    </p>
-                    <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
-                      {stu.fullName}
-                    </p>
-                    <p className="text-slate-500 truncate mt-0.5">
-                      {grp ? grp.code : stu.groupId} · {stu.university}
-                    </p>
-                    {stu.enrollmentOrigin === 'instructor_late_join' && (
-                      <p className="text-amber-800 dark:text-amber-300 mt-1">
-                        {t('Joined Day', 'انضم يوم')} {stu.joinedCampDay}
-                        {' · '}{t('Added by', 'أضافه')} {profiles.find(p => p.id === stu.enrolledByProfileId)?.fullNameEn || t('Instructor', 'محاضر')}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={campGroups.length < 2}
-                    onClick={() => {
-                      const otherGroup = campGroups.find((g) => g.id !== stu.groupId);
-                      setTransferTargetStuId(stu.id);
-                      setTransferToGroupId(otherGroup?.id || '');
-                      setTransferDay(activeCamp.currentCampDay);
-                    }}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] disabled:opacity-40 inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                  >
-                    <ArrowRightLeft className="w-3 h-3" />
-                    <span>{t('Transfer', 'نقل')}</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Desktop Students Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-start border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
-                  <th className="py-3 px-5 font-semibold text-start">{t('Student Code', 'كود الطالب')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Full Name', 'اسم الطالب')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Assigned Group', 'المجموعة')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('University', 'الجامعة')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Enrollment', 'تفاصيل التسجيل')}</th>
-                  <th className="py-3 px-5 font-semibold text-end">{t('Transfer', 'نقل')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {pagedStudents.map((stu) => {
-                  const grp = groups.find((g) => g.id === stu.groupId);
-                  return (
-                    <tr
-                      key={stu.id}
-                      className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="py-3 px-5 font-mono tabular-nums font-semibold text-[#355F82] dark:text-[#88A9CC]">
-                        {stu.studentCode}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                        {stu.fullName}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-[#C0C5C9]">
-                        {grp ? `${grp.code} · ${t(grp.nameEn, grp.nameAr)}` : stu.groupId}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 dark:text-[#A0A5AA]">
-                        {stu.university}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-[#C0C5C9]">
-                        {stu.enrollmentOrigin === 'instructor_late_join' ? (
-                          <div className="space-y-1 text-xs">
-                            <p className="font-semibold text-amber-800 dark:text-amber-300">
-                              {t('Joined Day', 'انضم يوم')} {stu.joinedCampDay}
-                            </p>
-                            <p>{t('Added by', 'أضافه')} {profiles.find(p => p.id === stu.enrolledByProfileId)?.fullNameEn || t('Instructor', 'محاضر')}</p>
-                            {stu.enrolledAt && <p className="text-slate-500">{new Date(stu.enrolledAt).toLocaleString()}</p>}
-                            {stu.enrollmentReason && <p className="text-slate-500">{stu.enrollmentReason}</p>}
-                          </div>
-                        ) : <span className="text-slate-500">{t('Initial roster', 'الكشف الأصلي')} · {t('Day 1', 'اليوم الأول')}</span>}
-                      </td>
-                      <td className="py-3 px-5 text-end">
-                        <button
-                          type="button"
-                          disabled={campGroups.length < 2}
-                          onClick={() => {
-                            const otherGroup = campGroups.find((g) => g.id !== stu.groupId);
-                            setTransferTargetStuId(stu.id);
-                            setTransferToGroupId(otherGroup?.id || '');
-                            setTransferDay(activeCamp.currentCampDay);
-                          }}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <ArrowRightLeft className="w-3 h-3" />
-                          <span>{t('Transfer', 'نقل')}</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <PaginationBar
-            page={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredStudents.length}
-            pageSize={STUDENTS_PAGE_SIZE}
-            onPageChange={setCurrentPage}
-            labelShowing={t('Showing', 'عرض')}
-          />
-        </div>
-      )}
-
-      {campTransfers.length > 0 && (
+      </form>}
+      {section==='groups'&&!formOpen&&!detailGroup&&<>
+        <div className="camp-summary">{[{label:t('Students','الطلاب'),n:allCampStudents.length},{label:t('Groups','المجموعات'),n:campGroups.length},{label:t('Available seats','الأماكن المتاحة'),n:campGroups.reduce((n,g)=>n+Math.max(0,g.capacity-allCampStudents.filter(st=>st.groupId===g.id).length),0)}].map(m=><article className="student-summary-card" key={m.label}><span>{m.label}</span><strong>{m.n}</strong></article>)}</div>
+        {!campGroups.length?<EmptyState icon={Layers} title={t('No groups yet','لا توجد مجموعات')}/>:<div className="camp-card-grid">{campGroups.map(g=>{const n=allCampStudents.filter(st=>st.groupId===g.id).length;const inst=instructors.find(i=>i.id===g.primaryInstructorId);const room=rooms.find(r=>r.id===g.defaultRoomId);return <article className="camp-card student-group-card" key={g.id} data-status="active"><div className="camp-card-head"><span className="camp-icon"><Layers size={22}/></span><div><h2>{groupName(g.id)}</h2><p>{g.code} · {g.track}</p></div></div><div className="camp-card-body"><div className="camp-card-detail"><Users size={16}/>{inst?t(inst.fullNameEn,inst.fullNameAr):'—'}</div><div className="camp-card-detail"><DoorOpen size={16}/>{room?.name||'—'}</div><div className="camp-card-progress" data-capacity={n>g.capacity?'over':n===g.capacity?'full':'available'}><div><strong>{n}/{g.capacity}</strong><span>{n>g.capacity?t('Over capacity','تجاوز السعة'):n===g.capacity?t('Full','ممتلئة'):t(`${g.capacity-n} seats left`,`${g.capacity-n} أماكن متاحة`)}</span></div><div className="camp-progress-track"><span style={{width:Math.min(100,n/Math.max(1,g.capacity)*100)+'%'}}/></div></div><button type="button" className="camp-primary" onClick={()=>openGroup(g.id)}>{t('View group','عرض المجموعة')}<ChevronRight size={15}/></button></div></article>;})}</div>}
+      </>}
+      {section==='groups'&&detailGroup&&!formOpen&&(()=>{const gl=campLectures.filter(l=>l.groupId===detailGroup.id);const finishedIds=new Set(finalized.filter(sh=>gl.some(l=>l.id===sh.lectureId)).map(sh=>sh.lectureId));const gh=[...historyByStudent.values()].flat().filter(h=>h.lecture.groupId===detailGroup.id);const gs=summarize(gh);const gi=instructors.find(i=>i.id===detailGroup.primaryInstructorId);const room=rooms.find(r=>r.id===detailGroup.defaultRoomId);return <><button type="button" className="camp-link" onClick={()=>{setDetailGroupId(null);setSelectedGroupId('all');setSelectedIds([]);}}>{t('Back to groups','رجوع للمجموعات')}</button><div className="student-group-banner"><div><h2>{groupName(detailGroup.id)}</h2><p>{detailGroup.code} · {detailGroup.track}</p><p>{gi?t(gi.fullNameEn,gi.fullNameAr):'—'} · {room?.name||'—'}</p></div><div className="student-group-metrics">{[{l:t('Students','الطلاب'),v:allCampStudents.filter(st=>st.groupId===detailGroup.id).length+'/'+detailGroup.capacity},{l:t('Recorded attendance','الحضور المسجل'),v:gs.rate==null?'—':gs.rate+'%'},{l:t('Finished sessions','المحاضرات المنتهية'),v:finishedIds.size+'/'+gl.length}].map(m=><div key={m.l}><strong>{m.v}</strong><small>{m.l}</small></div>)}</div></div><nav className="camp-section-tabs" aria-label={t('Group details sections','أقسام تفاصيل المجموعة')}>{(['students','schedule','attendance'] as const).map(tab=><button key={tab} type="button" aria-current={groupTab===tab?'page':undefined} onClick={()=>setGroupTab(tab)}>{tab==='students'?t('Students','الطلاب'):tab==='schedule'?t('Schedule','الجدول'):t('Attendance','الحضور')}</button>)}</nav>{groupTab==='students'&&roster}{groupTab==='schedule'&&<section className="people-list"><h2 className="font-semibold mb-3">{t('Group schedule','جدول المجموعة')}</h2>{!gl.length?<EmptyState icon={CalendarDays} title={t('No sessions scheduled','لا توجد محاضرات')}/>:gl.sort((a,b)=>a.campDay-b.campDay||a.startTime.localeCompare(b.startTime)).map(l=><div className="student-history-row" key={l.id}><div><strong>{l.topic}</strong><small>{t('Day','اليوم')} {l.campDay} · {l.startTime.slice(0,5)}–{l.endTime.slice(0,5)}</small></div><span>{finishedIds.has(l.id)?t('Finished','منتهية'):t('Not finalized','غير معتمدة')}</span></div>)}</section>}{groupTab==='attendance'&&<section className="people-list"><h2 className="font-semibold mb-3">{t('Finalized attendance by session','الحضور المعتمد لكل محاضرة')}</h2><p className="people-note">{t('Only finalized marks for this group, including visiting students.','التسجيلات المعتمدة للمجموعة بما فيها الزوار.')}</p>{gl.filter(l=>finishedIds.has(l.id)).map(l=>{const v=summarize(gh.filter(h=>h.lecture.id===l.id));return <div key={l.id} className="student-history-row"><div><strong>{l.topic}</strong><small>{t('Day','اليوم')} {l.campDay} · {v.recorded} {t('marks','تسجيلات')}</small></div><span>{v.rate==null?'—':v.rate+'%'}</span></div>;})}{!finishedIds.size&&<EmptyState icon={ClipboardCheck} title={t('No finalized attendance yet','لا حضور معتمد حتى الآن')}/>}</section>}</>;})()}
+      {section==='students'&&!formOpen&&roster}
+      {detailStudent&&!formOpen&&(()=>{const v=statsByStudent.get(detailStudent.id)!;const history=(historyByStudent.get(detailStudent.id)||[]).slice().sort((a,b)=>b.lecture.campDay-a.lecture.campDay||b.lecture.startTime.localeCompare(a.lecture.startTime));const profile=<><div className="people-profile-banner"><span className="people-avatar"><GraduationCap size={26}/></span><div><h2>{detailStudent.fullName}</h2><p>{detailStudent.studentCode} · {groupName(detailStudent.groupId)}</p></div><StatusBadge tone={detailStudent.isActive?'success':'neutral'}>{detailStudent.isActive?t('Active','نشط'):t('Inactive','غير نشط')}</StatusBadge></div><div className="student-profile-content"><div className="student-profile-rate"><small>{t('Recorded attendance rate','نسبة الحضور المعتمد')}</small><strong>{v.rate==null?'—':v.rate+'%'}</strong><div className="camp-progress-track"><span style={{width:(v.rate??0)+'%'}}/></div></div><div className="student-review-summary">{[{l:t('Present','حاضر'),n:v.present},{l:t('Late','متأخر'),n:v.late},{l:t('Absent','غائب'),n:v.absent},{l:t('Excused','بعذر'),n:v.excused}].map(m=><div key={m.l}><small>{m.l}</small><strong>{m.n}</strong></div>)}</div><p className="people-note">{t('Rate includes present and late marks over all finalized marked sessions. Missing and draft marks are excluded.','النسبة تشمل الحاضر والمتأخر من كل التسجيلات المعتمدة. لا تشمل التسجيلات الناقصة أو المسودات.')}</p><dl className="people-detail-grid">{[{l:t('University','الجامعة'),v:detailStudent.university},{l:t('Joined day','يوم الانضمام'),v:detailStudent.joinedCampDay??1},{l:t('Added by','أضافه'),v:profiles.find(p=>p.id===detailStudent.enrolledByProfileId)?.fullNameEn||'—'},{l:t('Enrollment date','تاريخ التسجيل'),v:detailStudent.enrolledAt?new Date(detailStudent.enrolledAt).toLocaleString():'—'},{l:t('Enrollment reason','سبب التسجيل'),v:detailStudent.enrollmentReason||'—'}].map(m=><div key={m.l}><dt>{m.l}</dt><dd>{m.v}</dd></div>)}</dl><h3 className="font-semibold">{t('Attendance history','سجل الحضور')}</h3>{(fullProfile?history:history.slice(0,5)).map(h=><div className="student-history-row" key={h.lecture.id}><div><strong>{t('Day','اليوم')} {h.lecture.campDay} · {h.lecture.topic}</strong><small>{groupName(h.record.attendedGroupId)}{h.record.isCrossGroup?' · '+t('Cross-group visit','حضور بمجموعة أخرى'):''}</small></div><StatusBadge tone={h.record.mark===AttendanceMark.ABSENT?'danger':h.record.mark===AttendanceMark.PRESENT?'success':'warning'}>{markLabel(h.record.mark)}</StatusBadge></div>)}{!history.length&&<p className="people-note">{t('No finalized marks.','لا تسجيلات معتمدة.')}</p>}{!fullProfile&&<button type="button" className={BTN_SECONDARY} onClick={()=>setFullProfile(true)}>{t('Full profile','الملف الكامل')}</button>}{!readOnly&&<button type="button" className="camp-primary" disabled={campGroups.length<2} onClick={()=>openTransfer(detailStudent)}><ArrowRightLeft size={16}/>{t('Transfer student','نقل الطالب')}</button>}{fullProfile&&<><h3 className="font-semibold">{t('Transfer history','سجل النقل')}</h3>{campTransfers.filter(tr=>tr.studentId===detailStudent.id).map(tr=><div className="student-history-row" key={tr.id}><div><strong>{groupName(tr.fromGroupId)} → {groupName(tr.toGroupId)}</strong><small>{tr.reason}</small></div><span>{t('Day','اليوم')} {tr.effectiveCampDay}</span></div>)}</>}</div></>;return <div className="student-drawer-backdrop" onClick={()=>setStudentId(null)}><section role="dialog" aria-modal="true" aria-label={t('Student details','تفاصيل الطالب')} className={'student-drawer'+(fullProfile?' expanded':'')} onClick={e=>e.stopPropagation()}><div className="people-list-heading"><h2>{fullProfile?t('Student profile','ملف الطالب'):t('Student details','تفاصيل الطالب')}</h2><button type="button" aria-label={t('Close details','إغلاق التفاصيل')} className="camp-icon-button" onClick={()=>setStudentId(null)}><X size={19}/></button></div>{profile}</section></div>;})()}
+      {section==='transfers'&&!formOpen&&(
         <div className={`${SURFACE_CARD} p-5 space-y-3 text-xs`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('Recent Group Transfer History', 'سجل نقل الطلاب بين المجموعات')}
           </h2>
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {!campTransfers.length&&<EmptyState icon={ArrowRightLeft} title={t('No transfers yet','لا يوجد نقل حتى الآن')}/>}
             {campTransfers.map((tr) => {
               const stu = students.find((s) => s.id === tr.studentId);
               const fromG = groups.find((g) => g.id === tr.fromGroupId);

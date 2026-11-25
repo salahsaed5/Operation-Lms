@@ -679,3 +679,27 @@ test('Instructor directory opens focused profile and validates wizard without cr
   await nav.getByRole('button',{name:'Settings',exact:true}).click();
   await expect(page.getByText(/Provisioned Admin Accounts/)).toBeVisible();
 });
+
+test('Students workspace separates groups, roster, import and transfers',async({page})=>{
+  await page.setViewportSize({width:1365,height:900});await page.goto('/');
+  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Students & Groups',exact:true}).click();
+  const root=page.locator('.student-workspace'),tabs=root.getByRole('navigation',{name:'Student management sections'});
+  await expect(tabs.getByRole('button',{name:'Groups',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(root.locator('#roster-excel-upload')).toHaveCount(0);
+  await root.getByRole('button',{name:'View group',exact:true}).first().click();
+  await expect(root.getByRole('navigation',{name:'Group details sections'})).toBeVisible();
+  await tabs.getByRole('button',{name:'Students',exact:true}).click();
+  await root.getByRole('button',{name:/View student /}).first().click();
+  await expect(root.getByRole('dialog',{name:'Student details'})).toBeVisible();
+  await root.getByRole('button',{name:'Close details'}).click();
+  await tabs.getByRole('button',{name:'Import',exact:true}).click();
+  await expect(root.getByRole('button',{name:'Download Excel template'})).toBeVisible();
+  await root.getByRole('button',{name:'Continue',exact:true}).click();
+  await root.getByRole('textbox',{name:'Student batch rows'}).fill('Test Student,TEST-123,Cairo University\nOther Student,TEST-123,Cairo University');
+  await root.getByRole('button',{name:'Review roster'}).click();
+  await expect(root.getByRole('button',{name:'Confirm & Import Group Roster'})).toBeDisabled();
+  await tabs.getByRole('button',{name:'Transfers',exact:true}).click();
+  await expect(root.getByText('Recent Group Transfer History')).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+});
