@@ -19,6 +19,8 @@ export function fixedTimetableRows(groups: Group[], lectures: Lecture[], periods
       rows.push({ id: group.id, groupId: group.id, instructorId: group.primaryInstructorId, roomId: group.defaultRoomId, periodNumber: period!, topic: group.track, fixed: true, scheduledDays: new Set(matches.map(l => l.campDay)).size });
       continue;
     }
+    // A removed assignment retains its historical sessions but is not a current slot.
+    if (!group.defaultRoomId) continue;
     const patterns = new Map<string, Lecture[]>();
     for (const l of own) {
       if (!periods.includes(l.periodNumber)) continue;
