@@ -587,3 +587,29 @@ test('Admin uses attached curved brand rail, integrated camp header and centered
     expect(h!.x+h!.width).toBeLessThanOrEqual(width+1);
   }
 });
+
+test('Daily operations dashboard has five focused sections and working filters', async ({page})=>{
+  await page.setViewportSize({width:1600,height:900});
+  await page.goto('/');
+  const root=page.locator('.ops-dashboard');
+  for(const label of ['Camp Overview',"Today's Sessions",'Student Attendance','Instructor Check-in','Quick Actions']){
+    await expect(root.getByRole('region',{name:label,exact:true})).toBeVisible();
+  }
+  await expect(root.getByText('Needs Attention',{exact:true})).toHaveCount(0);
+  const sessions=root.getByRole('region',{name:"Today's Sessions"});
+  await sessions.getByRole('button',{name:/Pending/}).click();
+  await expect(sessions.getByRole('button',{name:/Pending/})).toHaveAttribute('aria-pressed','true');
+  await sessions.getByRole('button',{name:/Scheduled/}).click();
+  const arrivals=root.getByRole('region',{name:'Instructor Check-in'});
+  const search=arrivals.getByRole('searchbox');
+  await search.fill('no-instructor-matches-this');
+  await expect(arrivals.locator('.ops-arrival-row')).toHaveCount(0);
+  await search.clear();
+  for(const width of [320,390,820]){
+    await page.setViewportSize({width,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+    await expect(arrivals.getByRole('combobox')).toBeVisible();
+  }
+  await root.getByRole('button',{name:'Manage sessions',exact:true}).click();
+  await expect(page.getByRole('navigation',{name:'Mobile bottom navigation'}).getByRole('button',{name:'Schedule',exact:true})).toHaveAttribute('aria-current','page');
+});
