@@ -142,6 +142,7 @@ import {
   updateLectureInDb,
   uploadCheckinSelfie,
   upsertGroupInDb,
+  saveFixedGroupScheduleInDb,
   verifyAdminTotpCode,
 } from '../services/citsRepository';
 
@@ -301,7 +302,8 @@ interface AppContextValue {
     defaultRoomId: string;
     primaryInstructorId: string;
     capacity: number;
-  }) => Promise<ActionResult>;
+    fixedPeriodNumber?: number;
+  }) => Promise<ActionResult & {created?:number;skipped?:number}>;
 
   provisionInstructor: (input: ProvisionInstructorInput) => Promise<ProvisionInstructorOutcome>;
 
@@ -1661,12 +1663,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     defaultRoomId: string;
     primaryInstructorId: string;
     capacity: number;
-  }): Promise<ActionResult> => {
+    fixedPeriodNumber?: number;
+  }): Promise<ActionResult & {created?:number;skipped?:number}> => {
     if (!activeCamp) return { ok: false, error: 'No active camp selected.' };
     const archiveCheck = validateCampNotArchived(activeCamp);
     if (!archiveCheck.allowed) return { ok: false, error: archiveCheck.error };
     if (!input.code.trim() || !input.nameEn.trim()) {
       return { ok: false, error: 'Group code and name are required.' };
+    }
+
+    if(input.fixedPeriodNumber!==undefined){
+      if(isSupabaseMode){
+        try{const result=await saveFixedGroupScheduleInDb({...input,campId:activeCamp.id,fixedPeriodNumber:input.fixedPeriodNumber});await refreshOperationalData();return {ok:true,...result};}
+        catch(err){return {ok:false,error:err instanceof Error?err.message:'Fixed assignment failed.'};}
+      }
+      const period=activeCamp.settings.periodSlots.find(p=>p.period===input.fixedPeriodNumber);
+      const inst=instructors.find(i=>i.id===input.primaryInstructorId&&i.isActive&&!i.archivedAt);
+      const room=rooms.find(r=>r.id===input.defaultRoomId&&r.venueId===activeCamp.venueId);
+      const existing=input.id?groups.find(g=>g.id===input.id&&g.campId===activeCamp.id):undefined;
+      if(!period||!inst||!room||!(campInstructorIds[activeCamp.id]||[]).includes(inst.id)||!input.track.trim()||input.capacity<1||input.capacity>100)return {ok:false,error:'Invalid fixed assignment.'};
+      if(input.id&&(!existing||existing.primaryInstructorId!==inst.id||existing.defaultRoomId!==room.id||(existing.fixedPeriodNumber!=null&&existing.fixedPeriodNumber!==period.period)))return {ok:false,error:'Existing assignment differs.'};
+      if(!input.id&&groups.some(g=>g.campId===activeCamp.id&&g.code.toUpperCase()===input.code.trim().toUpperCase()))return {ok:false,error:'Group code already exists.'};
+      const gid=existing?.id||'grp-'+crypto.randomUUID();
+      const planned:Lecture[]=[];
+      const sheets:AttendanceSheet[]=[];
+      let skipped=0;
+      const start=activeCamp.status===CampStatus.DRAFT?1:activeCamp.currentCampDay;
+      for(let d=start;d<=activeCamp.durationDays;d++){
+        const date=calculateCampDayDate(activeCamp.startDate,d,activeCamp.operatingWeekdays??ALL_CAMP_WEEKDAYS);
+        const clock=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());
+        const part=(k:string)=>clock.find(p=>p.type===k)?.value||'';
+        const today=part('year')+'-'+part('month')+'-'+part('day');
+        if(activeCamp.status===CampStatus.ACTIVE&&(date<today||date===today&&period.start.slice(0,5)<=part('hour')+':'+part('minute'))||lectures.some(l=>l.campId===activeCamp.id&&l.groupId===gid&&l.campDay===d)){skipped++;continue;}
+        const l:Lecture={id:'lec-'+crypto.randomUUID(),campId:activeCamp.id,campDay:d,lectureDate:date,periodNumber:period.period,startTime:period.start,endTime:period.end,durationHours:activeCamp.settings.defaultLectureDurationHours,groupId:gid,instructorId:inst.id,substituteInstructorId:null,roomId:room.id,topic:input.track.trim(),status:LectureStatus.SCHEDULED,frozenRateEgp:inst.defaultLectureRateEgp,instructorAcknowledgedAt:null,revisionNumber:1};
+        const v=validateLectureScheduleSlot({existingLectures:[...lectures,...planned],candidate:l,maxGroupsPerDay:activeCamp.settings.maxInstructorGroupsPerDay});
+        const cross=validateCrossCampLectureSlot({existingLectures:lectures,candidate:l});
+        const backup=financeSnapshot.backups.some(b=>b.instructorId===inst.id&&b.status!=='excluded'&&lectures.some(x=>x.id===b.lectureId&&x.status!==LectureStatus.CANCELLED&&x.lectureDate===date&&x.startTime.slice(0,5)<period.end.slice(0,5)&&x.endTime.slice(0,5)>period.start.slice(0,5)));
+        if(!v.valid||!cross.valid||backup)return {ok:false,error:'Day '+d+': '+[...v.conflicts,...cross.conflicts,...(backup?['Instructor has a backup assignment.']:[])].join(' ')};
+        planned.push(l);sheets.push({id:'sheet-'+l.id,campId:l.campId,lectureId:l.id,instructorId:inst.id,campDay:d,periodNumber:period.period,status:AttendanceSheetStatus.DRAFT,syncState:OfflineSyncState.OFFLINE,idempotencyKey:'idem-'+l.campId+'-'+l.id,records:students.filter(st=>st.campId===l.campId&&st.isActive&&(st.joinedCampDay??1)<=d&&resolveStudentOriginGroupForDay({student:st,transfers:studentTransfers,campDay:d})===gid).map(st=>({studentId:st.id,studentCode:st.studentCode,studentName:st.fullName,originGroupId:gid,attendedGroupId:gid,isCrossGroup:false,mark:'unmarked'})),submittedAt:null,syncedAt:null});
+      }
+      if(!existing&&!planned.length)return {ok:false,error:'No future teaching sessions available.'};
+      const group:Group=existing?{...existing,fixedPeriodNumber:period.period}:{id:gid,campId:activeCamp.id,code:input.code.trim().toUpperCase(),nameEn:input.nameEn.trim(),nameAr:input.nameAr.trim()||input.nameEn.trim(),track:input.track.trim(),defaultRoomId:room.id,primaryInstructorId:inst.id,capacity:input.capacity,fixedPeriodNumber:period.period};
+      setGroups(prev=>existing?prev.map(g=>g.id===gid?group:g):[...prev,group]);setLectures(prev=>[...prev,...planned]);setAttendanceSheets(prev=>[...prev,...sheets]);
+      appendSandboxAudit('FIXED_GROUP_SCHEDULE_SAVED','groups',gid,null,{period:period.period,created:planned.length,skipped},'Fixed instructor and room for teaching days');
+      return {ok:true,created:planned.length,skipped};
     }
 
     if (isSupabaseMode) {
