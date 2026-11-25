@@ -27,7 +27,6 @@ import {
   CalendarDays,
   Layers,
   ChevronRight,
-  ChevronLeft,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
@@ -815,7 +814,7 @@ export const AdminCampsView: React.FC = () => {
           const venue=venues.find(v=>v.id===camp.venueId);
           const selected=activeCamp?.id===camp.id;
           const canSelect=availableCamps.some(c=>c.id===camp.id);
-          const progress=camp.status===CampStatus.DRAFT?0:camp.status===CampStatus.ARCHIVED?100:Math.min(100,Math.max(0,camp.currentCampDay/Math.max(1,camp.durationDays)*100));
+          const progress=camp.status===CampStatus.DRAFT?0:Math.min(100,Math.max(0,camp.currentCampDay/Math.max(1,camp.durationDays)*100));
           const counts=[{icon:GraduationCap,label:t('Students','الطلاب'),n:students.filter(s=>s.campId===camp.id&&s.isActive).length},{icon:Users,label:t('Instructors','المحاضرون'),n:instructors.filter(i=>(campInstructorIds[camp.id]||[]).includes(i.id)&&i.isActive).length},{icon:Layers,label:t('Groups','المجموعات'),n:groups.filter(g=>g.campId===camp.id).length}];
           return <article className="camp-card" key={camp.id} data-status={camp.status} aria-label={t(camp.nameEn,camp.nameAr)}>
             <div className="camp-card-head"><span className="camp-icon"><Tent size={22}/></span><div><h2>{t(camp.nameEn,camp.nameAr)}</h2><p dir="ltr">{camp.code}</p></div><StatusBadge tone={statusTone(camp.status)}>{statusName(camp.status)}</StatusBadge></div>
