@@ -212,16 +212,19 @@ test('Admin attendance shows compact server summary and on-demand corrections, f
 
   const overview = page.getByRole('region', { name: 'Attendance overview' });
   await expect(overview).toBeVisible();
-  await expect(overview.getByText('Camp attendance overview')).toBeVisible();
-  await expect(overview.getByText('Lecture sheets')).toBeVisible();
-  await expect(overview.getByText('Server-saved rows')).toBeVisible();
+  await expect(overview.getByText('Daily student attendance')).toBeVisible();
+  await expect(overview.getByText('Total sessions')).toBeVisible();
+  await expect(overview.getByText('Attendance progress')).toBeVisible();
+  await expect(page.getByLabel('Attendance day',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Instructor Check-in',exact:true})).toBeVisible();
+  await expect(page.getByText('Needs Attention',{exact:true})).toHaveCount(0);
 
   const cards = page.getByRole('article', { name: /^Attendance sheet:/ });
   await expect(cards.first()).toBeVisible();
   // Avoid repeated yellow banners or risky final-submit buttons on every card.
   await expect(page.getByText('Final submission is disabled until the camp is active and the lecture date has arrived.')).toHaveCount(0);
   await expect(cards.first().getByText('Reason for audited corrections')).toHaveCount(0);
-  await cards.first().getByRole('button', { name: 'View details' }).click();
+  await cards.first().getByRole('button', { name: 'View Attendance' }).click();
   await expect(cards.first().getByText('Student attendance records')).toBeVisible();
   await expect(cards.first().getByText('Reason for audited corrections')).toBeVisible();
   await cards.first().getByRole('button', { name: 'Close details' }).click();
@@ -239,6 +242,12 @@ test('Admin attendance shows compact server summary and on-demand corrections, f
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await expect(search).toHaveValue('');
   await expect(cards.first()).toBeVisible();
+  await page.getByRole('button',{name:'Instructor Check-in',exact:true}).click();
+  await expect(page.getByText('Expected instructors',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Student Attendance',exact:true}).click();
+  await page.locator('.attendance-workspace').getByRole('button',{name:'Tools',exact:true}).click();
+  await page.getByRole('button',{name:'Attendance Matrix',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Attendance tools'}).getByRole('heading',{name:'Attendance Matrix'})).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
