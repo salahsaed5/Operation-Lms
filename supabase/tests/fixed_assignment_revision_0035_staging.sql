@@ -27,6 +27,12 @@ BEGIN
  res:=public.revise_fixed_group_schedule_tx(c.id,g,i,r,p1,false,'QA reassign',NULL,NULL,NULL);
  SELECT count(*) INTO n FROM public.lectures WHERE group_id=g AND status='scheduled' AND period_number=p1;
  IF n<>c.duration_days THEN RAISE EXCEPTION 'Reassignment failed'; END IF;
+ -- A non-admin cannot invoke a mutation even when the group is valid.
+ PERFORM set_config('request.jwt.claims',(SELECT jsonb_build_object('sub',profile_id,'role','authenticated','aal','aal1')::text FROM public.instructors WHERE id=i),true);
+ BEGIN
+  PERFORM public.revise_fixed_group_schedule_tx(c.id,g,i,r,p1,false,'Unauthorized',p1,r,i);
+  RAISE EXCEPTION 'UNAUTHORIZED_ACCEPTED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
  PERFORM set_config('cits.qa.revision',jsonb_build_object('move',true,'stale_rejected',true,'remove',true,'reassign',true,'days',n)::text,true);
 END $qa$;
 SELECT current_setting('cits.qa.revision',true) AS result;
