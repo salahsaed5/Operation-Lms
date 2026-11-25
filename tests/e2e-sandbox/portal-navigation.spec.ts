@@ -748,6 +748,16 @@ test('Schedule workspace switches views and opens tools without writing records'
  await expect(root.locator('.sched-metrics > div')).toHaveCount(4);
  await expect(root.getByLabel('Session status')).toHaveValue('all');
  await expect(root.locator('.sched-grid-head').first()).toHaveText('Period');
+ await expect(root.locator('.sched-period-head')).toHaveCSS('text-align','center');
+ await expect(root.locator('.sched-time').first()).toHaveCSS('text-align','center');
+ await expect(root.locator('.sched-grid-head').nth(1)).toHaveCSS('text-align','start');
+ await expect(root.locator('.sched-grid-cell').first()).toHaveCSS('min-height','112px');
+ const card=root.locator('.sched-cell-card').first();
+ if(await card.count()){
+  await expect(card).toHaveCSS('text-align','start');
+  await expect(card.locator('.sched-instructor svg')).toBeAttached();
+  await expect(card.locator('.sched-state i')).toBeAttached();
+ }
  const widths=await root.locator('.sched-grid-head').evaluateAll(cells=>cells.map(c=>c.getBoundingClientRect().width));
  expect(widths[0]).toBeLessThan(widths[1]);
  await expect(root.locator('.sched-time').first()).toContainText(/AM|PM/);
