@@ -1195,6 +1195,14 @@ export async function saveFixedGroupScheduleInDb(input:{id?:string;campId:string
  return result;
 }
 
+export async function reviseFixedGroupScheduleInDb(input:{campId:string;groupId:string;instructorId:string|null;roomId:string|null;period:number|null;remove:boolean;reason:string;expectedPeriod:number|null;expectedRoom:string|null;expectedInstructor:string|null}):Promise<{changed:number;effective_from_day:number}> {
+ const {data,error}=await getClient().rpc('revise_fixed_group_schedule_tx',{p_camp_id:input.campId,p_group_id:input.groupId,p_instructor_id:input.instructorId,p_room_id:input.roomId,p_period:input.period,p_remove:input.remove,p_reason:input.reason,p_expected_period:input.expectedPeriod,p_expected_room:input.expectedRoom,p_expected_instructor:input.expectedInstructor});
+ if(error)throw new Error(error.message);
+ const result=data as {changed:number;effective_from_day:number}|null;
+ if(!result||typeof result.changed!=='number')throw new Error('Unconfirmed revision; refresh the timetable.');
+ return result;
+}
+
 export async function upsertGroupInDb(input: {
   id?: string;
   campId: string;
