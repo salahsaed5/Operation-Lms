@@ -1401,6 +1401,8 @@ const AUDIT_PAGE_SIZE = 12;
 export const AdminSettingsAndAuditView: React.FC = () => {
   const {
     auditLogs,
+    adminAccounts,
+    profiles,
     activeCamp,
     students,
     lectures,
@@ -1410,6 +1412,7 @@ export const AdminSettingsAndAuditView: React.FC = () => {
     t,
   } = useApp();
 
+  const profileById=useMemo(()=>new Map(profiles.map(p=>[p.id,p])),[profiles]);
   const [isExporting, setIsExporting] = useState(false);
   const [backupNotice, setBackupNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [auditSearch, setAuditSearch] = useState('');
@@ -1498,6 +1501,63 @@ export const AdminSettingsAndAuditView: React.FC = () => {
           onDismiss={() => setBackupNotice(null)}
         />
       )}
+
+      {/* Two Admin Accounts Policy Summary */}
+      <section className={`${SURFACE_CARD} p-5 space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t(
+                `Provisioned Admin Accounts (${adminAccounts.length} / 2 Cap)`,
+                `حسابات المسؤولين المعتمدة (الحد الأقصى ${adminAccounts.length} / 2)`
+              )}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
+              {t(
+                'Admin accounts are server-bootstrapped only (max 2 slots) and require verified TOTP MFA (AAL2).',
+                'يتم تهيئة حسابات الإدارة من الخادم فقط (بحد أقصى حسابين) مع مصادقة ثنائية إلزامية TOTP (AAL2).'
+              )}
+            </p>
+          </div>
+          <StatusBadge tone="info">
+            {t('TOTP MFA Required', 'مصادقة ثنائية إلزامية')}
+          </StatusBadge>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {adminAccounts.map((adm) => {
+            const prof = profileById.get(adm.profileId);
+            return (
+              <div
+                key={adm.id}
+                className={`${SURFACE_SUBTLE} p-3.5 flex items-center justify-between gap-3 text-xs`}
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 dark:text-white truncate">
+                    {prof ? t(prof.fullNameEn, prof.fullNameAr) : adm.profileId}
+                  </p>
+                  <p className="text-slate-500 font-mono mt-0.5 truncate">
+                    {prof?.username} · {prof?.email}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <StatusBadge tone={adm.totpVerifiedAt ? 'success' : 'warning'}>
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>
+                      {adm.totpVerifiedAt
+                        ? t('MFA Verified', 'مصادقة مفعلة')
+                        : t('MFA Pending', 'بانتظار التفعيل')}
+                    </span>
+                  </StatusBadge>
+                  <StatusBadge tone="info">
+                    <span>{t(`Slot ${adm.assignedSlot}`, `منفذ ${adm.assignedSlot}`)}</span>
+                  </StatusBadge>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* 3 Clean Operational Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

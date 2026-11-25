@@ -869,7 +869,6 @@ export const AdminInstructorsView: React.FC = () => {
     campInstructorIds,
     instructors,
     groups,
-    adminAccounts,
     profiles,
     isSupabaseMode,
     isLoadingData,
@@ -885,6 +884,9 @@ export const AdminInstructorsView: React.FC = () => {
 
   // Create / Provision Instructor form state
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createStep,setCreateStep]=useState(0);
+  const [profileTab,setProfileTab]=useState<'personal'|'camp'|'account'>('personal');
+  const [assignmentFilter,setAssignmentFilter]=useState('all');
   const [newFullNameEn, setNewFullNameEn] = useState('');
   const [newFullNameAr, setNewFullNameAr] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -947,7 +949,7 @@ export const AdminInstructorsView: React.FC = () => {
   const groupsByInstructor = useMemo(() => {
     const map = new Map<string, typeof groups>();
     for (const grp of groups) {
-      if (activeCamp && grp.campId !== activeCamp.id) continue;
+      if (!activeCamp || grp.campId !== activeCamp.id) continue;
       const list = map.get(grp.primaryInstructorId) || [];
       list.push(grp);
       map.set(grp.primaryInstructorId, list);
@@ -961,6 +963,8 @@ export const AdminInstructorsView: React.FC = () => {
       if (statusFilter==='archived' ? !inst.archivedAt : Boolean(inst.archivedAt)) return false;
       if (statusFilter === 'active' && !inst.isActive) return false;
       if (statusFilter === 'disabled' && inst.isActive) return false;
+      if(assignmentFilter==='assigned'&&!assignedSet.has(inst.id))return false;
+      if(assignmentFilter==='unassigned'&&assignedSet.has(inst.id))return false;
       if (!q) return true;
       return (
         inst.fullNameEn.toLowerCase().includes(q) ||
@@ -971,11 +975,11 @@ export const AdminInstructorsView: React.FC = () => {
         inst.specialization.toLowerCase().includes(q)
       );
     });
-  }, [instructors, searchQuery, statusFilter]);
+  }, [instructors, searchQuery, statusFilter, assignmentFilter, assignedSet]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, assignmentFilter]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(filteredInstructors.length / INSTRUCTORS_PAGE_SIZE));
@@ -988,6 +992,7 @@ export const AdminInstructorsView: React.FC = () => {
   }, [filteredInstructors, currentPage]);
 
   const resetCreateForm = () => {
+    setCreateStep(0);
     setNewFullNameEn('');
     setNewFullNameAr('');
     setNewEmail('');
@@ -1010,6 +1015,7 @@ export const AdminInstructorsView: React.FC = () => {
     setFeedback(null);
     setCreateFieldErrors({});
     if (!showCreateForm) {
+      setCreateStep(0);
       setNewRateEgp(activeCamp?.settings.defaultLectureRateEgp ?? 700);
       setNewAssignToActiveCamp(Boolean(activeCamp && activeCamp.status !== CampStatus.ARCHIVED));
     }
@@ -1049,7 +1055,14 @@ export const AdminInstructorsView: React.FC = () => {
       instructorCodes: instructors.map((i) => i.instructorCode),
     });
 
+    const fieldStep=(field:string)=>['fullNameEn','fullNameAr','email','specialization','phone','bio'].includes(field)?0:['defaultLectureRateEgp','instructorCode','assignToCampId'].includes(field)?1:2;
+    if(createStep<2){
+      const errors=Object.entries(clientCheck.fieldErrors).filter(([field])=>fieldStep(field)===createStep);
+      if(errors.length){setCreateFieldErrors(Object.fromEntries(errors) as Record<string,string>);setFeedback({ok:false,text:errors[0][1]||t('Check the highlighted fields.','راجع البيانات المحددة.')});return;}
+      setCreateFieldErrors({});setCreateStep(v=>v+1);return;
+    }
     if (!clientCheck.valid) {
+      setCreateStep(Math.min(...Object.keys(clientCheck.fieldErrors).map(fieldStep),2));
       setCreateFieldErrors(clientCheck.fieldErrors as Record<string, string>);
       setFeedback({
         ok: false,
@@ -1065,7 +1078,7 @@ export const AdminInstructorsView: React.FC = () => {
     try {
       const outcome = await provisionInstructor(payload);
       if (!outcome.ok) {
-        if (outcome.fieldErrors) setCreateFieldErrors(outcome.fieldErrors as Record<string, string>);
+        if (outcome.fieldErrors) {setCreateFieldErrors(outcome.fieldErrors as Record<string, string>);setCreateStep(Math.min(...Object.keys(outcome.fieldErrors).map(fieldStep),2));}
         setFeedback({
           ok: false,
           text: outcome.error || t('Unable to provision instructor.', 'تعذر إنشاء حساب المحاضر.'),
@@ -1277,39 +1290,15 @@ export const AdminInstructorsView: React.FC = () => {
     }
   };
 
-  const activeCount = instructors.filter((i) => i.isActive).length;
+  const normal=instructors.filter(i=>!i.archivedAt);
+  const activeCount=normal.filter(i=>i.isActive).length;
+  const openProfile=(inst:Instructor)=>{setProfileTab('personal');setViewingInst(inst);setFeedback(null);};
+  const accountBadge=(inst:Instructor)=><StatusBadge tone={inst.archivedAt?'neutral':inst.isActive?'success':'danger'}>{inst.archivedAt?t('Archived','مؤرشف'):inst.isActive?t('Active','نشط'):t('Disabled','معطل')}</StatusBadge>;
+  const avatar=(inst:Instructor)=>t(inst.fullNameEn,inst.fullNameAr).trim().split(/\s+/).slice(0,2).map(w=>Array.from(w)[0]).join('').toUpperCase()||'IN';
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t('Instructors & Admin Accounts', 'المحاضرون وحسابات الإدارة')}
-        subtitle={t(
-          'Provision instructor accounts securely, manage camp assignments, account status, and frozen default lecture rates.',
-          'إنشاء حسابات المحاضرين بأمان، وإدارة التعيينات وحالة الحسابات وفئات المحاضرات الافتراضية.'
-        )}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => refreshOperationalData()}
-              disabled={isLoadingData}
-              className={BTN_SECONDARY}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
-              <span>{t('Refresh', 'تحديث')}</span>
-            </button>
-            <button type="button" onClick={handleOpenCreateForm} className={BTN_PRIMARY}>
-              <UserPlus className="w-4 h-4" />
-              <span>
-                {showCreateForm
-                  ? t('Close Form', 'إغلاق النموذج')
-                  : t('Provision Instructor', 'إنشاء حساب محاضر')}
-              </span>
-            </button>
-          </>
-        }
-      />
-
+    <div className="camp-workspace people-workspace">
+      <div className="camp-page-heading"><div><p className="camp-eyebrow">{t('OPERATIONS WORKSPACE','مساحة إدارة العمليات')}</p><h1>{t('Instructors','المحاضرون')}</h1><p>{t('Manage your teaching team.','إدارة فريق المحاضرين.')}</p></div>{!showCreateForm&&!editingInst&&!viewingInst&&<button type="button" className="camp-primary" onClick={handleOpenCreateForm} disabled={isBusy}><UserPlus size={17}/>{t('New Instructor','إضافة محاضر')}</button>}{(showCreateForm||editingInst||viewingInst)&&<button type="button" className={BTN_SECONDARY} disabled={isBusy} onClick={()=>{resetCreateForm();setShowCreateForm(false);setEditingInst(null);setEditCredential('');setViewingInst(null);setFeedback(null);}}>{t('Back to instructors','رجوع للمحاضرين')}</button>}</div>
       {dataError && (
         <InlineBanner
           type="error"
@@ -1407,69 +1396,12 @@ export const AdminInstructorsView: React.FC = () => {
         </section>
       )}
 
-      {/* Two Admin Accounts Policy Summary */}
-      <section className={`${SURFACE_CARD} p-5 space-y-3`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              {t(
-                `Provisioned Admin Accounts (${adminAccounts.length} / 2 Cap)`,
-                `حسابات المسؤولين المعتمدة (الحد الأقصى ${adminAccounts.length} / 2)`
-              )}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-[#A0A5AA] mt-0.5">
-              {t(
-                'Admin accounts are server-bootstrapped only (max 2 slots) and require verified TOTP MFA (AAL2).',
-                'يتم تهيئة حسابات الإدارة من الخادم فقط (بحد أقصى حسابين) مع مصادقة ثنائية إلزامية TOTP (AAL2).'
-              )}
-            </p>
-          </div>
-          <StatusBadge tone="info">
-            {t('TOTP MFA Required', 'مصادقة ثنائية إلزامية')}
-          </StatusBadge>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {adminAccounts.map((adm) => {
-            const prof = profileById.get(adm.profileId);
-            return (
-              <div
-                key={adm.id}
-                className={`${SURFACE_SUBTLE} p-3.5 flex items-center justify-between gap-3 text-xs`}
-              >
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 dark:text-white truncate">
-                    {prof ? t(prof.fullNameEn, prof.fullNameAr) : adm.profileId}
-                  </p>
-                  <p className="text-slate-500 font-mono mt-0.5 truncate">
-                    {prof?.username} · {prof?.email}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <StatusBadge tone={adm.totpVerifiedAt ? 'success' : 'warning'}>
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>
-                      {adm.totpVerifiedAt
-                        ? t('MFA Verified', 'مصادقة مفعلة')
-                        : t('MFA Pending', 'بانتظار التفعيل')}
-                    </span>
-                  </StatusBadge>
-                  <StatusBadge tone="info">
-                    <span>{t(`Slot ${adm.assignedSlot}`, `منفذ ${adm.assignedSlot}`)}</span>
-                  </StatusBadge>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       {/* Create / Provision Instructor Form */}
       {showCreateForm && (
         <form
           onSubmit={handleProvisionSubmit}
           noValidate
-          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} camp-form camp-wizard p-5 space-y-4`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1486,8 +1418,8 @@ export const AdminInstructorsView: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                resetCreateForm();
                 setShowCreateForm(false);
-                setCreateFieldErrors({});
               }}
               aria-label={t('Close form', 'إغلاق النموذج')}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
@@ -1496,7 +1428,9 @@ export const AdminInstructorsView: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div className="camp-stepper" aria-label={t('Creation progress','خطوات الإنشاء')}>{[t('Personal Info','البيانات الشخصية'),t('Camp Setup','إعداد الكامب'),t('Account Setup','إعداد الحساب')].map((label,i)=><div key={i} data-current={createStep===i} data-complete={createStep>i} aria-current={createStep===i?'step':undefined}><span>{createStep>i?<Check size={15}/>:i+1}</span><strong>{label}</strong></div>)}</div>
+          {createStep===0&&<>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div>
               <label htmlFor="prov-name-en" className={LABEL_CLASS}>
                 {t('Full Name (English) *', 'الاسم الكامل (بالإنجليزية) *')}
@@ -1552,47 +1486,6 @@ export const AdminInstructorsView: React.FC = () => {
             </div>
 
             <div>
-              <label htmlFor="prov-username" className={LABEL_CLASS}>
-                {t('Username *', 'اسم المستخدم *')}
-              </label>
-              <input
-                id="prov-username"
-                type="text"
-                required
-                value={newUsername}
-                onChange={(e) => setNewUsername(e.target.value)}
-                placeholder="youssef.nabil"
-                className={`${INPUT_CLASS} font-mono`}
-              />
-              {createFieldErrors.username && (
-                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
-                  {createFieldErrors.username}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="prov-code" className={LABEL_CLASS}>
-                {t('Instructor Code *', 'كود المحاضر *')}
-              </label>
-              <input
-                id="prov-code"
-                type="text"
-                required
-                value={newInstructorCode}
-                onChange={(e) => setNewInstructorCode(e.target.value)}
-                placeholder="INST-05"
-                className={`${INPUT_CLASS} font-mono uppercase`}
-              />
-              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setNewInstructorCode(generateEntityCode('INST'))}>{t('Generate code', 'توليد كود')}</button>
-              {createFieldErrors.instructorCode && (
-                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
-                  {createFieldErrors.instructorCode}
-                </p>
-              )}
-            </div>
-
-            <div>
               <label htmlFor="prov-spec" className={LABEL_CLASS}>
                 {t('Specialization *', 'التخصص *')}
               </label>
@@ -1627,6 +1520,53 @@ export const AdminInstructorsView: React.FC = () => {
               {createFieldErrors.phone && (
                 <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
                   {createFieldErrors.phone}
+                </p>
+              )}
+            </div>
+
+          </div>
+          <div>
+            <label htmlFor="prov-bio" className={LABEL_CLASS}>
+              {t('Bio / Instructor Notes (Optional)', 'نبذة عن المحاضر (اختياري)')}
+            </label>
+            <textarea
+              id="prov-bio"
+              rows={2}
+              value={newBio}
+              onChange={(e) => setNewBio(e.target.value)}
+              placeholder={t(
+                'Short teaching profile or competition mentoring background...',
+                'نبذة مختصرة عن الخبرة التدريبية أو الإشراف على المسابقات...'
+              )}
+              className={INPUT_CLASS}
+            />
+            {createFieldErrors.bio && (
+              <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                {createFieldErrors.bio}
+              </p>
+            )}
+          </div>
+
+          </>}
+          {createStep===1&&<>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label htmlFor="prov-code" className={LABEL_CLASS}>
+                {t('Instructor Code *', 'كود المحاضر *')}
+              </label>
+              <input
+                id="prov-code"
+                type="text"
+                required
+                value={newInstructorCode}
+                onChange={(e) => setNewInstructorCode(e.target.value)}
+                placeholder="INST-05"
+                className={`${INPUT_CLASS} font-mono uppercase`}
+              />
+              <button type="button" className={BTN_SECONDARY + ' mt-1'} onClick={() => setNewInstructorCode(generateEntityCode('INST'))}>{t('Generate code', 'توليد كود')}</button>
+              {createFieldErrors.instructorCode && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.instructorCode}
                 </p>
               )}
             </div>
@@ -1674,29 +1614,30 @@ export const AdminInstructorsView: React.FC = () => {
               )}
             </div>
           </div>
-
-          <div>
-            <label htmlFor="prov-bio" className={LABEL_CLASS}>
-              {t('Bio / Instructor Notes (Optional)', 'نبذة عن المحاضر (اختياري)')}
-            </label>
-            <textarea
-              id="prov-bio"
-              rows={2}
-              value={newBio}
-              onChange={(e) => setNewBio(e.target.value)}
-              placeholder={t(
-                'Short teaching profile or competition mentoring background...',
-                'نبذة مختصرة عن الخبرة التدريبية أو الإشراف على المسابقات...'
+          <p className="text-xs text-slate-500">{t('Assigning an instructor does not require a primary group.','تعيين المحاضر لا يتطلب مجموعة أساسية.')}</p></>}
+          {createStep===2&&<>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label htmlFor="prov-username" className={LABEL_CLASS}>
+                {t('Username *', 'اسم المستخدم *')}
+              </label>
+              <input
+                id="prov-username"
+                type="text"
+                required
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                placeholder="youssef.nabil"
+                className={`${INPUT_CLASS} font-mono`}
+              />
+              {createFieldErrors.username && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
+                  {createFieldErrors.username}
+                </p>
               )}
-              className={INPUT_CLASS}
-            />
-            {createFieldErrors.bio && (
-              <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">
-                {createFieldErrors.bio}
-              </p>
-            )}
-          </div>
+            </div>
 
+          </div>
           {/* Onboarding Delivery Mode */}
           <div className={`${SURFACE_SUBTLE} p-4 space-y-3`}>
             <p className="text-xs font-semibold text-slate-900 dark:text-white">
@@ -1788,6 +1729,7 @@ export const AdminInstructorsView: React.FC = () => {
             )}
           </div>
 
+          </>}
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
             <button
               type="button"
@@ -1799,10 +1741,11 @@ export const AdminInstructorsView: React.FC = () => {
             >
               {t('Cancel', 'إلغاء')}
             </button>
-            <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>
+            {createStep>0&&<button type="button" disabled={isBusy} className={BTN_SECONDARY} onClick={()=>{setFeedback(null);setCreateStep(v=>v-1);}}>{t('Back','السابق')}</button>}
+            <button type="submit" disabled={isBusy} className="camp-primary">
               <UserPlus className="w-4 h-4" />
               <span>
-                {isBusy
+                {createStep<2?t('Continue','التالي'):isBusy
                   ? t('Provisioning...', 'جاري إنشاء الحساب...')
                   : t('Create Instructor Account', 'إنشاء حساب المحاضر')}
               </span>
@@ -1815,7 +1758,7 @@ export const AdminInstructorsView: React.FC = () => {
       {editingInst && (
         <form
           onSubmit={handleSaveInst}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 space-y-4`}
+          className={`${SURFACE_CARD} camp-form p-5 space-y-4`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1973,430 +1916,41 @@ export const AdminInstructorsView: React.FC = () => {
         </form>
       )}
 
-      {/* Search & Status Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t(
-              'Search name, email, code, or specialization...',
-              'ابحث بالاسم أو البريد أو الكود أو التخصص...'
-            )}
-            aria-label={t('Search instructors', 'بحث المحاضرين')}
-            className={`${INPUT_CLASS} ps-9`}
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 text-xs">
-          {(
-            [
-              { id: 'all', en: `All (${instructors.filter(i=>!i.archivedAt).length})`, ar: `الكل (${instructors.filter(i=>!i.archivedAt).length})` },
-              { id: 'active', en: `Active (${activeCount})`, ar: `نشط (${activeCount})` },
-              {
-                id: 'disabled',
-                en: `Disabled (${instructors.filter(i=>!i.archivedAt&&!i.isActive).length})`,
-                ar: `معطل (${instructors.filter(i=>!i.archivedAt&&!i.isActive).length})`,
-              },
-              {id:'archived',en:`Archived (${instructors.filter(i=>i.archivedAt).length})`,ar:`الأرشيف (${instructors.filter(i=>i.archivedAt).length})`},
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                statusFilter === tab.id
-                  ? 'bg-[#355F82] text-white'
-                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9]'
-              }`}
-            >
-              {t(tab.en, tab.ar)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Loading / Empty / Table States */}
-      {isLoadingData && instructors.length === 0 ? (
-        <div className={`${SURFACE_CARD} p-10 text-center text-xs text-slate-500`}>
-          {t('Loading instructor directory...', 'جاري تحميل قائمة المحاضرين...')}
-        </div>
-      ) : filteredInstructors.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title={t('No matching instructors', 'لا يوجد محاضرون مطابقون للبحث')}
-          description={t(
-            'Adjust your search or status filter, or provision a new instructor account.',
-            'عدّل معايير البحث أو الفلترة، أو قم بإنشاء حساب محاضر جديد.'
-          )}
-        />
-      ) : (
-        <div className={`${SURFACE_CARD} overflow-hidden`}>
-          {/* Mobile Cards */}
-          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-            {paginatedInstructors.map((inst) => {
-              const linkedProfile = profileById.get(inst.profileId);
-              const assignedGroups = groupsByInstructor.get(inst.id) || [];
-              const isAssigned = activeCamp ? assignedSet.has(inst.id) : false;
-              return (
-                <div key={inst.id} className="p-4 space-y-2.5 text-xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
-                        {t(inst.fullNameEn, inst.fullNameAr)}
-                      </p>
-                      <p className="font-mono text-slate-500 mt-0.5 truncate">
-                        {inst.instructorCode} · {inst.username}
-                      </p>
-                      <p className="font-mono text-[11px] text-slate-400 truncate">{inst.email}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
-                        {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
-                      </StatusBadge>
-                      {linkedProfile?.mustChangePassword && (
-                        <StatusBadge tone="warning">
-                          {t('1st Login Pending', 'تغيير كلمة المرور')}
-                        </StatusBadge>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-slate-600 dark:text-[#A0A5AA]">{inst.specialization}</p>
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
-                        {inst.defaultLectureRateEgp} EGP
-                      </span>
-                      {activeCamp && (
-                        <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
-                          {isAssigned
-                            ? `${activeCamp.code} · ${assignedGroups.length} ${t('grp', 'مج')}`
-                            : t('Unassigned', 'غير معين')}
-                        </StatusBadge>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setViewingInst(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>{t('View', 'عرض')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        <span>{t('Edit', 'تعديل')}</span>
-                      </button>
-                      {!inst.archivedAt && (<button
-                        type="button"
-                        onClick={() => setToggleStatusTarget(inst)}
-                        className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] font-medium inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Power className="w-3 h-3" />
-                        <span>
-                          {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
-                        </span>
-                      </button>)}
-                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:inst.archivedAt?'restore':'archive'})} className="px-2 py-1 rounded-md border border-slate-300 text-xs font-medium whitespace-nowrap">{inst.archivedAt?t('Restore','استعادة من الأرشيف'):t('Archive','أرشفة')}</button>}
-                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:'delete'})} className="px-2 py-1 rounded-md border border-red-300 text-red-600 text-xs font-medium whitespace-nowrap">{t('Delete','حذف نهائي')}</button>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+      {!showCreateForm&&!editingInst&&!viewingInst&&<>
+        <div className="people-metrics">{[{label:t('Total instructors','إجمالي المحاضرين'),n:normal.length,icon:Users,tone:'blue'},{label:t('Active accounts','الحسابات النشطة'),n:activeCount,icon:CheckCircle2,tone:'green'},{label:t('Assigned to camp','المعينون بالكامب'),n:normal.filter(i=>assignedSet.has(i.id)).length,icon:Tent,tone:'teal'},{label:t('Disabled accounts','الحسابات المعطلة'),n:normal.length-activeCount,icon:Power,tone:'red'}].map(m=><article key={m.label} data-tone={m.tone}><div><p>{m.label}</p><strong>{m.n}</strong></div><span><m.icon size={20}/></span></article>)}</div>
+        <div className="camp-toolbar"><label className="camp-search"><Search size={17}/><input type="search" aria-label={t('Search instructors','بحث المحاضرين')} placeholder={t('Search instructors...','ابحث عن محاضر...')} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/></label><div className="people-filters"><select aria-label={t('Filter account status','تصفية حالة الحساب')} value={statusFilter} onChange={e=>setStatusFilter(e.target.value as InstructorFilter)}><option value="all">{t('All instructors','كل المحاضرين')}</option><option value="active">{t('Active','نشط')}</option><option value="disabled">{t('Disabled','معطل')}</option><option value="archived">{t('Archived','مؤرشف')}</option></select>{activeCamp&&<select aria-label={t('Filter camp assignment','تصفية التعيين بالكامب')} value={assignmentFilter} onChange={e=>setAssignmentFilter(e.target.value)}><option value="all">{t('All assignments','كل التعيينات')}</option><option value="assigned">{t('Assigned to camp','معين بالكامب')}</option><option value="unassigned">{t('Not assigned','غير معين')}</option></select>}</div></div>
+        <section className="people-list" aria-label={t('Instructor directory','دليل المحاضرين')}>
+          <div className="people-list-heading"><h2>{t('Instructor directory','دليل المحاضرين')}</h2><span>{filteredInstructors.length} {t('instructors','محاضر')}</span></div>
+          {isLoadingData&&instructors.length===0?<p className="p-5 text-sm">{t('Loading instructor directory...','جاري تحميل المحاضرين...')}</p>:!filteredInstructors.length?<EmptyState icon={Users} title={t('No matching instructors','لا يوجد محاضرون مطابقون')} action={<button type="button" className={BTN_SECONDARY} onClick={()=>{setSearchQuery('');setStatusFilter('all');setAssignmentFilter('all');}}>{t('Clear filters','إلغاء التصفية')}</button>}/>:<>
+          <div className="people-table-heading"><span>{t('Instructor','المحاضر')}</span><span>{t('Specialization','التخصص')}</span><span>{t('Camp assignment','التعيين بالكامب')}</span><span>{t('Status','الحالة')}</span><span/></div>
+          {paginatedInstructors.map(inst=><button key={inst.id} type="button" className="people-row" onClick={()=>openProfile(inst)} aria-label={t('View instructor','عرض المحاضر')+' '+t(inst.fullNameEn,inst.fullNameAr)}><span className="people-identity"><span className="people-avatar">{avatar(inst)}</span><span><strong>{t(inst.fullNameEn,inst.fullNameAr)}</strong><small>{inst.instructorCode}</small></span></span><span className="people-specialization">{inst.specialization}</span><span className="people-assignment" data-assigned={assignedSet.has(inst.id)}>{activeCamp?(assignedSet.has(inst.id)?t('Assigned to camp','معين بالكامب'):t('Not assigned','غير معين')):'—'}</span><span>{accountBadge(inst)}</span><ChevronRight size={17} className="people-chevron"/></button>)}
+          <PaginationBar page={currentPage} totalPages={Math.max(1,Math.ceil(filteredInstructors.length/INSTRUCTORS_PAGE_SIZE))} totalItems={filteredInstructors.length} pageSize={INSTRUCTORS_PAGE_SIZE} onPageChange={setCurrentPage} labelShowing={t(`Showing ${paginatedInstructors.length} of ${filteredInstructors.length} instructors`,`عرض ${paginatedInstructors.length} من ${filteredInstructors.length} محاضر`)}/>
+          </>}
+        </section>
+      </>}
+      {viewingInst&&(()=>{
+        const inst=instructors.find(i=>i.id===viewingInst.id)||viewingInst;
+        const linkedProfile=profileById.get(inst.profileId);
+        const assignedGroups=groupsByInstructor.get(inst.id)||[];
+        const assigned=assignedSet.has(inst.id);
+        const fields=(items:{label:string;value:React.ReactNode}[])=><dl className="people-detail-grid">{items.map(item=><div key={item.label}><dt>{item.label}</dt><dd>{item.value||'—'}</dd></div>)}</dl>;
+        const action=(Icon:typeof Pencil,label:string,description:string,onClick:()=>void,tone='normal')=><button type="button" className="people-account-action" data-tone={tone} disabled={isBusy} onClick={onClick}><span><Icon size={18}/></span><div><strong>{label}</strong><small>{description}</small></div><ChevronRight size={16}/></button>;
+        return <section className="people-profile" aria-label={t('Instructor profile','ملف المحاضر')}>
+          <div className="people-profile-banner"><span className="people-avatar">{avatar(inst)}</span><div><h2>{t(inst.fullNameEn,inst.fullNameAr)}</h2><p>{inst.specialization} · {inst.instructorCode}</p></div>{accountBadge(inst)}</div>
+          <nav className="camp-section-tabs" aria-label={t('Instructor profile sections','أقسام ملف المحاضر')}>{([{id:'personal',label:t('Personal Info','البيانات الشخصية'),icon:Users},{id:'camp',label:t('Camp & Groups','الكامب والمجموعات'),icon:Tent},{id:'account',label:t('Account','الحساب'),icon:Lock}] as const).map(tab=><button type="button" key={tab.id} aria-current={profileTab===tab.id?'page':undefined} onClick={()=>setProfileTab(tab.id)}><tab.icon size={17}/>{tab.label}</button>)}</nav>
+          <div className="people-profile-content">
+          {profileTab==='personal'&&<><div className="people-list-heading"><h2>{t('Personal information','البيانات الشخصية')}</h2>{!inst.archivedAt&&<button type="button" className={BTN_SECONDARY} onClick={()=>openEdit(inst)}><Pencil size={15}/>{t('Edit','تعديل')}</button>}</div>{fields([{label:t('English name','الاسم بالإنجليزية'),value:inst.fullNameEn},{label:t('Arabic name','الاسم بالعربية'),value:inst.fullNameAr},{label:t('Email','البريد الإلكتروني'),value:inst.email},{label:t('Phone','الهاتف'),value:inst.phone},{label:t('Specialization','التخصص'),value:inst.specialization},{label:t('Instructor code','كود المحاضر'),value:inst.instructorCode},{label:t('Bio / notes','نبذة / ملاحظات'),value:inst.bio}])}</>}
+          {profileTab==='camp'&&<><div className="people-list-heading"><h2>{t('Camp & Groups','الكامب والمجموعات')}</h2>{!inst.archivedAt&&<button type="button" className={BTN_SECONDARY} onClick={()=>openEdit(inst)}><Pencil size={15}/>{t('Edit assignment','تعديل التعيين')}</button>}</div>{fields([{label:t('Working camp','الكامب المختار'),value:activeCamp?t(activeCamp.nameEn,activeCamp.nameAr):'—'},{label:t('Assignment','التعيين'),value:activeCamp?(assigned?t('Assigned','معين'):t('Not assigned','غير معين')):'—'},{label:t('Primary groups','المجموعات الأساسية'),value:assignedGroups.map(g=>g.code).join(', ')||t('No primary groups','لا توجد مجموعات أساسية')},{label:t('Default lecture rate','فئة المحاضرة الافتراضية'),value:inst.defaultLectureRateEgp+' EGP'}])}<p className="people-note">{t('A camp instructor can support sessions without a primary group. Detailed payments remain in Finance.','يمكن للمحاضر دعم المحاضرات بدون مجموعة أساسية. الحسابات التفصيلية في قسم المالية.')}</p></>}
+          {profileTab==='account'&&<><div className="people-list-heading"><h2>{t('Account management','إدارة الحساب')}</h2></div>{fields([{label:t('Username','اسم المستخدم'),value:inst.username},{label:t('Login email','بريد الدخول'),value:inst.email},{label:t('Account status','حالة الحساب'),value:accountBadge(inst)},{label:t('Password status','حالة كلمة المرور'),value:linkedProfile?.mustChangePassword?t('Password change pending','بانتظار تغيير كلمة المرور'):linkedProfile?t('No change pending','لا يوجد تغيير معلق'):'—'}])}<div className="people-account-actions">
+          {!inst.archivedAt&&action(Pencil,t('Edit account','تعديل الحساب'),t('Update profile and login credentials','تعديل البيانات وبيانات الدخول'),()=>openEdit(inst))}
+          {!inst.archivedAt&&action(KeyRound,t('Reset password','استعادة كلمة المرور'),t('Secure password recovery','استعادة آمنة لكلمة المرور'),()=>setResetTarget(inst))}
+          {!inst.archivedAt&&action(Power,inst.isActive?t('Disable account','تعطيل الحساب'):t('Activate account','تفعيل الحساب'),t('Manage sign-in access','إدارة صلاحية الدخول'),()=>setToggleStatusTarget(inst),inst.isActive?'warning':'normal')}
+          {!inst.isActive&&action(Archive,inst.archivedAt?t('Restore instructor','استعادة المحاضر'):t('Archive instructor','أرشفة المحاضر'),t('Preserve operational history','الاحتفاظ بسجل التشغيل'),()=>setRemovalTarget({inst,action:inst.archivedAt?'restore':'archive'}),'warning')}
+          {!inst.isActive&&action(X,t('Delete permanently','حذف نهائي'),t('Only accounts without linked records can be deleted','الحذف للحسابات غير المرتبطة بسجلات فقط'),()=>setRemovalTarget({inst,action:'delete'}),'danger')}
+          </div></>}
           </div>
-
-          {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-start border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
-                  <th className="py-3 ps-4 pe-3 font-semibold text-start">{t('Instructor', 'المحاضر')}</th>
-                  <th className="py-3 px-3 font-semibold text-start">{t('Account', 'الحساب')}</th>
-                  <th className="py-3 px-3 font-semibold text-start">{t('Specialization', 'التخصص')}</th>
-                  <th className="py-3 px-3 font-semibold text-start">{t('Camp & Groups', 'المعسكر والمجموعات')}</th>
-                  <th className="py-3 px-3 font-semibold text-start">{t('Status', 'الحالة')}</th>
-                  <th className="py-3 px-3 font-semibold text-end whitespace-nowrap">{t('Default Rate', 'الفئة')}</th>
-                  <th className="py-3 ps-3 pe-4 font-semibold text-end">{t('Actions', 'إجراءات')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {paginatedInstructors.map((inst) => {
-                  const isAssigned = activeCamp ? assignedSet.has(inst.id) : false;
-                  const linkedProfile = profileById.get(inst.profileId);
-                  const assignedGroups = groupsByInstructor.get(inst.id) || [];
-                  return (
-                    <tr
-                      key={inst.id}
-                      className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="py-3 ps-4 pe-3">
-                        <p className="font-semibold text-slate-900 dark:text-white whitespace-nowrap">
-                          {t(inst.fullNameEn, inst.fullNameAr)}
-                        </p>
-                        <p className="text-slate-500 font-mono tabular-nums mt-0.5">
-                          {inst.instructorCode}
-                        </p>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-slate-600 dark:text-[#C0C5C9] max-w-[190px]">
-                        <div className="truncate">{inst.username}</div>
-                        <div className="text-[11px] text-slate-400 truncate" title={inst.email}>
-                          {inst.email}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-slate-700 dark:text-[#C0C5C9] max-w-[180px]">
-                        <span className="line-clamp-2">{inst.specialization}</span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="flex flex-col items-start gap-1">
-                          {activeCamp ? (
-                            <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
-                              {isAssigned ? activeCamp.code : t('Unassigned', 'غير معين')}
-                            </StatusBadge>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                          <span className="text-[11px] text-slate-500 whitespace-nowrap">
-                            {assignedGroups.length === 0
-                              ? t('No primary groups', 'لا توجد مجموعات')
-                              : t(
-                                  `${assignedGroups.length} group${assignedGroups.length > 1 ? 's' : ''}`,
-                                  `${assignedGroups.length} مجموعة`
-                                )}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="flex flex-col items-start gap-1">
-                          <StatusBadge tone={inst.isActive ? 'success' : 'danger'}>
-                            {inst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
-                          </StatusBadge>
-                          {linkedProfile?.mustChangePassword && (
-                            <StatusBadge tone="warning">
-                              {t('1st Login Pending', 'تغيير كلمة المرور')}
-                            </StatusBadge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-end font-mono tabular-nums font-semibold text-slate-900 dark:text-white whitespace-nowrap">
-                        {inst.defaultLectureRateEgp} EGP
-                      </td>
-                      <td className="py-3 ps-3 pe-4 text-end">
-                        <div className="inline-flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setViewingInst(inst)}
-                            title={t('View Details', 'عرض التفاصيل')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>{t('View', 'عرض')}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEdit(inst)}
-                            title={t('Edit Instructor', 'تعديل بيانات المحاضر')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                          >
-                            <Pencil className="w-3 h-3" />
-                            <span>{t('Edit', 'تعديل')}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setResetTarget(inst)}
-                            title={t('Reset Password', 'استعادة كلمة المرور')}
-                            className="px-2 py-1 rounded-md border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                          >
-                            <KeyRound className="w-3 h-3" />
-                            <span>{t('Reset', 'استعادة')}</span>
-                          </button>
-                          {!inst.archivedAt && (<button
-                            type="button"
-                            onClick={() => setToggleStatusTarget(inst)}
-                            className={`px-2 py-1 rounded-md border font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                              inst.isActive
-                                ? 'border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 bg-white dark:bg-[#1D2023] hover:bg-red-50 dark:hover:bg-red-950/30'
-                                : 'border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-[#1D2023] hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-                            }`}
-                          >
-                            <Power className="w-3 h-3" />
-                            <span>
-                              {inst.isActive ? t('Remove access', 'إزالة الحساب') : t('Activate', 'تفعيل')}
-                            </span>
-                          </button>)}
-                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:inst.archivedAt?'restore':'archive'})} className="px-2 py-1 rounded-md border border-slate-300 text-xs font-medium whitespace-nowrap">{inst.archivedAt?t('Restore','استعادة من الأرشيف'):t('Archive','أرشفة')}</button>}
-                      {!inst.isActive && <button type="button" disabled={isBusy} onClick={()=>setRemovalTarget({inst,action:'delete'})} className="px-2 py-1 rounded-md border border-red-300 text-red-600 text-xs font-medium whitespace-nowrap">{t('Delete','حذف نهائي')}</button>}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <PaginationBar
-            page={currentPage}
-            totalPages={Math.max(1, Math.ceil(filteredInstructors.length / INSTRUCTORS_PAGE_SIZE))}
-            totalItems={filteredInstructors.length}
-            pageSize={INSTRUCTORS_PAGE_SIZE}
-            onPageChange={setCurrentPage}
-            labelShowing={t(
-              `Showing ${paginatedInstructors.length} of ${filteredInstructors.length} instructors`,
-              `عرض ${paginatedInstructors.length} من أصل ${filteredInstructors.length} محاضر`
-            )}
-          />
-        </div>
-      )}
-
-      {/* View Instructor Details Dialog */}
-      {viewingInst && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="view-instructor-title"
-          onClick={() => setViewingInst(null)}
-        >
-          <div
-            className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] p-5 shadow-lg space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-[#353A3F] pb-3">
-              <div>
-                <h2
-                  id="view-instructor-title"
-                  className="text-base font-bold text-slate-900 dark:text-white"
-                >
-                  {t(viewingInst.fullNameEn, viewingInst.fullNameAr)}
-                </h2>
-                <p className="text-xs font-mono text-slate-500 mt-0.5">
-                  {viewingInst.instructorCode} · {viewingInst.username}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingInst(null)}
-                aria-label={t('Close details', 'إغلاق التفاصيل')}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {(() => {
-              const linkedProfile = profileById.get(viewingInst.profileId);
-              const assignedGroups = groupsByInstructor.get(viewingInst.id) || [];
-              const isAssigned = activeCamp ? assignedSet.has(viewingInst.id) : false;
-              return (
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('English Name', 'الاسم بالإنجليزية')}</dt>
-                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
-                      {viewingInst.fullNameEn}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Arabic Name', 'الاسم بالعربية')}</dt>
-                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
-                      {viewingInst.fullNameAr}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Email Address', 'البريد الإلكتروني')}</dt>
-                    <dd className="font-mono text-slate-900 dark:text-white mt-0.5 break-all">
-                      {viewingInst.email}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Phone', 'رقم الهاتف')}</dt>
-                    <dd className="font-mono text-slate-900 dark:text-white mt-0.5">
-                      {viewingInst.phone || '—'}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Specialization', 'التخصص')}</dt>
-                    <dd className="font-medium text-slate-900 dark:text-white mt-0.5">
-                      {viewingInst.specialization}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Default Lecture Rate', 'فئة المحاضرة الافتراضية')}</dt>
-                    <dd className="font-mono font-semibold text-slate-900 dark:text-white mt-0.5">
-                      {viewingInst.defaultLectureRateEgp} EGP
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Account Status', 'حالة الحساب')}</dt>
-                    <dd className="flex flex-wrap items-center gap-1.5 mt-1">
-                      <StatusBadge tone={viewingInst.isActive ? 'success' : 'danger'}>
-                        {viewingInst.isActive ? t('Active', 'نشط') : t('Disabled', 'معطل')}
-                      </StatusBadge>
-                      {linkedProfile?.mustChangePassword && (
-                        <StatusBadge tone="warning">
-                          {t('Password Change Pending', 'بانتظار تغيير كلمة المرور')}
-                        </StatusBadge>
-                      )}
-                    </dd>
-                  </div>
-                  <div className={`${SURFACE_SUBTLE} p-3`}>
-                    <dt className="text-slate-500">{t('Active Camp & Groups', 'المعسكر والمجموعات')}</dt>
-                    <dd className="mt-1 space-y-1">
-                      {activeCamp ? (
-                        <StatusBadge tone={isAssigned ? 'info' : 'neutral'}>
-                          {isAssigned ? activeCamp.code : t('Unassigned', 'غير معين')}
-                        </StatusBadge>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                      {assignedGroups.length > 0 && (
-                        <p className="text-[11px] font-mono text-slate-600 dark:text-[#C0C5C9]">
-                          {assignedGroups.map((g) => g.code).join(', ')}
-                        </p>
-                      )}
-                    </dd>
-                  </div>
-                  {viewingInst.bio && (
-                    <div className={`${SURFACE_SUBTLE} p-3 sm:col-span-2`}>
-                      <dt className="text-slate-500">{t('Bio / Notes', 'نبذة / ملاحظات')}</dt>
-                      <dd className="text-slate-700 dark:text-[#C0C5C9] mt-0.5 whitespace-pre-wrap">
-                        {viewingInst.bio}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              );
-            })()}
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
-              <button
-                type="button"
-                onClick={() => setViewingInst(null)}
-                className={BTN_SECONDARY}
-              >
-                {t('Close', 'إغلاق')}
-              </button>
-              <button
-                type="button"
-                onClick={() => openEdit(viewingInst)}
-                className={BTN_PRIMARY}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                <span>{t('Edit Instructor', 'تعديل المحاضر')}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+        </section>;
+      })()}
       <ConfirmDialog open={Boolean(removalTarget)}
         title={removalTarget?.action==='delete'?t('Permanently delete instructor?','حذف المحاضر نهائيًا؟'):removalTarget?.action==='restore'?t('Restore instructor?','استعادة المحاضر؟'):t('Archive instructor?','أرشفة المحاضر؟')}
         description={removalTarget ? (removalTarget.inst.fullNameEn+' · '+removalTarget.inst.instructorCode+' — '+(removalTarget.action==='delete'?t('This cannot be undone. Accounts linked to any operational records cannot be deleted; archive them instead.','الحذف غير قابل للتراجع. لو مرتبط بسجلات تشغيل، استخدم الأرشفة بدلًا منه.'):removalTarget.action==='restore'?t('Returns to the disabled list.','يرجع لقائمة المعطلين.'):t('Hide from the normal list; keep attendance and finance history.','إخفاء من القائمة مع الاحتفاظ بالحضور والحسابات.'))):''}
