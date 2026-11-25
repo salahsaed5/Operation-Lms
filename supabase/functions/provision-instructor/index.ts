@@ -9,8 +9,8 @@
 //   are explicitly rejected with HTTP 403.
 // - Redirect URLs for invitations must match the explicit origin allowlist.
 // - Never trusts client claims: verifies caller JWT via auth.getUser(token),
-//   binds JWT `sub` to verified user ID, requires verified Admin MFA assurance
-//   (JWT aal === 'aal2'), active Admin profile (profiles.role = 'admin' AND
+//   binds JWT `sub` to verified user ID, requires an authenticated Admin session
+//   (JWT aal === 'aal1' or 'aal2'), active Admin profile (profiles.role = 'admin' AND
 //   is_active = true AND must_change_password = false), and a valid slot
 //   assignment in public.admin_accounts (assigned_slot IN (1, 2)).
 // - Enforces payload size guard, strict schema validation, uniqueness checks,
@@ -336,7 +336,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 2. Verify Admin MFA Assurance Level (AAL2) and subject binding from verified JWT payload
+  // 2. Verify authenticated session and subject binding from verified JWT payload
   const jwtPayload = decodeJwtPayload(token);
   const jwtSub = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : null;
   const jwtAal = typeof jwtPayload?.aal === 'string' ? jwtPayload.aal : null;
@@ -346,10 +346,10 @@ Deno.serve(async (req: Request) => {
       error: 'Authentication token subject mismatch.',
     });
   }
-  if (jwtAal !== 'aal2') {
+  if (jwtAal !== 'aal1' && jwtAal !== 'aal2') {
     return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
-      error: 'Admin MFA (AAL2) verification is required before provisioning accounts.',
+      error: 'An authenticated admin session is required.',
     });
   }
 
@@ -391,7 +391,7 @@ Deno.serve(async (req: Request) => {
   ) {
     return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
-      error: 'Forbidden: Only active MFA-verified CITS Administrators can provision instructors.',
+      error: 'Forbidden: Only active authorized CITS Administrators can provision instructors.',
     });
   }
 
