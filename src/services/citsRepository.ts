@@ -636,6 +636,7 @@ export async function fetchOperationalSnapshot(
     track: g.track,
     defaultRoomId: g.default_room_id || '',
     primaryInstructorId: primaryInstByGroup.get(g.id) || '',
+    fixedPeriodNumber: g.fixed_period_number ?? null,
     capacity: g.capacity,
   }));
 
@@ -1184,6 +1185,14 @@ export async function archiveCampInDb(campId: string): Promise<string[]> {
     }
   }
   return purged;
+}
+
+export async function saveFixedGroupScheduleInDb(input:{id?:string;campId:string;code:string;nameEn:string;nameAr:string;track:string;defaultRoomId:string;primaryInstructorId:string;capacity:number;fixedPeriodNumber:number}):Promise<{created:number;skipped:number}> {
+ const {data,error}=await getClient().rpc('save_fixed_group_schedule_tx',{p_camp_id:input.campId,p_group_id:input.id||null,p_code:input.code,p_name_en:input.nameEn,p_name_ar:input.nameAr,p_track:input.track,p_room_id:input.defaultRoomId,p_instructor_id:input.primaryInstructorId,p_capacity:input.capacity,p_period:input.fixedPeriodNumber});
+ if(error)throw new Error(error.message);
+ const result=data as {created:number;skipped:number}|null;
+ if(!result||typeof result.created!=='number')throw new Error('Unconfirmed save; refresh the group directory.');
+ return result;
 }
 
 export async function upsertGroupInDb(input: {

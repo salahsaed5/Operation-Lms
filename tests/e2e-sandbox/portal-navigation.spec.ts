@@ -750,7 +750,7 @@ test('Schedule workspace switches views and opens tools without writing records'
  await root.getByRole('button',{name:'Availability',exact:true}).click();
  await expect(root.getByRole('dialog',{name:'Availability'})).toBeVisible();
  await root.getByRole('button',{name:'Close',exact:true}).click();
- await root.getByRole('button',{name:'New Session',exact:true}).click();
+ await root.getByRole('button',{name:'New exception session',exact:true}).click();
  await expect(root.getByRole('dialog',{name:'New session'})).toBeVisible();
  await expect(root.getByRole('button',{name:'Create session',exact:true})).toBeDisabled();
  await root.getByRole('button',{name:'Close',exact:true}).click();

@@ -375,6 +375,7 @@ export interface Database {
           name_ar: string;
           track: string;
           default_room_id: string | null;
+          fixed_period_number?: number | null;
           capacity: number;
           created_at: string;
         };
@@ -386,6 +387,7 @@ export interface Database {
           name_ar: string;
           track: string;
           default_room_id?: string | null;
+          fixed_period_number?: number | null;
           capacity?: number;
           created_at?: string;
         };
@@ -395,6 +397,7 @@ export interface Database {
           name_ar?: string;
           track?: string;
           default_room_id?: string | null;
+          fixed_period_number?: number | null;
           capacity?: number;
         };
         Relationships: [];
@@ -1085,6 +1088,8 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      save_fixed_group_schedule_tx: { Args: { p_camp_id:string; p_group_id:string|null; p_code:string; p_name_en:string; p_name_ar:string; p_track:string; p_room_id:string; p_instructor_id:string; p_capacity:number; p_period:number }; Returns: Json };
+
       search_visiting_students_for_lecture: {
         Args: { p_lecture_id: string; p_query: string };
         Returns: {
@@ -1452,6 +1457,7 @@ export interface Group {
   track: string;
   defaultRoomId: string;
   primaryInstructorId: string;
+  fixedPeriodNumber?: number | null;
   capacity: number;
 }
 
