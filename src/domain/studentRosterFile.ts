@@ -234,14 +234,13 @@ async function readXlsxGrid(file: File): Promise<GridRow[]> {
   return grid;
 }
 
+export async function parseRosterGrid(file: File): Promise<GridRow[]> {
+  if(file.size===0||file.size>MAX_ROSTER_FILE_BYTES)throw new Error('Choose a nonempty Excel / CSV file smaller than 2 MB.');
+  const name=file.name.toLowerCase();
+  const grid=name.endsWith('.xlsx')?await readXlsxGrid(file):name.endsWith('.csv')?parseCsv(await file.text()):null;
+  if(!grid)throw new Error('Only .xlsx and .csv roster files are supported.');
+  return grid;
+}
 export async function parseStudentRosterFile(file: File): Promise<RawStudentImportRow[]> {
-  if (file.size === 0 || file.size > MAX_ROSTER_FILE_BYTES) {
-    throw new Error('Choose a nonempty Excel / CSV file smaller than 2 MB.');
-  }
-  const name = file.name.toLowerCase();
-  const grid = name.endsWith('.xlsx') ? await readXlsxGrid(file) :
-               name.endsWith('.csv') ? parseCsv(await file.text()) :
-               null;
-  if (!grid) throw new Error('Only .xlsx and .csv roster files are supported.');
-  return mapRosterGridToRows(grid);
+  return mapRosterGridToRows(await parseRosterGrid(file));
 }

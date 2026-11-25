@@ -31,6 +31,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { InstructorBulkImport } from '../../components/admin/InstructorBulkImport';
 import { Camp, CampStatus, Instructor, LectureStatus, AttendanceMark, AttendanceSheetStatus, OfflineSyncState } from '../../types/database';
 import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, validateCampWeekdays, validateStudentBatchImport, RawStudentImportRow } from '../../domain/businessRules';
 import { generateEntityCode } from '../../domain/generateEntityCode';
@@ -887,6 +888,7 @@ export const AdminInstructorsView: React.FC = () => {
 
   // Create / Provision Instructor form state
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showBulkImport,setShowBulkImport]=useState(false);
   const [createStep,setCreateStep]=useState(0);
   const [profileTab,setProfileTab]=useState<'personal'|'camp'|'account'>('personal');
   const [assignmentFilter,setAssignmentFilter]=useState('all');
@@ -1301,7 +1303,7 @@ export const AdminInstructorsView: React.FC = () => {
 
   return (
     <div className="camp-workspace people-workspace">
-      <div className="camp-page-heading"><div><p className="camp-eyebrow">{t('OPERATIONS WORKSPACE','مساحة إدارة العمليات')}</p><h1>{t('Instructors','المحاضرون')}</h1><p>{t('Manage your teaching team.','إدارة فريق المحاضرين.')}</p></div>{!showCreateForm&&!editingInst&&!viewingInst&&<button type="button" className="camp-primary" onClick={handleOpenCreateForm} disabled={isBusy}><UserPlus size={17}/>{t('New Instructor','إضافة محاضر')}</button>}{(showCreateForm||editingInst||viewingInst)&&<button type="button" className={BTN_SECONDARY} disabled={isBusy} onClick={()=>{resetCreateForm();setShowCreateForm(false);setEditingInst(null);setEditCredential('');setViewingInst(null);setFeedback(null);}}>{t('Back to instructors','رجوع للمحاضرين')}</button>}</div>
+      <div className="camp-page-heading"><div><p className="camp-eyebrow">{t('OPERATIONS WORKSPACE','مساحة إدارة العمليات')}</p><h1>{t('Instructors','المحاضرون')}</h1><p>{t('Manage your teaching team.','إدارة فريق المحاضرين.')}</p></div>{!showBulkImport&&!showCreateForm&&!editingInst&&!viewingInst&&<div className="flex flex-wrap gap-2"><button type="button" className={BTN_SECONDARY} disabled={isBusy||!!oneTimeHandoff} onClick={()=>{setFeedback(null);setShowBulkImport(true);}}><Upload size={16}/>{t('Import Excel','استيراد Excel')}</button><button type="button" className="camp-primary" onClick={handleOpenCreateForm} disabled={isBusy}><UserPlus size={17}/>{t('New Instructor','إضافة محاضر')}</button></div>}{(showCreateForm||editingInst||viewingInst)&&<button type="button" className={BTN_SECONDARY} disabled={isBusy} onClick={()=>{resetCreateForm();setShowCreateForm(false);setEditingInst(null);setEditCredential('');setViewingInst(null);setFeedback(null);}}>{t('Back to instructors','رجوع للمحاضرين')}</button>}</div>
       {dataError && (
         <InlineBanner
           type="error"
@@ -1919,7 +1921,8 @@ export const AdminInstructorsView: React.FC = () => {
         </form>
       )}
 
-      {!showCreateForm&&!editingInst&&!viewingInst&&<>
+      {showBulkImport&&<InstructorBulkImport onClose={()=>setShowBulkImport(false)}/>}
+      {!showBulkImport&&!showCreateForm&&!editingInst&&!viewingInst&&<>
         <div className="people-metrics">{[{label:t('Total instructors','إجمالي المحاضرين'),n:normal.length,icon:Users,tone:'blue'},{label:t('Active accounts','الحسابات النشطة'),n:activeCount,icon:CheckCircle2,tone:'green'},{label:t('Assigned to camp','المعينون بالكامب'),n:normal.filter(i=>assignedSet.has(i.id)).length,icon:Tent,tone:'teal'},{label:t('Disabled accounts','الحسابات المعطلة'),n:normal.length-activeCount,icon:Power,tone:'red'}].map(m=><article key={m.label} data-tone={m.tone}><div><p>{m.label}</p><strong>{m.n}</strong></div><span><m.icon size={20}/></span></article>)}</div>
         <div className="camp-toolbar"><label className="camp-search"><Search size={17}/><input type="search" aria-label={t('Search instructors','بحث المحاضرين')} placeholder={t('Search instructors...','ابحث عن محاضر...')} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/></label><div className="people-filters"><select aria-label={t('Filter account status','تصفية حالة الحساب')} value={statusFilter} onChange={e=>setStatusFilter(e.target.value as InstructorFilter)}><option value="all">{t('All instructors','كل المحاضرين')}</option><option value="active">{t('Active','نشط')}</option><option value="disabled">{t('Disabled','معطل')}</option><option value="archived">{t('Archived','مؤرشف')}</option></select>{activeCamp&&<select aria-label={t('Filter camp assignment','تصفية التعيين بالكامب')} value={assignmentFilter} onChange={e=>setAssignmentFilter(e.target.value)}><option value="all">{t('All assignments','كل التعيينات')}</option><option value="assigned">{t('Assigned to camp','معين بالكامب')}</option><option value="unassigned">{t('Not assigned','غير معين')}</option></select>}</div></div>
         <section className="people-list" aria-label={t('Instructor directory','دليل المحاضرين')}>

@@ -703,3 +703,14 @@ test('Students workspace separates groups, roster, import and transfers',async({
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
 });
+
+test('Instructor bulk roster rejects duplicate accounts before provisioning',async({page})=>{
+  await page.setViewportSize({width:1365,height:900});await page.goto('/');
+  await page.getByRole('complementary',{name:'Admin modules navigation'}).getByRole('button',{name:'Instructors',exact:true}).click();
+  await page.getByRole('button',{name:'Import Excel',exact:true}).click();
+  const root=page.getByRole('region',{name:'Import instructors'});
+  await expect(root.getByRole('button',{name:'Download Excel template'})).toBeVisible();
+  await root.locator('input[type=file]').setInputFiles({name:'duplicate.csv',mimeType:'text/csv',buffer:Buffer.from('Full Name (English),Full Name (Arabic),Email,Username,Instructor Code,Specialization,Phone,Default Lecture Rate (EGP),Bio\nTest One,,test1@example.com,test.one,INST-TEST1,Programming,,300,\nTest Two,,test1@example.com,test.two,INST-TEST2,Programming,,300,')});
+  await expect(root.getByText('Duplicate email in file.',{exact:true}).first()).toBeVisible();
+  await expect(root.getByRole('button',{name:'Create 2 accounts'})).toBeDisabled();
+});
