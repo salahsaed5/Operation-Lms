@@ -614,3 +614,18 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 @media print{body:has(.sched-workspace) *{visibility:hidden}body:has(.sched-workspace) .sched-workspace,body:has(.sched-workspace) .sched-workspace *{visibility:visible}.sched-workspace{position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;display:block!important}.sched-workspace .sched-toolbar,.sched-workspace .camp-page-heading button,.sched-workspace .sched-day button,.sched-workspace .sched-day select,.sched-workspace .sched-free,.sched-workspace .sched-overlay{display:none!important}.sched-scroll{overflow:visible!important;max-height:none!important}.sched-grid{min-width:0!important;grid-template-columns:80px repeat(auto-fit,minmax(90px,1fr));}.sched-cell-card{break-inside:avoid;print-color-adjust:exact}.sched-day,.sched-grid-head{print-color-adjust:exact}}
 
 .sched-draft-edit{padding:12px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-canvas)}
+
+/* Approved fixed timetable: equal columns and stacked card content, as in the reference. */
+.sched-workspace .sched-grid{gap:6px}
+.sched-workspace .sched-grid-head{background:#103b4c;padding:18px 16px;min-height:60px;border-radius:12px;font-size:16px;text-align:end}
+.sched-workspace .sched-time{min-height:160px;border:0;border-radius:12px;padding:16px;text-align:end;font-size:18px;background:#eef0f2}
+.sched-workspace .sched-time small{font-size:15px;color:#666}
+.sched-workspace .sched-grid-cell{min-height:160px;background:transparent;border:0;padding:0;border-radius:12px}
+.sched-workspace .sched-cell-card{flex:1;min-height:160px;border-width:1px;border-radius:16px;gap:10px;padding:16px;align-items:stretch;text-align:end}
+.sched-workspace .sched-cell-card strong{font-size:17px;line-height:1.3}
+.sched-workspace .sched-cell-card span{font-size:14px;color:var(--text-primary)}
+.sched-workspace .sched-cell-card small{font-size:14px}
+.sched-workspace .sched-free{background:#f1f3f5;border-radius:16px;font-size:16px;min-height:160px}
+.dark .sched-workspace .sched-time,.dark .sched-workspace .sched-free{background:var(--bg-canvas)}
+.dark .sched-workspace .sched-time small{color:var(--text-secondary)}
+@media(max-width:639px){.sched-workspace .sched-grid-head{min-height:48px;padding:12px;font-size:13px}.sched-workspace .sched-grid-cell,.sched-workspace .sched-time,.sched-workspace .sched-free,.sched-workspace .sched-cell-card{min-height:130px}.sched-workspace .sched-cell-card{padding:10px;gap:6px}.sched-workspace .sched-cell-card strong{font-size:14px}.sched-workspace .sched-cell-card span,.sched-workspace .sched-cell-card small{font-size:12px}.sched-workspace .sched-time{font-size:15px}.sched-workspace .sched-time small{font-size:12px}}
