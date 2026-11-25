@@ -629,3 +629,8 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .dark .sched-workspace .sched-time,.dark .sched-workspace .sched-free{background:var(--bg-canvas)}
 .dark .sched-workspace .sched-time small{color:var(--text-secondary)}
 @media(max-width:639px){.sched-workspace .sched-grid-head{min-height:48px;padding:12px;font-size:13px}.sched-workspace .sched-grid-cell,.sched-workspace .sched-time,.sched-workspace .sched-free,.sched-workspace .sched-cell-card{min-height:130px}.sched-workspace .sched-cell-card{padding:10px;gap:6px}.sched-workspace .sched-cell-card strong{font-size:14px}.sched-workspace .sched-cell-card span,.sched-workspace .sched-cell-card small{font-size:12px}.sched-workspace .sched-time{font-size:15px}.sched-workspace .sched-time small{font-size:12px}}
+
+/* Keep the time axis visually distinct without changing room or session cards. */
+.sched-workspace .sched-period-head{padding:12px 6px;text-align:center;inset-inline-start:0;z-index:3;display:grid;place-items:center}
+.sched-workspace .sched-time{text-align:center;padding:12px 6px;justify-items:center;align-content:center}
+.sched-workspace .sched-period-range{display:grid;gap:4px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
