@@ -748,6 +748,9 @@ test('Schedule workspace switches views and opens tools without writing records'
  await expect(root.locator('.sched-metrics > div')).toHaveCount(4);
  await expect(root.getByLabel('Session status')).toHaveValue('all');
  await expect(root.locator('.sched-grid-head').first()).toHaveText('Period');
+ const widths=await root.locator('.sched-grid-head').evaluateAll(cells=>cells.map(c=>c.getBoundingClientRect().width));
+ expect(widths[0]).toBeLessThan(widths[1]);
+ await expect(root.locator('.sched-time').first()).toContainText(/AM|PM/);
  await expect(root.getByLabel('Camp Day',{exact:true})).toHaveCount(0);
  await expect(root.getByRole('button',{name:'Previous day',exact:true})).toHaveCount(0);
  await expect(root.getByRole('button',{name:'Next day',exact:true})).toHaveCount(0);
@@ -762,6 +765,11 @@ test('Schedule workspace switches views and opens tools without writing records'
  await root.getByRole('button',{name:'Close',exact:true}).click();
  await root.getByRole('button',{name:'Assign Group',exact:true}).click();
  await expect(root.getByRole('dialog',{name:'Assign Group to Instructor'})).toBeVisible();
+ await expect(root.getByLabel('Group',{exact:true}).locator('option').first()).toHaveText('Select existing group');
+ await expect(root.getByLabel('Group code',{exact:true})).toHaveCount(0);
+ await expect(root.getByLabel('Group name',{exact:true})).toHaveCount(0);
+ await expect(root.getByLabel('Capacity',{exact:true})).toHaveCount(0);
+ await expect(root.getByLabel('Period',{exact:true}).locator('option').first()).toContainText(/AM|PM/);
  await expect(root.getByLabel('Revision reason')).toHaveCount(0);
  await expect(root.getByLabel('Instructor',{exact:true}).locator('option').filter({hasText:/BUSY|AVAILABLE/}).first()).toBeAttached();
  await expect(root.getByLabel('Room',{exact:true}).locator('option').filter({hasText:/BUSY|AVAILABLE/}).first()).toBeAttached();
