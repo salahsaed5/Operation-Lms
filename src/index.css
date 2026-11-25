@@ -665,3 +665,24 @@ body{min-width:320px;-webkit-font-smoothing:antialiased;}
 .dark .sched-unassigned-action:hover{background:#5b482c}
 @media(max-width:639px){.sched-unassigned-notice{flex-wrap:wrap;align-items:flex-start;padding:12px;gap:10px}.sched-unassigned-content{flex-basis:calc(100% - 48px)}.sched-unassigned-action{margin-inline-start:auto}}
 @media print{.sched-workspace .sched-unassigned-notice{display:none!important}}
+
+/* Attendance keeps the same camp palette and does not affect Schedule. */
+.attendance-workspace{min-width:0}
+.attendance-workspace .sched-menu{min-width:235px}
+.attendance-workspace .sched-day>select{max-width:125px}
+.attendance-workspace .sched-day button:disabled{opacity:.35}
+.attendance-workspace .overflow-x-auto table th{white-space:nowrap}
+@media(max-width:639px){.attendance-workspace .sched-day{padding:12px 8px}.attendance-workspace .sched-day>select{max-width:94px}}
+@media print{
+ body:has(.attendance-workspace) *{visibility:hidden}
+ body:has(.attendance-workspace) .attendance-workspace,body:has(.attendance-workspace) .attendance-workspace *{visibility:visible}
+ .attendance-workspace{position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;padding:8px!important;background:white!important;color:#111!important}
+ .attendance-workspace button,.attendance-workspace select,.attendance-workspace input,.attendance-workspace .sched-tools,.attendance-workspace .attendance-no-print{display:none!important}
+ .attendance-workspace article{break-inside:avoid}
+ .attendance-workspace .overflow-x-auto{overflow:visible!important}
+ .attendance-workspace table{font-size:8pt;table-layout:auto}
+ .attendance-workspace .sched-day{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
+
+.attendance-workspace .attendance-print-only{display:none}
+@media print{.attendance-workspace .attendance-print-only{display:inline!important}}

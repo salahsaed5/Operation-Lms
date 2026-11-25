@@ -463,16 +463,16 @@ export async function fetchOperationalSnapshot(
     client.from('camps').select('*').order('start_date', { ascending: false }),
     client.from('camp_settings').select('*'),
     client.from('camp_instructors').select('*').eq('is_active', true),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('groups').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('groups').select('*').order('code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('groups').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('groups').select('*').order('code').order('id').range(start,end)) : client.from('groups').select('*').order('code', { ascending: true }),
     client.from('group_instructors').select('*').order('effective_from_day', { ascending: true }),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('students').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('students').select('*').order('student_code', { ascending: true }),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('student_transfers').select('*').order('created_at', { ascending: false }),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lectures').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('students').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('students').select('*').order('student_code').order('id').range(start,end)) : client.from('students').select('*').order('student_code', { ascending: true }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('student_transfers').select('*').order('created_at',{ascending:false}).order('id').range(start,end)) : client.from('student_transfers').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lectures').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('lectures').select('*').order('camp_day').order('period_number').order('id').range(start,end)) : client.from('lectures').select('*').order('camp_day', { ascending: true }).order('period_number', { ascending: true }),
     attendanceExportCampId ? fetchAllPages((start,end)=>client.from('lecture_session_runs').select('*').eq('camp_id',attendanceExportCampId).order('lecture_id').order('revision_number').range(start,end)) : fetchAllPages((start,end)=>client.from('lecture_session_runs').select('*').order('lecture_id').order('revision_number').range(start,end)),
-    client.from('daily_checkins').select('*').order('camp_day', { ascending: false }),
-    client.from('checkin_exceptions').select('*').order('created_at', { ascending: false }),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
-    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_records').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : client.from('attendance_records').select('*'),
+    isAdmin ? fetchAllPages((start,end)=>client.from('daily_checkins').select('*').order('camp_day',{ascending:false}).order('id').range(start,end)) : client.from('daily_checkins').select('*').order('camp_day', { ascending: false }),
+    isAdmin ? fetchAllPages((start,end)=>client.from('checkin_exceptions').select('*').order('created_at',{ascending:false}).order('id').range(start,end)) : client.from('checkin_exceptions').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('attendance_sheets').select('*').order('created_at',{ascending:false}).order('id').range(start,end)) : client.from('attendance_sheets').select('*').order('created_at', { ascending: false }),
+    attendanceExportCampId ? fetchAllPages((start,end)=>client.from('attendance_records').select('*').eq('camp_id',attendanceExportCampId).order('id').range(start,end)) : isAdmin ? fetchAllPages((start,end)=>client.from('attendance_records').select('*').order('id').range(start,end)) : client.from('attendance_records').select('*'),
     client.from('lecture_entitlements').select('*').order('camp_day', { ascending: false }).order('period_number', { ascending: true }),
     client.from('instructor_requests').select('*').order('created_at', { ascending: false }),
     client.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
@@ -1969,6 +1969,11 @@ export async function toggleChecklistInDb(input: {
     })
     .eq('id', input.checklistId);
   if (error) throw new Error(error.message);
+}
+
+export async function sendAttendanceReminderInDb(lectureId:string):Promise<void>{
+ const {error}=await getClient().rpc('send_attendance_reminder_tx',{p_lecture_id:lectureId});
+ if(error)throw new Error(error.message);
 }
 
 export async function markNotificationReadInDb(notificationId: string): Promise<void> {
