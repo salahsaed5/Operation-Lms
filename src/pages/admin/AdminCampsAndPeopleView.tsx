@@ -21,10 +21,16 @@ import {
   X,
   Mail,
   Lock,
+  Building2,
+  DoorOpen,
+  MapPin,
+  CalendarDays,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Camp, CampStatus, Instructor } from '../../types/database';
-import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, RawStudentImportRow } from '../../domain/businessRules';
+import { ALL_CAMP_WEEKDAYS, calculateCampDayDate, validateCampWeekdays, RawStudentImportRow } from '../../domain/businessRules';
 import { generateEntityCode } from '../../domain/generateEntityCode';
 import { parseStudentRosterFile } from '../../domain/studentRosterFile';
 import {
@@ -113,6 +119,13 @@ export const AdminCampsView: React.FC = () => {
     activeCamp,
     selectCamp,
     venues,
+    rooms,
+    students,
+    groups,
+    instructors,
+    campInstructorIds,
+    availableCamps,
+    setAdminRoute,
     createVenue,
     createRoom,
     createDraftCamp,
@@ -122,6 +135,9 @@ export const AdminCampsView: React.FC = () => {
     t,
   } = useApp();
 
+  const [section,setSection]=useState<'camps'|'venues'|'rooms'>('camps');
+  const [step,setStep]=useState(0);
+  const [roomFilter,setRoomFilter]=useState('all');
   const [showNewCampForm, setShowNewCampForm] = useState(false);
   const [showVenueForm, setShowVenueForm] = useState(false);
   const [showRoomForm, setShowRoomForm] = useState(false);
@@ -264,8 +280,14 @@ export const AdminCampsView: React.FC = () => {
     }
   };
 
+  const advanceStep=()=>{
+    if(step===0&&(!code.trim()||!nameEn.trim()||!venues.some(v=>v.id===venueId))){setFeedback({type:'err',text:t('Enter a code, English name and training venue.','أدخل الكود والاسم الإنجليزي والمقر التدريبي.')});return;}
+    if(step===1&&(!startDate||!Number.isInteger(durationDays)||durationDays<1||durationDays>60||validateCampWeekdays(startDate,operatingWeekdays))){setFeedback({type:'err',text:t('Choose a valid start date, 1–60 teaching days and matching weekdays.','اختر تاريخ بداية صحيحاً ومن ١ إلى ٦٠ يوم دراسة وأياماً متوافقة.')});return;}
+    setFeedback(null);setStep(v=>Math.min(2,v+1));
+  };
   const handleCreateCamp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if(step<2){advanceStep();return;}
     setIsBusy(true);
     setFeedback(null);
     try {
@@ -376,67 +398,21 @@ export const AdminCampsView: React.FC = () => {
     }
   };
 
+  const closeForms=()=>{setShowNewCampForm(false);setShowVenueForm(false);setShowRoomForm(false);setEditingCamp(null);setFeedback(null);};
+  const changeSection=(next:typeof section)=>{if(isBusy)return;closeForms();setSection(next);};
+  const openNew=()=>{closeForms();if(section==='camps'){setStep(0);setShowNewCampForm(true);}else if(section==='venues'){setEditingVenueId(null);setVenueNameEn('');setVenueNameAr('');setVenueAddress('');setVenueLatitude('');setVenueLongitude('');setVenueGeofence(100);setShowVenueForm(true);}else{setShowRoomForm(true);}};
+  const formOpen=showNewCampForm||showVenueForm||showRoomForm||!!editingCamp;
+  const statusName=(status:CampStatus)=>status===CampStatus.ACTIVE?t('Active','نشط'):status===CampStatus.DRAFT?t('Draft','مسودة'):status===CampStatus.ARCHIVED?t('Archived','مؤرشف'):t('Pending archive','بانتظار الأرشفة');
+  const statusTone=(status:CampStatus)=>status===CampStatus.ACTIVE?'success':status===CampStatus.DRAFT?'info':status===CampStatus.PENDING_ARCHIVE?'warning':'neutral';
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t('Camp Management & Archives', 'إدارة المعسكرات والأرشيف')}
-        subtitle={t(
-          'Multiple Camps can run in parallel. Select the Camp you want to manage; archives remain read-only.',
-          'ممكن كذا كامب يشتغلوا بالتوازي. اختار الكامب اللي بتديره؛ والكامبات المؤرشفة للقراءة فقط.'
-        )}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setEditingVenueId(null);
-                setVenueNameEn(''); setVenueNameAr(''); setVenueAddress(''); setVenueLatitude(''); setVenueLongitude(''); setVenueGeofence(100);
-                setShowVenueForm(prev => !prev);
-                setShowNewCampForm(false);
-                setShowRoomForm(false);
-                setEditingCamp(null);
-                setFeedback(null);
-              }}
-              className={BTN_SECONDARY}
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t('New Venue', 'إضافة مقر تدريبي')}</span>
-            </button>
-            <button
-              type="button"
-              disabled={venues.length === 0}
-              title={venues.length === 0 ? t('Add a training venue first.', 'أضف مقرًا تدريبيًا أولاً.') : undefined}
-              onClick={() => {
-                setShowRoomForm(prev => !prev);
-                setShowNewCampForm(false);
-                setShowVenueForm(false);
-                setEditingCamp(null);
-                setFeedback(null);
-              }}
-              className={`${BTN_SECONDARY} disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t('New Room', 'إضافة قاعة')}</span>
-            </button>
-            <button
-              type="button"
-              disabled={venues.length === 0}
-              title={venues.length === 0 ? t('Add a training venue first.', 'أضف مقرًا تدريبيًا أولاً.') : undefined}
-              onClick={() => {
-                setShowNewCampForm(prev => !prev);
-                setShowVenueForm(false);
-                setShowRoomForm(false);
-                setEditingCamp(null);
-                setFeedback(null);
-              }}
-              className={`${BTN_PRIMARY} disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t('New Camp', 'إنشاء معسكر جديد')}</span>
-            </button>
-          </div>
-        }
-      />
+    <div className="camp-workspace">
+      <div className="camp-page-heading"><div><p className="camp-eyebrow">{t('OPERATIONS WORKSPACE','مساحة إدارة العمليات')}</p><h1>{t('Camp Management','إدارة المعسكرات')}</h1><p>{t('Manage camps, training venues and rooms.','إدارة المعسكرات والمقرات والقاعات التدريبية.')}</p></div>
+        {!formOpen&&<button type="button" className="camp-primary" disabled={isBusy||(section!=='venues'&&venues.length===0)} onClick={openNew}><Plus size={17}/>{section==='camps'?t('New Camp','إنشاء معسكر جديد'):section==='venues'?t('New Venue','إضافة مقر تدريبي'):t('New Room','إضافة قاعة')}</button>}
+        {formOpen&&<button type="button" disabled={isBusy} className={BTN_SECONDARY} onClick={closeForms}><X size={16}/>{t('Close form','إغلاق النموذج')}</button>}
+      </div>
+      <nav className="camp-section-tabs" aria-label={t('Camp management sections','أقسام إدارة المعسكرات')}>
+        {([{id:'camps',label:t('Camps','المعسكرات'),icon:Tent,count:camps.length},{id:'venues',label:t('Venues','المقرات'),icon:Building2,count:venues.length},{id:'rooms',label:t('Rooms','القاعات'),icon:DoorOpen,count:rooms.length}] as const).map(tab=><button key={tab.id} type="button" disabled={isBusy} aria-current={section===tab.id?'page':undefined} onClick={()=>changeSection(tab.id)}><tab.icon size={17}/><span>{tab.label}</span><small>{tab.count}</small></button>)}
+      </nav>
 
       {feedback && (
         <InlineBanner
@@ -446,7 +422,7 @@ export const AdminCampsView: React.FC = () => {
         />
       )}
 
-      {venues.length === 0 && !showVenueForm && (
+      {venues.length === 0 && section!=='venues' && !formOpen && (
         <InlineBanner type="error" message={t(
           'No training venue configured. Add a venue with its real GPS coordinates before creating a Camp.',
           'لا يوجد مقر تدريبي. أضف المقر وإحداثيات GPS الفعلية قبل إنشاء المعسكر.'
@@ -454,7 +430,7 @@ export const AdminCampsView: React.FC = () => {
       )}
 
       {showRoomForm && (
-        <form onSubmit={handleCreateRoom} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+        <form onSubmit={handleCreateRoom} className={`${SURFACE_CARD} camp-form p-5 sm:p-6 space-y-4`}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('New Training Room', 'إضافة قاعة تدريبية')}
           </h2>
@@ -489,21 +465,8 @@ export const AdminCampsView: React.FC = () => {
         </form>
       )}
 
-      {venues.length > 0 && !showVenueForm && (
-        <div className={SURFACE_CARD + ' p-3 space-y-2'}>
-          <h3 className="text-sm font-bold">{t('Training venues','المقرات التدريبية')}</h3>
-          {venues.map(v=><div key={v.id} className="flex flex-wrap items-center justify-between gap-2 border-b last:border-b-0 py-2">
-            <div><p className="font-semibold text-sm">{t(v.nameEn,v.nameAr)}</p><p className="text-xs text-slate-500">{v.address}</p></div>
-            <button type="button" className={BTN_SECONDARY} onClick={()=>{
-              setEditingVenueId(v.id); setVenueNameEn(v.nameEn); setVenueNameAr(v.nameAr);
-              setVenueAddress(v.address); setVenueLatitude(String(v.latitude)); setVenueLongitude(String(v.longitude));
-              setVenueGeofence(v.geofenceRadiusMeters); setShowVenueForm(true); setShowNewCampForm(false); setShowRoomForm(false);setEditingCamp(null);setFeedback(null);
-            }}><Pencil className="w-4 h-4"/>{t('Edit venue','تعديل المقر')}</button>
-          </div>)}
-        </div>
-      )}
       {showVenueForm && (
-        <form onSubmit={handleCreateVenue} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+        <form onSubmit={handleCreateVenue} className={`${SURFACE_CARD} camp-form p-5 sm:p-6 space-y-4`}>
           {editingVenueId && <p className="text-xs text-amber-700">{t('Changes affect every Camp using this venue. GPS history is protected.','التعديل يؤثر على كل الكامبات التي تستخدم هذا المقر. سجل GPS السابق محمي.')}</p>}
           <h2 className="text-sm font-bold text-slate-900 dark:text-white">
             {editingVenueId ? t('Edit shared venue','تعديل بيانات المقر') : t('New Training Venue', 'إضافة مقر تدريبي جديد')}
@@ -544,54 +507,18 @@ export const AdminCampsView: React.FC = () => {
         </form>
       )}
 
-      {/* Search & Status Filter Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('Search camps by name or code...', 'ابحث بالاسم أو الكود...')}
-            aria-label={t('Search camps', 'بحث المعسكرات')}
-            className={`${INPUT_CLASS} ps-9`}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {(
-            [
-              { id: 'all', en: 'All', ar: 'الكل' },
-              { id: CampStatus.ACTIVE, en: 'Active', ar: 'نشط' },
-              { id: CampStatus.DRAFT, en: 'Draft', ar: 'مسودة' },
-              { id: CampStatus.ARCHIVED, en: 'Archived', ar: 'مؤرشف' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                statusFilter === tab.id
-                  ? 'bg-[#355F82] text-white'
-                  : 'border border-slate-200 dark:border-[#353A3F] bg-white dark:bg-[#1D2023] text-slate-600 dark:text-[#C0C5C9] hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              {t(tab.en, tab.ar)}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {showNewCampForm && (
-        <form onSubmit={handleCreateCamp} className={`${SURFACE_CARD} p-5 sm:p-6 space-y-4`}>
+        <form onSubmit={handleCreateCamp} className={`${SURFACE_CARD} camp-form camp-wizard p-5 sm:p-6 space-y-4`}>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('Create New Draft Camp', 'إعداد معسكر جديد (مسودة)')}
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="camp-stepper" aria-label={t('Creation progress','خطوات الإنشاء')}>{[t('Basic Info','البيانات الأساسية'),t('Schedule','الجدول'),t('Settings','الإعدادات')].map((label,i)=><div key={i} data-current={step===i} data-complete={step>i} aria-current={step===i?'step':undefined}><span>{step>i?<Check size={15}/>:i+1}</span><strong>{label}</strong></div>)}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {step===0&&<>
+
             <div>
               <label htmlFor="camp-code" className={LABEL_CLASS}>
                 {t('Camp Code *', 'كود المعسكر *')}
@@ -651,6 +578,8 @@ export const AdminCampsView: React.FC = () => {
                 ))}
               </select>
             </div>
+            </>}
+            {step===1&&<>
             <div>
               <label htmlFor="camp-start" className={LABEL_CLASS}>
                 {t('Start Date *', 'تاريخ البداية *')}
@@ -683,6 +612,8 @@ export const AdminCampsView: React.FC = () => {
               {t('Last teaching date:', 'تاريخ آخر يوم دراسة:')}{' '}
               <strong>{campEndPreview(startDate,durationDays,operatingWeekdays) || t('Select a matching start date and weekdays','اختار تاريخ بداية يوافق أيام الدراسة')}</strong>
             </div>
+            </>}
+            {step===2&&<>
             <div>
               <label htmlFor="camp-geofence" className={LABEL_CLASS}>
                 {t('Geofence Radius (m)', 'نطاق الموقع (متر)')}
@@ -710,6 +641,8 @@ export const AdminCampsView: React.FC = () => {
                 className={`${INPUT_CLASS} font-mono tabular-nums`}
               />
             </div>
+            <div className="camp-review sm:col-span-2"><strong>{nameEn}</strong><span>{code} · {startDate} → {campEndPreview(startDate,durationDays,operatingWeekdays)}</span><span>{t('The camp will be saved as a draft. Activate it when ready.','سيتم حفظ الكامب كمسودة. فعّله عند الجاهزية.')}</span></div>
+            </>}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-[#353A3F]">
@@ -720,9 +653,8 @@ export const AdminCampsView: React.FC = () => {
             >
               {t('Cancel', 'إلغاء')}
             </button>
-            <button type="submit" disabled={isBusy} className={BTN_PRIMARY}>
-              {isBusy ? t('Saving...', 'جاري الحفظ...') : t('Save Camp Draft', 'حفظ مسودة المعسكر')}
-            </button>
+            {step>0&&<button type="button" disabled={isBusy} className={BTN_SECONDARY} onClick={()=>{setFeedback(null);setStep(v=>v-1);}}>{t('Back','السابق')}</button>}
+            <button type="submit" disabled={isBusy} className="camp-primary">{step<2?t('Continue','التالي'):isBusy?t('Saving...','جاري الحفظ...'):t('Save Camp Draft','حفظ مسودة المعسكر')}{step<2&&<ChevronRight size={16}/>}</button>
           </div>
         </form>
       )}
@@ -730,7 +662,7 @@ export const AdminCampsView: React.FC = () => {
       {editingCamp && (
         <form
           onSubmit={handleSaveEdit}
-          className={`${SURFACE_CARD} border-blue-200 dark:border-[#425A70]/60 p-5 sm:p-6 space-y-4`}
+          className={`${SURFACE_CARD} camp-form p-5 sm:p-6 space-y-4`}
         >
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#353A3F] pb-3">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -875,207 +807,29 @@ export const AdminCampsView: React.FC = () => {
         </form>
       )}
 
-      {filteredCamps.length === 0 ? (
-        <EmptyState
-          icon={Tent}
-          title={t('No matching camps found', 'لم يتم العثور على معسكرات مطابقة')}
-          description={t(
-            'Adjust your search filter or create a new draft camp.',
-            'عدّل معايير البحث أو أنشئ مسودة معسكر جديد.'
-          )}
-        />
-      ) : (
-        <div className={`${SURFACE_CARD} overflow-hidden`}>
-          {/* Mobile Camp Cards */}
-          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredCamps.map((camp) => {
-              const venue = venues.find((v) => v.id === camp.venueId) || venues[0];
-              return (
-                <div key={camp.id} className="p-4 space-y-3 text-xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-sm text-slate-900 dark:text-white">
-                        {t(camp.nameEn, camp.nameAr)}
-                      </p>
-                      <p className="font-mono text-slate-500 mt-0.5">{camp.code}</p>
-                    </div>
-                    <StatusBadge
-                      tone={
-                        camp.status === CampStatus.ACTIVE
-                          ? 'success'
-                          : camp.status === CampStatus.DRAFT
-                          ? 'info'
-                          : 'neutral'
-                      }
-                    >
-                      {camp.status === CampStatus.ACTIVE
-                        ? t('Active', 'نشط')
-                        : camp.status === CampStatus.DRAFT
-                        ? t('Draft', 'مسودة')
-                        : t('Archived', 'مؤرشف')}
-                    </StatusBadge>
-                  </div>
-
-                  <div className="text-slate-600 dark:text-[#A0A5AA] space-y-1">
-                    <p>
-                      {venue ? t(venue.nameEn, venue.nameAr) : camp.venueId} ·{' '}
-                      <span className="font-mono">{camp.settings.geofenceRadiusMeters}m</span>
-                    </p>
-                    <p className="font-mono tabular-nums">
-                      {camp.startDate} → {camp.endDate} ({t(`Day ${camp.currentCampDay}/${camp.durationDays}`, `اليوم ${camp.currentCampDay}/${camp.durationDays}`)})
-                    </p>
-                  </div>
-
-                  {camp.status !== CampStatus.ARCHIVED && (
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button type="button" disabled={activeCamp?.id===camp.id}
-                        onClick={() => selectCamp(camp.id)}
-                        className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-[#425A70] text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
-                        {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Work on this Camp','إدارة هذا الكامب')}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => startEdit(camp)}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        <span>{t('Edit', 'تعديل')}</span>
-                      </button>
-                      {camp.status === CampStatus.DRAFT && (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => handleActivate(camp.id)}
-                          className="px-3 py-1.5 rounded-lg bg-[#355F82] text-white text-xs font-semibold cursor-pointer"
-                        >
-                          {t('Activate', 'تفعيل')}
-                        </button>
-                      )}
-                      {camp.status === CampStatus.ACTIVE && (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => setArchiveTarget(camp)}
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] text-xs font-medium inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Archive className="w-3.5 h-3.5" />
-                          <span>{t('Archive', 'أرشفة')}</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Desktop Camps Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-start border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200/80 dark:border-[#353A3F] text-slate-500 dark:text-[#A0A5AA]">
-                  <th className="py-3 px-5 font-semibold text-start">{t('Camp', 'المعسكر')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Venue & Geofence', 'المقر والنطاق')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Dates & Progress', 'التواريخ والتقدم')}</th>
-                  <th className="py-3 px-4 font-semibold text-start">{t('Status', 'الحالة')}</th>
-                  <th className="py-3 px-5 font-semibold text-end">{t('Actions', 'إجراءات')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {filteredCamps.map((camp) => {
-                  const venue = venues.find((v) => v.id === camp.venueId) || venues[0];
-                  return (
-                    <tr
-                      key={camp.id}
-                      className="odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-900/60 hover:bg-blue-50/40 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="py-3.5 px-5">
-                        <p className="font-semibold text-slate-900 dark:text-white">
-                          {t(camp.nameEn, camp.nameAr)}
-                        </p>
-                        <p className="text-slate-500 font-mono tabular-nums mt-0.5">{camp.code}</p>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <p className="text-slate-800 dark:text-[#DEE1E4]">
-                          {venue ? t(venue.nameEn, venue.nameAr) : camp.venueId}
-                        </p>
-                        <p className="text-slate-500 font-mono tabular-nums mt-0.5">
-                          {camp.settings.geofenceRadiusMeters}m ·{' '}
-                          {camp.settings.defaultLectureRateEgp} EGP
-                        </p>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono tabular-nums text-slate-700 dark:text-[#C0C5C9]">
-                        <div>{camp.startDate} → {camp.endDate}</div>
-                        <div className="text-slate-500 mt-0.5">
-                          {t(
-                            `Day ${camp.currentCampDay} / ${camp.durationDays}`,
-                            `اليوم ${camp.currentCampDay} / ${camp.durationDays}`
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {camp.status === CampStatus.ACTIVE && (
-                          <StatusBadge tone="success">{t('Active Camp', 'معسكر نشط')}</StatusBadge>
-                        )}
-                        {camp.status === CampStatus.DRAFT && (
-                          <StatusBadge tone="info">{t('Draft Setup', 'مسودة')}</StatusBadge>
-                        )}
-                        {camp.status === CampStatus.ARCHIVED && (
-                          <StatusBadge tone="neutral">
-                            {t('Archived (Read-Only)', 'مؤرشف (للقراءة فقط)')}
-                          </StatusBadge>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-5 text-end">
-                        <div className="inline-flex items-center gap-2">
-                          <button type="button" disabled={activeCamp?.id===camp.id}
-                            onClick={() => selectCamp(camp.id)}
-                            className="px-3 py-1.5 rounded-lg border border-blue-200 dark:border-[#425A70] text-blue-700 dark:text-blue-300 font-semibold disabled:opacity-60">
-                            {activeCamp?.id===camp.id ? t('Selected','محدد') : t('Manage','إدارة')}
-                          </button>
-                          {camp.status !== CampStatus.ARCHIVED && (
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => startEdit(camp)}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-[#C0C5C9] font-medium inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Pencil className="w-3 h-3" />
-                              <span>{t('Edit', 'تعديل')}</span>
-                            </button>
-                          )}
-                          {camp.status === CampStatus.DRAFT && (
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => handleActivate(camp.id)}
-                              className="px-3 py-1.5 rounded-lg bg-[#355F82] hover:bg-[#2D516F] text-white font-semibold cursor-pointer"
-                            >
-                              {t('Activate', 'تفعيل')}
-                            </button>
-                          )}
-                          {camp.status === CampStatus.ACTIVE && (
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => setArchiveTarget(camp)}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#42474D] bg-white dark:bg-[#1D2023] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-[#C0C5C9] font-medium inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Archive className="w-3.5 h-3.5" />
-                              <span>{t('Archive Camp', 'أرشفة المعسكر')}</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {section==='camps'&&!formOpen&&<>
+        <div className="camp-summary">{[CampStatus.ACTIVE,CampStatus.DRAFT,CampStatus.ARCHIVED].map(status=><button type="button" key={status} data-status={status} aria-pressed={statusFilter===status} onClick={()=>setStatusFilter(v=>v===status?'all':status)}><span>{statusName(status)} {t('Camps','معسكرات')}</span><strong>{camps.filter(c=>c.status===status).length}</strong></button>)}</div>
+        <div className="camp-toolbar"><label className="camp-search"><Search size={17}/><input type="search" aria-label={t('Search camps','بحث المعسكرات')} placeholder={t('Search by name or code...','ابحث بالاسم أو الكود...')} value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/></label><div className="camp-filters">{(['all',CampStatus.ACTIVE,CampStatus.DRAFT,CampStatus.ARCHIVED,CampStatus.PENDING_ARCHIVE] as CampFilter[]).filter(status=>status!==CampStatus.PENDING_ARCHIVE||camps.some(c=>c.status===status)).map(status=><button type="button" key={status} aria-pressed={statusFilter===status} onClick={()=>setStatusFilter(status)}>{status==='all'?t('All','الكل'):statusName(status)}</button>)}</div></div>
+        {filteredCamps.length===0?<EmptyState icon={Tent} title={t('No matching camps found','لا توجد معسكرات مطابقة')} description={t('Change the filter or create a new camp.','غيّر التصفية أو أنشئ معسكراً جديداً.')} action={<button type="button" className={BTN_SECONDARY} onClick={()=>{setSearchQuery('');setStatusFilter('all');}}>{t('Clear filters','إلغاء التصفية')}</button>}/>:<div className="camp-card-grid">{filteredCamps.map(camp=>{
+          const venue=venues.find(v=>v.id===camp.venueId);
+          const selected=activeCamp?.id===camp.id;
+          const canSelect=availableCamps.some(c=>c.id===camp.id);
+          const progress=camp.status===CampStatus.DRAFT?0:Math.min(100,Math.max(0,camp.currentCampDay/Math.max(1,camp.durationDays)*100));
+          const counts=[{icon:GraduationCap,label:t('Students','الطلاب'),n:students.filter(s=>s.campId===camp.id&&s.isActive).length},{icon:Users,label:t('Instructors','المحاضرون'),n:instructors.filter(i=>(campInstructorIds[camp.id]||[]).includes(i.id)&&i.isActive).length},{icon:Layers,label:t('Groups','المجموعات'),n:groups.filter(g=>g.campId===camp.id).length}];
+          return <article className="camp-card" key={camp.id} data-status={camp.status} aria-label={t(camp.nameEn,camp.nameAr)}>
+            <div className="camp-card-head"><span className="camp-icon"><Tent size={22}/></span><div><h2>{t(camp.nameEn,camp.nameAr)}</h2><p dir="ltr">{camp.code}</p></div><StatusBadge tone={statusTone(camp.status)}>{statusName(camp.status)}</StatusBadge></div>
+            <div className="camp-card-body"><div className="camp-card-detail"><MapPin size={16}/><span>{venue?t(venue.nameEn,venue.nameAr):t('Venue unavailable','المقر غير متاح')}</span></div><div className="camp-card-detail"><CalendarDays size={16}/><span dir="ltr">{camp.startDate} – {camp.endDate}</span></div>
+              <div className="camp-card-stats">{counts.map(m=><div key={m.label}><m.icon size={16}/><strong>{m.n}</strong><small>{m.label}</small></div>)}</div>
+              <div className="camp-card-progress"><div><span>{t('Teaching day','يوم الدراسة')}</span><strong>{camp.status===CampStatus.DRAFT?'—':camp.currentCampDay}/{camp.durationDays}</strong></div><div className="camp-progress-track"><span style={{width:progress+'%'}}/></div></div>
+              <div className="camp-card-actions"><button type="button" className="camp-primary" disabled={isBusy||!canSelect} onClick={()=>{if(selected)setAdminRoute('dashboard');else selectCamp(camp.id);}}>{camp.status===CampStatus.ARCHIVED?t('View archive','عرض الأرشيف'):selected?t('Open Dashboard','فتح لوحة المتابعة'):t('Manage Camp','إدارة الكامب')}<ChevronRight size={15}/></button>
+              {camp.status!==CampStatus.ARCHIVED&&camp.status!==CampStatus.PENDING_ARCHIVE&&<button type="button" className="camp-icon-button" disabled={isBusy} onClick={()=>startEdit(camp)} title={t('Edit camp','تعديل الكامب')} aria-label={t('Edit camp','تعديل الكامب')}><Pencil size={16}/></button>}
+              {(camp.status===CampStatus.DRAFT||camp.status===CampStatus.ACTIVE)&&<details className="camp-action-menu"><summary aria-label={t('More camp actions','المزيد من إجراءات الكامب')}>···</summary><div>{camp.status===CampStatus.DRAFT?<button type="button" disabled={isBusy} onClick={()=>handleActivate(camp.id)}><Power size={15}/>{t('Activate','تفعيل')}</button>:<button type="button" disabled={isBusy} onClick={()=>setArchiveTarget(camp)}><Archive size={15}/>{t('Archive Camp','أرشفة المعسكر')}</button>}</div></details>}</div>
+              {selected&&<p className="camp-selected"><CheckCircle2 size={13}/>{t('Current working camp','الكامب المختار حالياً')}</p>}
+            </div></article>;
+        })}</div>}
+      </>}
+      {section==='venues'&&!formOpen&&<div className="camp-card-grid">{venues.length===0?<EmptyState icon={Building2} title={t('No training venues','لا توجد مقرات')} action={<button type="button" className="camp-primary" onClick={openNew}>{t('New Venue','إضافة مقر تدريبي')}</button>}/>:venues.map(v=><article key={v.id} className="camp-card"><div className="camp-card-head"><span className="camp-icon"><Building2 size={22}/></span><div><h2>{t(v.nameEn,v.nameAr)}</h2><p>{v.address}</p></div></div><div className="camp-card-body"><div className="camp-card-stats">{[{label:t('Rooms','القاعات'),n:rooms.filter(r=>r.venueId===v.id).length},{label:t('Camps','المعسكرات'),n:camps.filter(c=>c.venueId===v.id).length},{label:t('GPS radius','نطاق الموقع'),n:v.geofenceRadiusMeters+'m'}].map(m=><div key={m.label}><strong>{m.n}</strong><small>{m.label}</small></div>)}</div><div className="camp-card-actions"><a className="camp-location" target="_blank" rel="noopener noreferrer" href={'https://www.google.com/maps?q='+encodeURIComponent(v.latitude+','+v.longitude)}><MapPin size={16}/>{t('Location','الموقع')}</a><button type="button" className={BTN_SECONDARY} onClick={()=>{setEditingVenueId(v.id);setVenueNameEn(v.nameEn);setVenueNameAr(v.nameAr);setVenueAddress(v.address);setVenueLatitude(String(v.latitude));setVenueLongitude(String(v.longitude));setVenueGeofence(v.geofenceRadiusMeters);setShowVenueForm(true);setFeedback(null);}}><Pencil size={15}/>{t('Edit venue','تعديل المقر')}</button></div></div></article>)}</div>}
+      {section==='rooms'&&!formOpen&&<><div className="camp-toolbar"><label className="camp-room-filter"><Building2 size={17}/><select aria-label={t('Filter rooms by venue','تصفية القاعات حسب المقر')} value={roomFilter} onChange={e=>setRoomFilter(e.target.value)}><option value="all">{t('All venues','كل المقرات')}</option>{venues.map(v=><option key={v.id} value={v.id}>{t(v.nameEn,v.nameAr)}</option>)}</select></label></div><div className="camp-card-grid">{rooms.filter(r=>roomFilter==='all'||r.venueId===roomFilter).length===0?<EmptyState icon={DoorOpen} title={t('No rooms found','لا توجد قاعات')} description={t('Choose another venue or add a training room.','اختر مقراً آخر أو أضف قاعة تدريبية.')}/>:rooms.filter(r=>roomFilter==='all'||r.venueId===roomFilter).map(r=>{const v=venues.find(v=>v.id===r.venueId);return <article className="camp-card" key={r.id}><div className="camp-card-head"><span className="camp-icon"><DoorOpen size={22}/></span><div><h2>{r.name}</h2><p>{r.code}</p></div></div><div className="camp-card-body"><div className="camp-card-detail"><Building2 size={16}/>{v?t(v.nameEn,v.nameAr):t('Venue unavailable','المقر غير متاح')}</div><div className="camp-card-detail"><Users size={16}/><strong>{r.capacity}</strong>{t('seats','مقاعد')}</div></div></article>;})}</div></>}
 
       <ConfirmDialog
         open={Boolean(archiveTarget)}
