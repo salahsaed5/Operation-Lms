@@ -256,7 +256,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 2. Verify Admin MFA Assurance Level (AAL2) and subject binding from verified JWT payload
+  // 2. Verify authenticated session and subject binding from verified JWT payload
   const jwtPayload = decodeJwtPayload(token);
   const jwtSub = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : null;
   const jwtAal = typeof jwtPayload?.aal === 'string' ? jwtPayload.aal : null;
@@ -266,10 +266,10 @@ Deno.serve(async (req: Request) => {
       error: 'Authentication token subject mismatch.',
     });
   }
-  if (jwtAal !== 'aal2') {
+  if (jwtAal !== 'aal1' && jwtAal !== 'aal2') {
     return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
-      error: 'Admin MFA (AAL2) verification is required before managing accounts.',
+      error: 'An authenticated admin session is required.',
     });
   }
 
@@ -311,7 +311,7 @@ Deno.serve(async (req: Request) => {
   ) {
     return jsonResponse(originPolicy.corsHeaders, 403, {
       ok: false,
-      error: 'Forbidden: Only active MFA-verified CITS Administrators can manage instructors.',
+      error: 'Forbidden: Only active authorized CITS Administrators can manage instructors.',
     });
   }
 
