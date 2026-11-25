@@ -266,7 +266,7 @@ test('Phase 3.1: generateSecureTemporaryPassword meets strict strength rules and
 // 2. CALLER AUTHORIZATION TESTS (ADMIN, ACTIVE, SLOT 1|2, AAL2 MFA)
 // ============================================================================
 
-test('Phase 3.2: Provisioning authorization rejects unauthenticated, non-admin, inactive, missing-slot, and AAL1 callers', () => {
+test('Phase 3.2: Provisioning authorization rejects unauthenticated, non-admin, inactive, missing-slot, and missing-assurance callers; accepts authenticated AAL1 admins', () => {
   assert.equal(
     evaluateCallerAuthorizationForProvisioning({
       userId: null,
@@ -306,9 +306,8 @@ test('Phase 3.2: Provisioning authorization rejects unauthenticated, non-admin, 
     ...ACTIVE_AAL2_ADMIN,
     aal: 'aal1',
   });
-  assert.equal(aal1.authorized, false);
-  assert.equal(aal1.statusCode, 403);
-  assert.match(aal1.error || '', /AAL2|MFA/i);
+  assert.equal(aal1.authorized, true);
+  assert.equal(evaluateCallerAuthorizationForProvisioning({...ACTIVE_AAL2_ADMIN,aal:null}).authorized,false);
 
   assert.equal(evaluateCallerAuthorizationForProvisioning(ACTIVE_AAL2_ADMIN).authorized, true);
 });
@@ -732,7 +731,7 @@ test('Phase 3.3: Instructor must complete mandatory password change before dashb
   assert.equal(recoverySession.nextStep, 'password_change');
 });
 
-test('Phase 3.3: Admin login enforces slot cap (1|2), TOTP enrollment, AAL2 challenge, and denies invalid slot', () => {
+test('Phase 3.3: Admin login enforces slot cap (1|2) and accepts password-only sessions', () => {
   const noSlot = evaluateAuthenticatedSessionGate({
     authUserId: 'u-adm-3',
     profile: makeProfile({ id: 'u-adm-3', role: UserRole.ADMIN, isActive: true }),
@@ -752,8 +751,8 @@ test('Phase 3.3: Admin login enforces slot cap (1|2), TOTP enrollment, AAL2 chal
     hasVerifiedTotpFactor: false,
     aal: 'aal1',
   });
-  assert.equal(needsEnroll.allowed, false);
-  assert.equal(needsEnroll.nextStep, 'totp_enroll');
+  assert.equal(needsEnroll.allowed, true);
+  assert.equal(needsEnroll.nextStep, 'admin_portal');
 
   const needsChallenge = evaluateAuthenticatedSessionGate({
     authUserId: 'u-adm-1',
@@ -763,8 +762,9 @@ test('Phase 3.3: Admin login enforces slot cap (1|2), TOTP enrollment, AAL2 chal
     hasVerifiedTotpFactor: true,
     aal: 'aal1',
   });
-  assert.equal(needsChallenge.allowed, false);
-  assert.equal(needsChallenge.nextStep, 'totp_challenge');
+  assert.equal(needsChallenge.allowed, true);
+  assert.equal(needsChallenge.nextStep, 'admin_portal');
+  assert.equal(evaluateAuthenticatedSessionGate({authUserId:'u-adm-1',profile:makeProfile({id:'u-adm-1',role:UserRole.ADMIN,isActive:true,mustChangePassword:true}),adminAccount:makeAdminAccount({profileId:'u-adm-1',assignedSlot:1}),instructor:null,hasVerifiedTotpFactor:false,aal:'aal1'}).nextStep,'password_change');
 
   const verifiedAal2 = evaluateAuthenticatedSessionGate({
     authUserId: 'u-adm-1',
@@ -812,7 +812,7 @@ test('Phase 3 Security Audit: Frontend src/ never references SUPABASE_SERVICE_RO
   }
 });
 
-test('Phase 3 Security Audit: Edge Function enforces explicit CORS, JWT auth+sub, AAL2, admin_accounts slot, rate limit, rollback, no-store, and safe audit log', () => {
+test('Phase 3 Security Audit: Edge Function enforces explicit CORS, JWT auth+sub, AAL1 or AAL2, admin_accounts slot, rate limit, rollback, no-store, and safe audit log', () => {
   const fnPath = path.resolve(process.cwd(), 'supabase/functions/provision-instructor/index.ts');
   const code = fs.readFileSync(fnPath, 'utf8');
 
@@ -827,7 +827,7 @@ test('Phase 3 Security Audit: Edge Function enforces explicit CORS, JWT auth+sub
   assert.match(code, /Origin not allowed\./);
   assert.match(code, /userClient\.auth\.getUser\(token\)/);
   assert.match(code, /jwtSub !== callerUser\.id/);
-  assert.match(code, /jwtAal !== 'aal2'/);
+  assert.match(code, /jwtAal !== 'aal1' && jwtAal !== 'aal2'/);
   assert.match(code, /from\('admin_accounts'\)/);
   assert.match(code, /RATE_LIMIT_MAX_PROVISIONS/);
   assert.match(code, /429/);
@@ -1027,7 +1027,7 @@ test('Migration 0007 SEC-003, Inactive, Anon & Cross-User Isolation: Denied acro
   assert.equal(evaluateServerAuthorizationHelpers(crossUserState).isActiveCitsUser, false);
 });
 
-test('Migration 0007 Admin MFA + Forced Password Change: AAL2 Admin with pending password change is blocked operationally but TOTP recording does not deadlock; AAL1 always blocked', () => {
+test('Migration 0007 Admin MFA + Forced Password Change: Admin with pending password change is blocked operationally; AAL1 allowed without recording TOTP', () => {
   const adminPendingAal2: ForcedPasswordChangeServerState = {
     authUserId: 'admin-uid-1',
     role: 'authenticated',
@@ -1054,13 +1054,14 @@ test('Migration 0007 Admin MFA + Forced Password Change: AAL2 Admin with pending
   // TOTP recording remains unblocked (no onboarding deadlock!)
   assert.equal(aal2Pending.canRecordAdminTotpVerified, true);
 
-  // AAL1 Admin is blocked from both operational access and TOTP recording
+  // AAL1 Admin has operational access after rotation, but cannot record TOTP verification
   const aal1Admin = evaluateServerAuthorizationHelpers({
     ...adminPendingAal2,
     aal: 'aal1',
     profile: { ...adminPendingAal2.profile!, mustChangePassword: false },
   });
-  assert.equal(aal1Admin.isCitsAdmin, false);
+  assert.equal(aal1Admin.isCitsAdmin, true);
+  assert.equal(aal1Admin.canAccessOperationalRlsAndRpcs, true);
   assert.equal(aal1Admin.canRecordAdminTotpVerified, false);
 
   // AAL2 Admin with mustChangePassword = FALSE gets full Admin access
@@ -1076,7 +1077,7 @@ test('Migration 0007 Admin MFA + Forced Password Change: AAL2 Admin with pending
 // MIGRATION 0008 SECURITY PHASE CLOSURE TESTS (SEC-004, SEC-005, SEC-006, STORAGE)
 // =============================================================================
 
-test('Migration 0008 SEC-005: Admin at AAL1 is DENIED from complete_password_change_tx() even after rotating Auth password; Admin at AAL2 succeeds', () => {
+test('Migration 0008 SEC-005: Admin at AAL1 or AAL2 can complete password change only after real rotation', () => {
   const adminAal1Rotated: ForcedPasswordChangeServerState = {
     authUserId: 'admin-uid-1',
     role: 'authenticated',
@@ -1096,14 +1097,13 @@ test('Migration 0008 SEC-005: Admin at AAL1 is DENIED from complete_password_cha
     lastCompletedAuthFingerprint: null,
   };
 
-  // SEC-005: AAL1 Admin MUST be rejected before clearing must_change_password
-  const deniedAal1 = evaluateCompletePasswordChangeRpc(adminAal1Rotated);
-  assert.equal(deniedAal1.ok, false);
-  assert.equal(deniedAal1.mustChangePassword, true);
-  assert.equal(deniedAal1.auditAction, undefined);
-  assert.match(deniedAal1.error || '', /AAL2|MFA/i);
+  const allowedAal1 = evaluateCompletePasswordChangeRpc(adminAal1Rotated);
+  assert.equal(allowedAal1.ok,true);
+  assert.equal(allowedAal1.mustChangePassword,false);
+  assert.equal(allowedAal1.auditAction,'PASSWORD_CHANGE_COMPLETED');
+  assert.equal(evaluateCompletePasswordChangeRpc({...adminAal1Rotated,currentAuthFingerprint:adminAal1Rotated.baselineAuthFingerprint}).ok,false);
 
-  // Once Admin completes TOTP challenge (AAL2), complete_password_change_tx() succeeds
+  // Existing AAL2 sessions continue to work
   const allowedAal2 = evaluateCompletePasswordChangeRpc({
     ...adminAal1Rotated,
     aal: 'aal2',
@@ -1662,7 +1662,7 @@ test('SEC-009 Spoof-Resistant IP Extraction: ignores spoofed x-forwarded-for & x
   assert.equal(postValidFailure.statusCode, 429);
 });
 
-test('Storage Access Policy (checkin-selfies): blocks must_change_password, inactive, anon, cross-user paths, path traversal, instructor delete, and AAL1 admin', () => {
+test('Storage Access Policy (checkin-selfies): blocks must_change_password, inactive, anon, cross-user paths, path traversal, instructor delete, and admin access without MFA', () => {
   const ownPath = 'inst-uid-1/camp-1/day-1.jpg';
   const otherPath = 'inst-uid-2/camp-1/day-1.jpg';
   const traversalPath = 'inst-uid-1/../inst-uid-2/day-1.jpg';
@@ -1776,7 +1776,7 @@ test('Storage Access Policy (checkin-selfies): blocks must_change_password, inac
     false
   );
 
-  // 4. Admin AAL1 denied; Admin AAL2 with pending password change denied; operational AAL2 Admin allowed
+  // 4. Operational admins allowed, pending password change denied at either assurance level
   const baseAdmin: ForcedPasswordChangeServerState = {
     authUserId: 'admin-uid-1',
     role: 'authenticated',
@@ -1797,7 +1797,7 @@ test('Storage Access Policy (checkin-selfies): blocks must_change_password, inac
       objectPath: ownPath,
       operation: 'SELECT',
     }).allowed,
-    false
+    true
   );
   assert.equal(
     evaluateStorageSelfieAccess({
