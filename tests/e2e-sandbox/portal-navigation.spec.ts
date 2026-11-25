@@ -225,9 +225,21 @@ test('Admin attendance shows compact server summary and on-demand corrections, f
   await expect(page.getByText('Final submission is disabled until the camp is active and the lecture date has arrived.')).toHaveCount(0);
   await expect(cards.first().getByText('Reason for audited corrections')).toHaveCount(0);
   await cards.first().getByRole('button', { name: 'View Attendance' }).click();
-  await expect(cards.first().getByText('Student attendance records')).toBeVisible();
-  await expect(cards.first().getByText('Reason for audited corrections')).toBeVisible();
-  await cards.first().getByRole('button', { name: 'Close details' }).click();
+  const drawer=page.getByRole('dialog',{name:'Attendance roster'});
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText('Student attendance records')).toBeVisible();
+  await expect(drawer.getByLabel('Search roster')).toBeVisible();
+  await expect(drawer.getByRole('button',{name:/Pending/})).toBeVisible();
+  await drawer.getByRole('button',{name:'Close details'}).click();
+  await expect(drawer).not.toBeVisible();
+  await overview.getByRole('button',{name:/Attendance Coverage/}).click();
+  const stats=page.getByRole('dialog',{name:'Student statistics details'});
+  await expect(stats).toBeVisible();
+  await stats.getByRole('button',{name:'Close details'}).click();
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  await expect(page.locator('.attendance-list-wrap').first()).toBeVisible();
+  await page.getByRole('button',{name:'Grid',exact:true}).click();
+  await expect(cards.first()).toBeVisible();
   await expect(cards.first().getByText('Reason for audited corrections')).toHaveCount(0);
 
   const statuses = page.getByRole('group', { name: 'Filter attendance sheets by status' });
